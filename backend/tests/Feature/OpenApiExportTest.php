@@ -122,6 +122,13 @@ it('documenta balance como obrigatório em AccountResource', function () {
     expect($accountResource['properties']['balance']['type'])->toBe('integer');
 });
 
+it('documenta is_transfer_effective como booleano', function () {
+    $document = exportOpenApiDocument();
+
+    expect($document['components']['schemas']['CategoryResource']['properties']['is_transfer_effective']['type'])
+        ->toBe('boolean');
+});
+
 /**
  * @return array<string, mixed>
  */
