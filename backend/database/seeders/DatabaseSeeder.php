@@ -2,24 +2,16 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use App\Domain\Users\Actions\CreateUser;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
     /**
-     * Seed the application's database.
+     * Usuário de desenvolvimento: dev@finangui.test / password
      */
-    public function run(): void
+    public function run(CreateUser $createUser): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        $createUser->handle('Dev', 'dev@finangui.test', 'password');
     }
 }
