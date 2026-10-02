@@ -133,6 +133,22 @@ it('perna de transferência só trava quando um campo bloqueado de fato muda', f
         ->assertJsonPath('code', 'transfer_leg_locked');
 });
 
+it('bloqueia ignorar uma perna de transferência pelo endpoint de transações', function () {
+    actingAsUser();
+    $leg = Transaction::factory()->create([
+        'transfer_id' => (string) Str::uuid(),
+        'is_ignored' => false,
+    ]);
+
+    $this->patchJson("/api/v1/transactions/{$leg->id}", ['is_ignored' => true])
+        ->assertStatus(409)
+        ->assertJsonPath('code', 'transfer_leg_locked');
+
+    $this->patchJson("/api/v1/transactions/{$leg->id}", ['is_ignored' => false])
+        ->assertOk()
+        ->assertJsonPath('data.is_ignored', false);
+});
+
 it('não move transação para conta com moeda diferente', function () {
     actingAsUser();
     $tx = Transaction::factory()->create(['currency' => 'BRL']);

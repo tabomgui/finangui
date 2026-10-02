@@ -117,3 +117,35 @@ it('retorna 404 para transferência inexistente', function () {
 
     $this->patchJson('/api/v1/transfers/9b2f3c1e-0000-4000-8000-000000000000', ['amount' => 1])->assertNotFound();
 });
+
+it('retorna as duas pernas ao buscar a transferência', function () {
+    actingAsUser();
+    $transfer = createTransfer(Account::factory()->create(), Account::factory()->create());
+
+    $this->getJson("/api/v1/transfers/{$transfer['transfer_id']}")
+        ->assertOk()
+        ->assertJsonPath('data.transfer_id', $transfer['transfer_id'])
+        ->assertJsonPath('data.from.direction', 'out')
+        ->assertJsonPath('data.to.direction', 'in');
+});
+
+it('recusa edição que move uma perna para conta de outra moeda', function () {
+    actingAsUser();
+    $transfer = createTransfer(Account::factory()->create(['currency' => 'BRL']), Account::factory()->create(['currency' => 'BRL']));
+    $usd = Account::factory()->create(['currency' => 'USD']);
+
+    $this->patchJson("/api/v1/transfers/{$transfer['transfer_id']}", ['from_account_id' => $usd->id])
+        ->assertStatus(409)
+        ->assertJsonPath('code', 'transfer_currency_mismatch');
+});
+
+it('isola transferências por usuário', function () {
+    actingAsUser();
+    $transfer = createTransfer(Account::factory()->create(), Account::factory()->create());
+
+    actingAsUser();
+
+    $this->getJson("/api/v1/transfers/{$transfer['transfer_id']}")->assertNotFound();
+    $this->patchJson("/api/v1/transfers/{$transfer['transfer_id']}", ['amount' => 1])->assertNotFound();
+    $this->deleteJson("/api/v1/transfers/{$transfer['transfer_id']}")->assertNotFound();
+});

@@ -19,7 +19,7 @@ final class UpdateTransfer
     public function handle(string $transferId, array $input): array
     {
         return DB::transaction(function () use ($transferId, $input) {
-            ['out' => $out, 'in' => $in] = TransferLegs::load($transferId);
+            ['out' => $out, 'in' => $in] = TransferLegs::load($transferId, lock: true);
 
             if (array_key_exists('from_account_id', $input)) {
                 $out->account_id = (int) $input['from_account_id'];

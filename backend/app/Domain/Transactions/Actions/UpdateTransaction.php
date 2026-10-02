@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 final class UpdateTransaction
 {
     /** Campos que, numa perna de transferência, só mudam pelo endpoint de transferência. */
-    private const TRANSFER_LOCKED = ['account_id', 'date', 'amount', 'direction'];
+    private const TRANSFER_LOCKED = ['account_id', 'date', 'amount', 'direction', 'is_ignored'];
 
     /**
      * @param  array<string, mixed>  $input  dados já validados (parciais)
@@ -73,6 +73,9 @@ final class UpdateTransaction
         if (array_key_exists('category_id', $input) && $input['category_id'] !== null) {
             $input['category_id'] = (int) $input['category_id'];
         }
+        if (array_key_exists('is_ignored', $input)) {
+            $input['is_ignored'] = filter_var($input['is_ignored'], FILTER_VALIDATE_BOOLEAN);
+        }
 
         return $input;
     }
@@ -90,6 +93,7 @@ final class UpdateTransaction
             'date' => $transaction->date->toDateString(),
             'amount' => $transaction->amount->cents,
             'direction' => $transaction->direction->value,
+            'is_ignored' => $transaction->is_ignored,
         ];
 
         foreach (self::TRANSFER_LOCKED as $field) {

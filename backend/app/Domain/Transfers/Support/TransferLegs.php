@@ -13,9 +13,15 @@ final class TransferLegs
      *
      * @throws ModelNotFoundException<Transaction>
      */
-    public static function load(string $transferId): array
+    public static function load(string $transferId, bool $lock = false): array
     {
-        $legs = Transaction::query()->where('transfer_id', $transferId)->get();
+        $query = Transaction::query()->where('transfer_id', $transferId);
+
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+
+        $legs = $query->get();
 
         $out = $legs->first(fn (Transaction $t) => $t->direction === Direction::Out);
         $in = $legs->first(fn (Transaction $t) => $t->direction === Direction::In);

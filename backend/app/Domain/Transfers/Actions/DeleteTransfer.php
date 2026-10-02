@@ -11,7 +11,7 @@ final class DeleteTransfer
     public function handle(string $transferId): void
     {
         DB::transaction(function () use ($transferId) {
-            TransferLegs::load($transferId);
+            TransferLegs::load($transferId, lock: true);
             Transaction::query()->where('transfer_id', $transferId)->delete();
         });
     }
