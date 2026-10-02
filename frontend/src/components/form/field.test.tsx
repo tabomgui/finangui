@@ -43,4 +43,19 @@ describe('Field', () => {
 
     expect(screen.getByLabelText('Nome')).not.toHaveAttribute('aria-describedby')
   })
+
+  it('aceita render-prop e entrega id e atributos de acessibilidade', () => {
+    render(
+      <Field label="Conta" htmlFor="account" error="Escolha a conta.">
+        {(control) => <button type="button" {...control}>Abrir</button>}
+      </Field>,
+    )
+
+    // O <label htmlFor> associado sobrepõe o nome acessível do botão (herda "Conta" em vez de
+    // "Abrir", conforme o algoritmo AccName); como é o único botão, basta a role.
+    const button = screen.getByRole('button')
+    expect(button).toHaveAttribute('id', 'account')
+    expect(button).toHaveAttribute('aria-invalid', 'true')
+    expect(button).toHaveAttribute('aria-describedby', 'account-message')
+  })
 })

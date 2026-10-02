@@ -120,3 +120,12 @@
     z-index: 9999;
   }
 }
+
+@keyframes navigation-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}

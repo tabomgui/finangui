@@ -1,4 +1,4 @@
-import { addDays, addMonths, format } from 'date-fns'
+import { addDays, addMonths, endOfMonth, format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
 // A API trabalha com datas sem hora ("YYYY-MM-DD"). Interpretar sempre em horário local:
@@ -48,4 +48,10 @@ export function shiftMonth(key: string, delta: number): string {
 
 export function formatMonth(key: string): string {
   return capitalize(format(parseDateOnly(`${key}-01`), "MMMM 'de' yyyy", { locale: ptBR }))
+}
+
+/** Primeiro e último dia do mês ("YYYY-MM"), para filtrar transações por período. */
+export function monthRange(key: string): { from: string; to: string } {
+  const start = parseDateOnly(`${key}-01`)
+  return { from: toDateOnly(start), to: toDateOnly(endOfMonth(start)) }
 }
