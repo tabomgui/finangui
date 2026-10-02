@@ -33,6 +33,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index(['user_id', 'date', 'id']);
+            $table->index(['user_id', 'category_id']);
             $table->unique(['account_id', 'external_id']);
         });
 
@@ -41,7 +42,8 @@ return new class extends Migration
         Schema::create('tag_transaction', function (Blueprint $table) {
             $table->foreignId('tag_id')->constrained()->cascadeOnDelete();
             $table->foreignId('transaction_id')->constrained()->cascadeOnDelete();
-            $table->primary(['tag_id', 'transaction_id']);
+            $table->primary(['transaction_id', 'tag_id']);
+            $table->index('tag_id');
         });
     }
 

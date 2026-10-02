@@ -5,6 +5,7 @@ use App\Domain\Categories\Models\Category;
 use App\Domain\Tags\Models\Tag;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
+use Illuminate\Support\Str;
 
 it('cria despesa manual', function () {
     actingAsUser();
@@ -95,6 +96,69 @@ it('sincroniza tags na edição', function () {
         ->assertJsonPath('data.tags.0.id', $b->id);
 });
 
+it('normaliza amount enviado como string ou float numérico', function () {
+    actingAsUser();
+    $tx = Transaction::factory()->create(['amount' => 1000]);
+
+    $this->patchJson("/api/v1/transactions/{$tx->id}", ['amount' => '4590'])
+        ->assertOk()
+        ->assertJsonPath('data.amount', 4590);
+
+    $this->patchJson("/api/v1/transactions/{$tx->id}", ['amount' => 4590.0])
+        ->assertOk()
+        ->assertJsonPath('data.amount', 4590);
+});
+
+it('perna de transferência só trava quando um campo bloqueado de fato muda', function () {
+    actingAsUser();
+    $transferId = (string) Str::uuid();
+    $leg = Transaction::factory()->create([
+        'transfer_id' => $transferId,
+        'amount' => 2000,
+        'date' => '2026-10-01',
+        'direction' => 'out',
+    ]);
+
+    // PATCH com o objeto inteiro, mas sem mudar os campos bloqueados: permitido.
+    $this->patchJson("/api/v1/transactions/{$leg->id}", [
+        'account_id' => $leg->account_id,
+        'date' => '2026-10-01',
+        'amount' => 2000,
+        'direction' => 'out',
+        'notes' => 'ajuste',
+    ])->assertOk()->assertJsonPath('data.notes', 'ajuste');
+
+    $this->patchJson("/api/v1/transactions/{$leg->id}", ['amount' => 3000])
+        ->assertStatus(409)
+        ->assertJsonPath('code', 'transfer_leg_locked');
+});
+
+it('não move transação para conta com moeda diferente', function () {
+    actingAsUser();
+    $tx = Transaction::factory()->create(['currency' => 'BRL']);
+    $usdAccount = Account::factory()->create(['currency' => 'USD']);
+
+    $this->patchJson("/api/v1/transactions/{$tx->id}", ['account_id' => $usdAccount->id])
+        ->assertStatus(409)
+        ->assertJsonPath('code', 'transaction_currency_mismatch');
+});
+
+it('valida que account_id, category_id e tag_ids pertencem ao usuário ao editar', function () {
+    $other = User::factory()->create();
+    $foreignAccount = Account::factory()->create(['user_id' => $other->id]);
+    $foreignCategory = Category::factory()->create(['user_id' => $other->id]);
+    $foreignTag = Tag::factory()->create(['user_id' => $other->id]);
+
+    actingAsUser();
+    $tx = Transaction::factory()->create();
+
+    $this->patchJson("/api/v1/transactions/{$tx->id}", [
+        'account_id' => $foreignAccount->id,
+        'category_id' => $foreignCategory->id,
+        'tag_ids' => [$foreignTag->id],
+    ])->assertStatus(422)->assertJsonValidationErrors(['account_id', 'category_id', 'tag_ids.0']);
+});
+
 it('exclui transação', function () {
     actingAsUser();
     $tx = Transaction::factory()->create();
@@ -112,6 +176,7 @@ it('retorna 404 para transação de outro usuário', function () {
     actingAsUser();
 
     $this->getJson("/api/v1/transactions/{$foreign->id}")->assertNotFound();
+    $this->patchJson("/api/v1/transactions/{$foreign->id}", ['notes' => 'x'])->assertNotFound();
     $this->deleteJson("/api/v1/transactions/{$foreign->id}")->assertNotFound();
 });
 
