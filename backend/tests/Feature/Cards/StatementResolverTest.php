@@ -5,7 +5,6 @@ use App\Domain\Cards\Errors\NotACreditCard;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Support\StatementResolver;
 use Carbon\CarbonImmutable;
-use LogicException;
 
 beforeEach(function () {
     $this->user = actingAsUser();
@@ -118,7 +117,15 @@ it('colisão de vencimento com fatura editada bem antes da janela não quebra o 
 
     $statement = $this->resolver->forDate($this->card, CarbonImmutable::parse('2026-01-09'));
 
-    expect($statement)->not->toBeNull()->and(CardStatement::count())->toBe(2);
+    expect(dates($statement))->toBe(['2026-02-10', '2026-02-20'])
+        ->and(CardStatement::count())->toBe(2);
+});
+
+it('uma fatura nova nunca fecha depois (ou no mesmo dia) de uma fatura existente mais adiante', function () {
+    $card = Account::factory()->creditCard(closingDay: 25, dueDay: 15)->create(['user_id' => $this->user->id]);
+    $statement = CardStatement::factory()->create(['account_id' => $card->id, 'closing_date' => '2026-02-10', 'due_date' => '2026-02-15']);
+
+    expect($this->resolver->forDate($card, CarbonImmutable::parse('2026-01-20'))->id)->toBe($statement->id);
 });
 
 it('pagamento no próprio dia do fechamento fica ligado a essa fatura', function () {

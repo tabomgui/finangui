@@ -25,7 +25,7 @@ return new class extends Migration
             $table->index(['account_id', 'closing_date']);
         });
 
-        DB::statement('ALTER TABLE card_statements ADD CONSTRAINT card_statements_dates_order CHECK (closing_date < due_date)');
+        DB::statement('ALTER TABLE card_statements ADD CONSTRAINT card_statements_dates_order CHECK (closing_date < due_date AND due_date <= closing_date + 40)');
     }
 
     public function down(): void

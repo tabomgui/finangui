@@ -86,6 +86,13 @@ final class StatementResolver
             $cycle = InvoiceCycle::next($cycle, $closingDay, $dueDay);
         }
 
+        // Uma fatura nova nunca pode fechar depois (ou no mesmo dia) de uma
+        // fatura existente mais adiante: a volta por colisão de due_date
+        // pode ter empurrado o ciclo além dela.
+        if ($following !== null && $cycle->closingDate->greaterThanOrEqualTo($following->closing_date)) {
+            return $following;
+        }
+
         return new CardStatement([
             'user_id' => $card->user_id,
             'account_id' => $card->id,
@@ -96,8 +103,8 @@ final class StatementResolver
 
     /**
      * Fatura que um pagamento na data quita: a mais recente já fechada até a
-     * data. Sem fatura fechada perto da data, liga à mais antiga fechada que
-     * existir, por mais velha que seja; sem nenhuma, cria a fatura da própria
+     * data; sem fatura fechada perto da data, liga à última fechada, por mais
+     * antiga que seja; sem nenhuma fatura fechada, cria a fatura da própria
      * data.
      */
     public function forPayment(Account $card, CarbonImmutable $date): CardStatement
