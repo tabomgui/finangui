@@ -202,3 +202,20 @@ it('não religa quando o usuário logado já tem outro google_id vinculado', fun
 
     expect($user->fresh()->google_id)->toBe('ja-vinculado');
 });
+
+it('volta para configurações quando o usuário logado cancela a vinculação no Google', function () {
+    actingAsUser();
+
+    $this->get('/api/auth/google/callback?error=access_denied')
+        ->assertRedirect(frontend('/configuracoes?google=failed'));
+});
+
+it('volta para configurações quando a vinculação falha por erro do provedor', function () {
+    actingAsUser();
+
+    $provider = Mockery::mock(Provider::class);
+    $provider->shouldReceive('user')->andThrow(new InvalidStateException);
+    Socialite::shouldReceive('driver')->with('google')->andReturn($provider);
+
+    $this->get('/api/auth/google/callback')->assertRedirect(frontend('/configuracoes?google=failed'));
+});
