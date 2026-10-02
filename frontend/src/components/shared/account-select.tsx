@@ -17,6 +17,7 @@ type AccountSelectProps = Partial<FieldControlProps> & {
   types?: AccountType[]
   /** Esconde estes tipos (ex.: pagar fatura não aceita cartão como origem). */
   excludeTypes?: AccountType[]
+  disabled?: boolean
 }
 
 export function AccountSelect({
@@ -27,6 +28,7 @@ export function AccountSelect({
   includeArchived = false,
   types,
   excludeTypes,
+  disabled,
   ...control
 }: AccountSelectProps) {
   const { data: accounts = [] } = useAccounts(true)
@@ -40,7 +42,7 @@ export function AccountSelect({
     : visible.filter((account) => !account.is_archived || account.id === value)
 
   return (
-    <Select value={value === null ? '' : String(value)} onValueChange={(next) => onChange(Number(next))}>
+    <Select value={value === null ? '' : String(value)} onValueChange={(next) => onChange(Number(next))} disabled={disabled}>
       <SelectTrigger {...control} className="w-full">
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>

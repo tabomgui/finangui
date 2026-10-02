@@ -61,4 +61,15 @@ describe('TransactionRow', () => {
     expect(amount).not.toHaveClass('text-income')
     expect(amount).not.toHaveClass('text-expense')
   })
+
+  it('mostra o número da parcela no subtítulo', () => {
+    renderRow(
+      transaction({
+        category: { id: 3, parent_id: null, name: 'Eletrônicos', icon: null, color: null, is_transfer: false, is_transfer_effective: false },
+        installment: { plan_id: 1, number: 3, total: 10 },
+      }),
+    )
+
+    expect(screen.getByText(/3\/10/)).toBeInTheDocument()
+  })
 })

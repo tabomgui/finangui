@@ -1,6 +1,6 @@
 import { Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAccounts } from '@/api/queries/accounts'
 import { useCreateTransaction, useDeleteTransaction, useTransaction, useUpdateTransaction } from '@/api/queries/transactions'
@@ -12,9 +12,16 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { FullPageSpinner } from '@/components/shared/full-page-spinner'
 import { today } from '@/lib/date'
 import { EntryForm } from './entry-form'
+import { editKind } from './edit-kind'
 import { entryDefaults, toTransactionBody, toTransferBody, transferDefaults } from './form-values'
 import { KindToggle, type TransactionKind } from './kind-toggle'
 import { TransferForm } from './transfer-form'
+
+/** Destino de volta (botão Voltar, "Cancelar", depois de salvar/excluir): a tela de origem quando é um
+ * caminho interno conhecido (ex.: a fatura do cartão), senão a lista de transações. */
+function backDestination(from: unknown): string {
+  return typeof from === 'string' && from.startsWith('/') ? from : '/transacoes'
+}
 
 const KIND_FROM_PARAM: Record<string, TransactionKind> = { despesa: 'out', receita: 'in', transferencia: 'transfer' }
 
@@ -33,7 +40,9 @@ function NewTransactionPage() {
   const navigate = useNavigate()
 
   if (isPending) return <FullPageSpinner />
-  const firstAccountId = accounts?.[0]?.id ?? null
+  const contaParam = Number(searchParams.get('conta'))
+  const accountFromParam = accounts?.find((account) => account.id === contaParam)
+  const firstAccountId = accountFromParam?.id ?? accounts?.[0]?.id ?? null
 
   const done = () => {
     toast.success('Lançamento salvo.')
@@ -74,6 +83,7 @@ function NewTransactionPage() {
 }
 
 function EditTransactionPage({ id }: { id: number }) {
+  const location = useLocation()
   const { data: transaction, isPending, isError } = useTransaction(id)
   const transferId = transaction?.transfer_id ?? null
   const { data: transfer, isPending: transferPending, isError: transferError } = useTransfer(transferId)
@@ -98,16 +108,24 @@ function EditTransactionPage({ id }: { id: number }) {
   if (isPending || (transferId !== null && transferPending)) return <FullPageSpinner />
 
   const isTransfer = transferId !== null && transfer !== undefined
+  const kind = isTransfer ? 'transfer' : editKind(transaction)
+  const backTo = backDestination(location.state?.from)
   const done = () => {
     toast.success('Lançamento atualizado.')
-    navigate('/transacoes', { replace: true })
+    navigate(backTo, { replace: true })
   }
+
+  const title = isTransfer ? 'Editar transferência' : kind === 'installment' ? 'Editar parcela' : 'Editar lançamento'
+  const lockedReason =
+    kind === 'installment' && transaction.installment
+      ? `Parcela ${transaction.installment.number} de ${transaction.installment.total}. Valor, data e conta seguem o parcelamento; para mudar a compra inteira, use a aba Parcelamentos do cartão.`
+      : undefined
 
   return (
     <>
       <PageHeader
-        title={isTransfer ? 'Editar transferência' : 'Editar lançamento'}
-        back="/transacoes"
+        title={title}
+        back={backTo}
         actions={
           <button type="button" aria-label="Excluir" className={headerIconButton} onClick={() => setConfirmDelete(true)}>
             <Trash2 className="h-5 w-5" />
@@ -130,8 +148,13 @@ function EditTransactionPage({ id }: { id: number }) {
             defaultValues={entryDefaults({ transaction })}
             submitLabel="Salvar"
             showIgnore
+            mode="edit"
+            lockedReason={lockedReason}
             onSubmit={async (values) => {
-              await updateTransaction.mutateAsync({ id, body: toTransactionBody(values) })
+              await updateTransaction.mutateAsync({
+                id,
+                body: toTransactionBody(values, { initialStatementId: transaction.statement_id }),
+              })
               done()
             }}
           />
@@ -140,14 +163,20 @@ function EditTransactionPage({ id }: { id: number }) {
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
-        title={isTransfer ? 'Excluir transferência?' : 'Excluir lançamento?'}
-        description={isTransfer ? 'As duas pernas da transferência serão excluídas.' : undefined}
+        title={isTransfer ? 'Excluir transferência?' : kind === 'installment' ? 'Excluir parcelamento?' : 'Excluir lançamento?'}
+        description={
+          isTransfer
+            ? 'As duas pernas da transferência serão excluídas.'
+            : kind === 'installment'
+              ? 'Todas as parcelas desta compra serão excluídas, inclusive as já lançadas. Para encerrar só as futuras, cancele o parcelamento na tela do cartão.'
+              : undefined
+        }
         confirmLabel="Excluir"
         destructive
         onConfirm={async () => {
           await remove.mutateAsync(id)
           toast.success('Lançamento excluído.')
-          navigate('/transacoes', { replace: true })
+          navigate(backTo, { replace: true })
         }}
       />
     </>

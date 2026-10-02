@@ -1,11 +1,12 @@
 import { ArrowLeftRight } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import type { Transaction } from '@/api/types'
 import { CategoryIcon } from '@/components/shared/category-icon'
 import { MoneyText } from '@/components/shared/money-text'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
+import { transactionSubtitle } from './transaction-subtitle'
 
 type TransactionRowProps = {
   transaction: Transaction
@@ -15,13 +16,12 @@ type TransactionRowProps = {
 }
 
 export function TransactionRow({ transaction, selectable = false, selected = false, onToggle }: TransactionRowProps) {
+  const location = useLocation()
   const isTransfer = transaction.transfer_id !== null
   // Categoria "efetivamente transferência" (ex.: ajuste entre contas feito via categoria, não via
   // o fluxo de transferência) recebe a mesma cor neutra, mas mantém o próprio nome na legenda.
   const isTransferEffective = transaction.category?.is_transfer_effective ?? false
-  const subtitle = [isTransfer ? 'Transferência' : (transaction.category?.name ?? 'Sem categoria'), transaction.account?.name]
-    .filter(Boolean)
-    .join(' · ')
+  const subtitle = transactionSubtitle(transaction)
 
   const content = (
     <>
@@ -68,7 +68,11 @@ export function TransactionRow({ transaction, selectable = false, selected = fal
   }
 
   return (
-    <Link to={`/transacoes/${transaction.id}`} className="flex items-center gap-3 px-3 py-3 hover:bg-muted/50">
+    <Link
+      to={`/transacoes/${transaction.id}`}
+      state={{ from: location.pathname + location.search }}
+      className="flex items-center gap-3 px-3 py-3 hover:bg-muted/50"
+    >
       {content}
     </Link>
   )

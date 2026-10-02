@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { LoaderCircle } from 'lucide-react'
+import { Info, LoaderCircle } from 'lucide-react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { Field } from '@/components/form/field'
 import { AccountSelect } from '@/components/shared/account-select'
@@ -13,9 +13,22 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { applyFieldErrors, notifyError } from '@/lib/form-errors'
+import { CardEntryFields } from './card-entry-fields'
 import { entrySchema, type EntryValues } from './form-values'
 
-const FIELDS = ['direction', 'account_id', 'amount', 'date', 'description', 'category_id', 'tag_ids', 'notes', 'is_ignored'] as const
+const FIELDS = [
+  'direction',
+  'account_id',
+  'amount',
+  'date',
+  'description',
+  'category_id',
+  'tag_ids',
+  'notes',
+  'is_ignored',
+  'installments',
+  'statement_id',
+] as const
 
 type EntryFormProps = {
   defaultValues: EntryValues
@@ -24,12 +37,25 @@ type EntryFormProps = {
   showIgnore?: boolean
   /** Foco automático no valor: só numa transação nova, nunca ao editar (o campo já tem conteúdo). */
   autoFocusAmount?: boolean
+  mode?: 'create' | 'edit'
+  /** Quando presente, trava Valor/Conta/Data e mostra o motivo num aviso acima do formulário (ex.: parcela). */
+  lockedReason?: string
 }
 
-export function EntryForm({ defaultValues, onSubmit, submitLabel, showIgnore = false, autoFocusAmount = false }: EntryFormProps) {
+export function EntryForm({
+  defaultValues,
+  onSubmit,
+  submitLabel,
+  showIgnore = false,
+  autoFocusAmount = false,
+  mode = 'create',
+  lockedReason,
+}: EntryFormProps) {
   const form = useForm<EntryValues>({ resolver: zodResolver(entrySchema), defaultValues })
   const { errors, isSubmitting } = form.formState
   const direction = useWatch({ control: form.control, name: 'direction' })
+  const installments = useWatch({ control: form.control, name: 'installments' })
+  const locked = lockedReason !== undefined
 
   const submit = form.handleSubmit(async (values) => {
     try {
@@ -41,9 +67,15 @@ export function EntryForm({ defaultValues, onSubmit, submitLabel, showIgnore = f
 
   return (
     <form className="space-y-4" onSubmit={submit} noValidate>
+      {lockedReason && (
+        <div className="flex items-start gap-2 rounded-xl bg-muted p-3 text-sm text-muted-foreground">
+          <Info className="h-4 w-4 shrink-0" />
+          <p>{lockedReason}</p>
+        </div>
+      )}
       <Card className="rounded-2xl shadow-card">
         <CardContent className="space-y-4 pt-6">
-          <Field label="Valor" htmlFor="entry-amount" error={errors.amount?.message}>
+          <Field label={installments > 1 ? 'Valor total' : 'Valor'} htmlFor="entry-amount" error={errors.amount?.message}>
             {(control) => (
               <Controller
                 control={form.control}
@@ -55,6 +87,7 @@ export function EntryForm({ defaultValues, onSubmit, submitLabel, showIgnore = f
                     onChange={field.onChange}
                     onBlur={field.onBlur}
                     autoFocus={autoFocusAmount}
+                    disabled={locked}
                   />
                 )}
               />
@@ -69,7 +102,9 @@ export function EntryForm({ defaultValues, onSubmit, submitLabel, showIgnore = f
                 <Controller
                   control={form.control}
                   name="account_id"
-                  render={({ field }) => <AccountSelect {...control} value={field.value} onChange={field.onChange} />}
+                  render={({ field }) => (
+                    <AccountSelect {...control} value={field.value} onChange={field.onChange} disabled={locked} />
+                  )}
                 />
               )}
             </Field>
@@ -77,10 +112,19 @@ export function EntryForm({ defaultValues, onSubmit, submitLabel, showIgnore = f
               <Controller
                 control={form.control}
                 name="date"
-                render={({ field }) => <DateInput id="entry-date" value={field.value} onChange={field.onChange} />}
+                render={({ field }) => (
+                  <DateInput id="entry-date" value={field.value} onChange={field.onChange} disabled={locked} />
+                )}
               />
             </Field>
           </div>
+          <CardEntryFields
+            form={form}
+            mode={mode}
+            initialAccountId={defaultValues.account_id}
+            initialDate={defaultValues.date}
+            initialStatementId={defaultValues.statement_id ?? null}
+          />
           <Field label="Categoria" htmlFor="entry-category" error={errors.category_id?.message}>
             {(control) => (
               <Controller
