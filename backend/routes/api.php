@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\TagController;
 use App\Http\Controllers\Api\V1\TransactionController;
+use App\Http\Controllers\Api\V1\TransferController;
 use App\Http\Middleware\EnsureRegistrationAllowed;
 use Illuminate\Support\Facades\Route;
 
@@ -25,5 +26,9 @@ Route::prefix('v1')->group(function () {
         Route::apiResource('categories', CategoryController::class);
         Route::apiResource('tags', TagController::class)->except('show');
         Route::apiResource('transactions', TransactionController::class);
+        Route::post('transfers', [TransferController::class, 'store']);
+        Route::get('transfers/{transfer}', [TransferController::class, 'show'])->whereUuid('transfer');
+        Route::patch('transfers/{transfer}', [TransferController::class, 'update'])->whereUuid('transfer');
+        Route::delete('transfers/{transfer}', [TransferController::class, 'destroy'])->whereUuid('transfer');
     });
 });
