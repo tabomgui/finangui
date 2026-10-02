@@ -1,6 +1,6 @@
 # finangui
 
-Gerenciador financeiro pessoal, self-hosted. Backend Laravel 13 + Postgres; frontend React (em `frontend/`, ainda não implementado).
+Gerenciador financeiro pessoal, self-hosted. Backend Laravel 13 + Postgres; frontend React em `frontend/`.
 
 ## Desenvolvimento
 
@@ -8,15 +8,19 @@ Requisitos: Docker e Make.
 
 ```bash
 cp backend/.env.example backend/.env
-make up                       # sobe db (:5432), backend (:8001), worker e scheduler
+make up                       # sobe db (:5432), backend (:8001), frontend (:5174), worker e scheduler
 make art c="key:generate"
 make fresh                    # migra do zero e cria dev@finangui.test / password
 make test                     # Pest (banco finangui_test)
 make lint                     # Pint + Larastan
 make openapi                  # gera backend/storage/app/openapi.json
+make types                    # regera frontend/src/api/schema.d.ts a partir do OpenAPI (rode depois de mudar a API)
+make front-check              # lint + typecheck + testes do frontend
 ```
 
-Portas do host: backend em `:8001` (configurável por `BACKEND_PORT`), banco em `:5432`, frontend (quando existir) em `:5174`.
+Portas do host: backend em `:8001` (configurável por `BACKEND_PORT`), banco em `:5432`, frontend em `:5174` (configurável por `FRONTEND_PORT`).
+
+O frontend também roda em container (`make up` já sobe o serviço `frontend`), mas tipos e editor (TypeScript, ESLint/oxlint) precisam das dependências instaladas no host: `cd frontend && npm install`. Se `frontend/package.json` mudar, reconstrua a imagem do serviço: `docker compose build frontend && docker compose up -d -V frontend`.
 
 Documentação interativa da API (Scramble) em http://localhost:8001/docs/api — só disponível em ambiente local (`APP_ENV=local`); em outros ambientes a rota fica bloqueada.
 
@@ -78,9 +82,9 @@ make art c="legacy:import-categories storage/app/categories.tsv voce@exemplo.com
 
 ## Produção
 
-O compose de produção (com o container nginx que serve o SPA e faz proxy de `/api` e
-`/sanctum` para o backend) chega junto com o frontend. Esta seção cobre só o
-backend, hoje.
+`docker-compose.prod.yml` sobe o backend, o worker, o scheduler, o banco e o serviço `web`
+(nginx, servindo o SPA já buildado e fazendo proxy de `/api`, `/sanctum` e `/up` para o
+backend) atrás do mesmo domínio.
 
 **Same origin é obrigatório**: SPA e API precisam ficar sob o mesmo domínio em produção
 (`https://seu-dominio` servindo tanto o frontend quanto `/api`). O projeto antigo
@@ -90,8 +94,29 @@ funcionam corretamente nesse cenário.
 
 ```bash
 cp backend/.env.production.example backend/.env
-make art c="key:generate"
-make art c="migrate --force"
+```
+
+Preencha no `backend/.env`: `APP_KEY` (gere com
+`docker run --rm php:8.4-cli-alpine php -r 'echo "base64:".base64_encode(random_bytes(32));'`),
+`DB_PASSWORD`, o domínio (`APP_URL`, `FRONTEND_URL`, `SESSION_DOMAIN`,
+`SANCTUM_STATEFUL_DOMAINS`) e as credenciais do Google. O compose falha rápido se `APP_KEY`
+ou `DB_PASSWORD` estiverem vazios — sem eles o container nem sobe.
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file backend/.env up -d --build
+```
+
+O serviço `web` publica em `${FINANGUI_BIND:-127.0.0.1}:${FINANGUI_PORT:-8080}`: por padrão só
+em localhost, então o proxy que termina TLS (Caddy, Cloudflare Tunnel) precisa rodar no mesmo
+host; para expor em outra interface, defina `FINANGUI_BIND`. O nginx também adiciona os
+headers de segurança e resolve o endereço do backend a cada request, para sobreviver a um
+redeploy/recreate do container `backend`.
+
+`migrate --force` roda automaticamente a cada start do `backend` — não rode esse comando à
+mão. Antes de um deploy, é recomendável um backup:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file backend/.env exec db pg_dump -U finangui finangui > backup.sql
 ```
 
 Nunca rode `db:seed` em produção — o `DatabaseSeeder` cria o usuário de desenvolvimento
@@ -101,7 +126,7 @@ Nunca rode `db:seed` em produção — o `DatabaseSeeder` cria o usuário de des
 Primeiro usuário (cadastro público fica sempre desligado):
 
 ```bash
-make art c="user:create voce@exemplo.com --name=Você"
+docker compose -f docker-compose.prod.yml --env-file backend/.env exec backend php artisan user:create voce@exemplo.com --name=Você
 ```
 
 Pontos de atenção específicos de produção:
