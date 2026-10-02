@@ -16,6 +16,9 @@ final class UpdateTransaction
 
     /**
      * @param  array<string, mixed>  $input  dados já validados (parciais)
+     *
+     * @throws TransferLegLocked
+     * @throws TransactionCurrencyMismatch
      */
     public function handle(Transaction $transaction, array $input): Transaction
     {

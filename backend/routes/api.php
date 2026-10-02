@@ -24,10 +24,18 @@ Route::prefix('v1')->group(function () {
         Route::get('me', [MeController::class, 'show']);
         Route::patch('me', [MeController::class, 'update']);
         Route::get('dashboard', DashboardController::class);
-        Route::apiResource('accounts', AccountController::class);
-        Route::apiResource('categories', CategoryController::class);
-        Route::apiResource('tags', TagController::class)->except('show');
-        Route::apiResource('transactions', TransactionController::class);
+
+        // Updates são parciais (PATCH): apiResource()->except('update') tira o
+        // PUT/PATCH padrão (que registraria os dois verbos) e o Route::patch
+        // abaixo registra só o verbo correto, pra bater com a doc OpenAPI.
+        Route::apiResource('accounts', AccountController::class)->except('update');
+        Route::patch('accounts/{account}', [AccountController::class, 'update']);
+        Route::apiResource('categories', CategoryController::class)->except('update');
+        Route::patch('categories/{category}', [CategoryController::class, 'update']);
+        Route::apiResource('tags', TagController::class)->except(['show', 'update']);
+        Route::patch('tags/{tag}', [TagController::class, 'update']);
+        Route::apiResource('transactions', TransactionController::class)->except('update');
+        Route::patch('transactions/{transaction}', [TransactionController::class, 'update']);
         Route::post('transfers', [TransferController::class, 'store']);
         Route::get('transfers/{transfer}', [TransferController::class, 'show'])->whereUuid('transfer');
         Route::patch('transfers/{transfer}', [TransferController::class, 'update'])->whereUuid('transfer');

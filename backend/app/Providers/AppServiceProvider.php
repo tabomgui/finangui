@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Support\OpenApi\DomainErrorToResponseExtension;
+use Dedoc\Scramble\Scramble;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -31,5 +33,9 @@ class AppServiceProvider extends ServiceProvider
                 Limit::perMinute(20)->by($request->ip()),
             ];
         });
+
+        // Doc do OpenAPI (dedoc/scramble): App\Domain\Shared\DomainError e
+        // subclasses virar HTTP 409 com {code, message} — ver DomainErrorToResponseExtension.
+        Scramble::registerExtension(DomainErrorToResponseExtension::class);
     }
 }

@@ -7,6 +7,9 @@ use App\Domain\Categories\Models\Category;
 
 final class DeleteCategory
 {
+    /**
+     * @throws CategoryHasChildren
+     */
     public function handle(Category $category): void
     {
         if ($category->children()->exists()) {

@@ -6,11 +6,19 @@ use App\Domain\Users\Actions\CreateUser;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Resources\UserResource;
+use Dedoc\Scramble\Attributes\Response as OpenApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 
 final class RegisterController extends Controller
 {
+    /**
+     * Os dois casos abaixo são decididos em EnsureRegistrationAllowed (antes
+     * deste método rodar), então o Scramble não os infere do corpo: ficam
+     * documentados manualmente para bater com o middleware.
+     */
+    #[OpenApiResponse(status: 403, description: 'registration_closed', type: "array{code: 'registration_closed', message: string}")]
+    #[OpenApiResponse(status: 400, description: 'session_required', type: "array{code: 'session_required', message: string}")]
     public function __invoke(RegisterRequest $request, CreateUser $createUser): JsonResponse
     {
         $user = $createUser->handle(

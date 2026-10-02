@@ -17,6 +17,9 @@ final class CreateTransfer
 {
     /**
      * @return array{out: Transaction, in: Transaction}
+     *
+     * @throws TransferSameAccount
+     * @throws TransferCurrencyMismatch
      */
     public function handle(TransferData $data): array
     {

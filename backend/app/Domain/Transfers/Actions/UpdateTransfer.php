@@ -8,6 +8,7 @@ use App\Domain\Transfers\Errors\TransferCurrencyMismatch;
 use App\Domain\Transfers\Errors\TransferSameAccount;
 use App\Domain\Transfers\Support\TransferLegs;
 use App\Support\Money\Money;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 
 final class UpdateTransfer
@@ -15,6 +16,10 @@ final class UpdateTransfer
     /**
      * @param  array<string, mixed>  $input  dados já validados (parciais)
      * @return array{out: Transaction, in: Transaction}
+     *
+     * @throws ModelNotFoundException<Transaction>
+     * @throws TransferSameAccount
+     * @throws TransferCurrencyMismatch
      */
     public function handle(string $transferId, array $input): array
     {

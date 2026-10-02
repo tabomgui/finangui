@@ -13,6 +13,7 @@ use App\Http\Requests\Transactions\IndexTransactionsRequest;
 use App\Http\Requests\Transactions\StoreTransactionRequest;
 use App\Http\Requests\Transactions\UpdateTransactionRequest;
 use App\Http\Resources\TransactionResource;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 
@@ -27,9 +28,10 @@ final class TransactionController extends Controller
         return TransactionResource::collection($transactions);
     }
 
-    public function store(StoreTransactionRequest $request, CreateTransaction $createTransaction): TransactionResource
+    public function store(StoreTransactionRequest $request, CreateTransaction $createTransaction): JsonResponse
     {
-        return TransactionResource::make($createTransaction->handle(TransactionData::fromArray($request->validated())));
+        return TransactionResource::make($createTransaction->handle(TransactionData::fromArray($request->validated())))
+            ->response()->setStatusCode(201);
     }
 
     public function show(Transaction $transaction): TransactionResource

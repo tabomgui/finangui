@@ -99,7 +99,7 @@ final class MonthSummary
             $category = $row->root_id !== null ? $categories->get($row->root_id) : null;
 
             return [
-                'category_id' => $category?->id,
+                'category_id' => $category !== null ? (int) $category->id : null,
                 'name' => $category->name ?? 'Sem categoria',
                 'icon' => $category?->icon,
                 'color' => $category?->color,
