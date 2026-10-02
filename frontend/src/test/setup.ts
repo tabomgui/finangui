@@ -15,3 +15,7 @@ class ResizeObserverStub {
 }
 
 globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver
+
+// jsdom não implementa `scrollIntoView`; o cmdk (usado pelo Command/CategoryPicker/TagPicker)
+// chama isso ao destacar o item ativo. Stub vazio, só para não quebrar em teste.
+Element.prototype.scrollIntoView ??= () => {}
