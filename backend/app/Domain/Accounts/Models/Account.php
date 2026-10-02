@@ -3,6 +3,7 @@
 namespace App\Domain\Accounts\Models;
 
 use App\Domain\Accounts\Enums\AccountType;
+use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\Concerns\BelongsToUser;
@@ -79,6 +80,14 @@ class Account extends Model
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class);
+    }
+
+    /**
+     * @return HasMany<CardStatement, $this>
+     */
+    public function statements(): HasMany
+    {
+        return $this->hasMany(CardStatement::class);
     }
 
     /**

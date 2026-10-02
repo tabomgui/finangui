@@ -3,6 +3,7 @@
 namespace App\Domain\Transactions\Models;
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Tags\Models\Tag;
 use App\Domain\Transactions\Enums\Direction;
@@ -37,7 +38,7 @@ class Transaction extends Model
         'user_id', 'account_id', 'date', 'amount', 'direction', 'currency',
         'description', 'original_description', 'description_locked', 'notes',
         'category_id', 'payee', 'status', 'source', 'external_id', 'categorized_by',
-        'is_ignored', 'transfer_id', 'raw',
+        'is_ignored', 'transfer_id', 'raw', 'statement_id',
     ];
 
     /**
@@ -97,6 +98,14 @@ class Transaction extends Model
     public function tags(): BelongsToMany
     {
         return $this->belongsToMany(Tag::class);
+    }
+
+    /**
+     * @return BelongsTo<CardStatement, $this>
+     */
+    public function statement(): BelongsTo
+    {
+        return $this->belongsTo(CardStatement::class, 'statement_id');
     }
 
     public function isTransferLeg(): bool
