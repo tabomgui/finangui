@@ -38,3 +38,22 @@ it('permite o mesmo nome para usuários diferentes e isola a listagem', function
     $this->postJson('/api/v1/tags', ['name' => 'viagem'])->assertCreated();
     $this->getJson('/api/v1/tags')->assertJsonCount(1, 'data');
 });
+
+it('exige nome ao atualizar quando enviado vazio', function () {
+    actingAsUser();
+    $tag = Tag::factory()->create();
+
+    $this->patchJson("/api/v1/tags/{$tag->id}", ['name' => ''])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('name');
+});
+
+it('retorna 404 ao atualizar ou excluir tag de outro usuário', function () {
+    $other = User::factory()->create();
+    $tag = Tag::factory()->create(['user_id' => $other->id]);
+
+    actingAsUser();
+
+    $this->patchJson("/api/v1/tags/{$tag->id}", ['name' => 'nova'])->assertNotFound();
+    $this->deleteJson("/api/v1/tags/{$tag->id}")->assertNotFound();
+});

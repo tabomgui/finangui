@@ -18,7 +18,7 @@ final class SaveTagRequest extends ApiRequest
 
         return [
             'name' => [
-                $tag ? 'sometimes' : 'required', 'string', 'max:40',
+                ...($tag ? ['sometimes', 'required'] : ['required']), 'string', 'max:40',
                 Rule::unique('tags', 'name')->where('user_id', $this->userId())->ignore($tag?->id),
             ],
             'color' => ['sometimes', 'nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
