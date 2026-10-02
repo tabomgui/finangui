@@ -20,6 +20,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property Money $total_amount
  * @property CarbonImmutable $purchase_date
  * @property CarbonImmutable|null $cancelled_at
+ * @property-read int|null $posted_count carregado por InstallmentPlanList (withCount)
+ * @property-read int|null $projected_count carregado por InstallmentPlanList (withCount)
+ * @property-read int|null $remaining_amount carregado por InstallmentPlanList (withSum)
+ * @property-read string|null $next_date carregado por InstallmentPlanList (withMin)
+ * @property-read int|null $category_id carregado por InstallmentPlanList (addSelect)
  */
 class InstallmentPlan extends Model
 {

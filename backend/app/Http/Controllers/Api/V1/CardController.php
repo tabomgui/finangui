@@ -5,12 +5,14 @@ namespace App\Http\Controllers\Api\V1;
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Queries\CardOverview;
+use App\Domain\Cards\Queries\InstallmentPlanList;
 use App\Domain\Cards\Support\StatementResolver;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Cards\IndexCardsRequest;
 use App\Http\Requests\Cards\StatementPreviewRequest;
 use App\Http\Resources\CardResource;
 use App\Http\Resources\CardStatementResource;
+use App\Http\Resources\InstallmentPlanResource;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -49,6 +51,13 @@ final class CardController extends Controller
         ]];
 
         return response()->json($payload);
+    }
+
+    public function installmentPlans(Account $account, InstallmentPlanList $list): AnonymousResourceCollection
+    {
+        $this->ensureCard($account);
+
+        return InstallmentPlanResource::collection($list->forCard($account));
     }
 
     private function ensureCard(Account $account): void
