@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, EllipsisVertical, Landmark, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, EllipsisVertical, Landmark, Pencil, Plus, Trash2, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useAccounts, useDeleteAccount, useUpdateAccount } from '@/api/queries/accounts'
@@ -28,7 +28,7 @@ import { ACCOUNT_TYPE_LABELS } from './account-labels'
 
 export function AccountsPage() {
   const [showArchived, setShowArchived] = useState(false)
-  const { data: accounts, isPending } = useAccounts(showArchived)
+  const { data: accounts, isPending, isError, refetch } = useAccounts(showArchived)
   const update = useUpdateAccount()
   const remove = useDeleteAccount()
 
@@ -64,7 +64,17 @@ export function AccountsPage() {
       />
       <PageBody>
         <Card className="rounded-2xl p-2 shadow-card">
-          {isPending ? (
+          {isError ? (
+            <EmptyState
+              icon={TriangleAlert}
+              title="Não foi possível carregar as contas."
+              action={
+                <Button variant="outline" onClick={() => refetch()}>
+                  Tentar de novo
+                </Button>
+              }
+            />
+          ) : isPending ? (
             <div className="space-y-2 p-2">
               {[0, 1, 2].map((i) => (
                 <Skeleton key={i} className="h-14 w-full rounded-xl" />
@@ -144,6 +154,7 @@ export function AccountsPage() {
         destructive
         onConfirm={async () => {
           if (deleting) await remove.mutateAsync(deleting.id)
+          toast.success('Conta excluída.')
         }}
       />
     </>

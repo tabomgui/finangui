@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, EllipsisVertical, Pencil, Plus, Shapes, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, EllipsisVertical, Pencil, Plus, Shapes, Trash2, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useCategories, useDeleteCategory, useUpdateCategory } from '@/api/queries/categories'
@@ -32,7 +32,7 @@ type FormState = { open: boolean; category?: Category; parentId?: number | null 
 export function CategoriesPage() {
   const [kind, setKind] = useState<CategoryKind>('expense')
   const [showArchived, setShowArchived] = useState(false)
-  const { data: categories, isPending } = useCategories(showArchived)
+  const { data: categories, isPending, isError, refetch } = useCategories(showArchived)
   const update = useUpdateCategory()
   const remove = useDeleteCategory()
   const [form, setForm] = useState<FormState>({ open: false })
@@ -114,7 +114,17 @@ export function CategoriesPage() {
           </TabsList>
         </Tabs>
         <Card className="rounded-2xl p-2 shadow-card">
-          {isPending ? (
+          {isError ? (
+            <EmptyState
+              icon={TriangleAlert}
+              title="Não foi possível carregar as categorias."
+              action={
+                <Button variant="outline" onClick={() => refetch()}>
+                  Tentar de novo
+                </Button>
+              }
+            />
+          ) : isPending ? (
             <div className="space-y-2 p-2">
               {[0, 1, 2, 3].map((i) => (
                 <Skeleton key={i} className="h-12 w-full rounded-xl" />
@@ -152,6 +162,7 @@ export function CategoriesPage() {
         destructive
         onConfirm={async () => {
           if (deleting) await remove.mutateAsync(deleting.id)
+          toast.success('Categoria excluída.')
         }}
       />
     </>

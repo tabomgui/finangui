@@ -1,5 +1,6 @@
-import { Hash, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Hash, Pencil, Plus, Trash2, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { useDeleteTag, useTags } from '@/api/queries/tags'
 import type { Tag } from '@/api/types'
 import { PageBody } from '@/components/layout/page-body'
@@ -14,7 +15,7 @@ import { TagFormDialog } from './tag-form-dialog'
 type FormState = { open: boolean; tag?: Tag }
 
 export function TagsPage() {
-  const { data: tags, isPending } = useTags()
+  const { data: tags, isPending, isError, refetch } = useTags()
   const remove = useDeleteTag()
   const [form, setForm] = useState<FormState>({ open: false })
   const [deleting, setDeleting] = useState<Tag | null>(null)
@@ -37,7 +38,17 @@ export function TagsPage() {
       />
       <PageBody>
         <Card className="rounded-2xl p-2 shadow-card">
-          {isPending ? (
+          {isError ? (
+            <EmptyState
+              icon={TriangleAlert}
+              title="Não foi possível carregar as tags."
+              action={
+                <Button variant="outline" onClick={() => refetch()}>
+                  Tentar de novo
+                </Button>
+              }
+            />
+          ) : isPending ? (
             <div className="space-y-2 p-2">
               {[0, 1, 2].map((i) => (
                 <Skeleton key={i} className="h-10 w-full rounded-xl" />
@@ -93,6 +104,7 @@ export function TagsPage() {
         destructive
         onConfirm={async () => {
           if (deleting) await remove.mutateAsync(deleting.id)
+          toast.success('Tag excluída.')
         }}
       />
     </>
