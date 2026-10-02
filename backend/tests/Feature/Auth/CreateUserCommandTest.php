@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Hash;
 it('cria usuário com categorias padrão', function () {
     $this->artisan('user:create', ['email' => 'gui@example.com', '--name' => 'Gui'])
         ->expectsQuestion('Senha', 'password123')
+        ->expectsQuestion('Confirme a senha', 'password123')
         ->assertSuccessful();
 
     $user = User::where('email', 'gui@example.com')->firstOrFail();
@@ -26,7 +27,26 @@ it('recusa email já cadastrado', function () {
 it('recusa senha curta', function () {
     $this->artisan('user:create', ['email' => 'gui@example.com'])
         ->expectsQuestion('Senha', 'curta')
+        ->expectsQuestion('Confirme a senha', 'curta')
         ->assertFailed();
 
     expect(User::count())->toBe(0);
+});
+
+it('recusa quando a confirmação de senha não bate', function () {
+    $this->artisan('user:create', ['email' => 'gui@example.com'])
+        ->expectsQuestion('Senha', 'password123')
+        ->expectsQuestion('Confirme a senha', 'outrasenha123')
+        ->assertFailed();
+
+    expect(User::count())->toBe(0);
+});
+
+it('normaliza o email para minúsculas e sem espaços', function () {
+    $this->artisan('user:create', ['email' => ' Gui@Example.com '])
+        ->expectsQuestion('Senha', 'password123')
+        ->expectsQuestion('Confirme a senha', 'password123')
+        ->assertSuccessful();
+
+    expect(User::where('email', 'gui@example.com')->exists())->toBeTrue();
 });

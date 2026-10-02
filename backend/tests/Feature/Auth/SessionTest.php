@@ -12,6 +12,14 @@ it('loga com credenciais válidas', function () {
         ->assertJsonMissingPath('data.password');
 });
 
+it('loga com o email em caixa diferente da armazenada', function () {
+    User::factory()->create(['email' => 'gui@example.com', 'password' => 'password123']);
+
+    $this->postJson('/api/v1/auth/login', ['email' => 'GUI@example.com', 'password' => 'password123'])
+        ->assertOk()
+        ->assertJsonPath('data.email', 'gui@example.com');
+});
+
 it('recusa senha errada', function () {
     User::factory()->create(['email' => 'gui@example.com', 'password' => 'password123']);
 

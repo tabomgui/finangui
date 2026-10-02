@@ -14,7 +14,7 @@ final class CreateUserCommand extends Command
 
     public function handle(CreateUser $createUser): int
     {
-        $email = (string) $this->argument('email');
+        $email = mb_strtolower(trim((string) $this->argument('email')));
         $name = (string) ($this->option('name') ?: strstr($email, '@', true));
 
         $emailCheck = Validator::make(['email' => $email], ['email' => ['required', 'email', 'unique:users,email']]);
@@ -25,8 +25,16 @@ final class CreateUserCommand extends Command
         }
 
         $password = (string) $this->secret('Senha');
+        $passwordConfirmation = (string) $this->secret('Confirme a senha');
+
         if (mb_strlen($password) < 8) {
             $this->error('A senha precisa ter pelo menos 8 caracteres.');
+
+            return self::FAILURE;
+        }
+
+        if ($password !== $passwordConfirmation) {
+            $this->error('As senhas não coincidem.');
 
             return self::FAILURE;
         }

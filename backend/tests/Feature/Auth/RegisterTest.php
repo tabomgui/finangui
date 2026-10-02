@@ -20,6 +20,18 @@ it('bloqueia cadastro quando desligado', function () use ($payload) {
     expect(User::count())->toBe(0);
 });
 
+it('bloqueia cadastro quando desligado mesmo com email já cadastrado, sem expor erro de validação', function () use ($payload) {
+    config(['finangui.registration_enabled' => false]);
+
+    User::factory()->create(['email' => $payload['email']]);
+
+    $response = $this->postJson('/api/v1/auth/register', $payload)
+        ->assertForbidden()
+        ->assertJsonPath('code', 'registration_closed');
+
+    expect($response->json())->not->toHaveKey('errors');
+});
+
 it('cadastra, cria categorias e loga quando ligado', function () use ($payload) {
     config(['finangui.registration_enabled' => true]);
 
@@ -50,4 +62,30 @@ it('recusa cadastro sem sessão stateful mesmo com payload válido', function ()
         ->assertJsonPath('code', 'session_required');
 
     expect(User::count())->toBe(0);
+});
+
+it('normaliza o email para minúsculas e sem espaços ao cadastrar', function () {
+    config(['finangui.registration_enabled' => true]);
+
+    $this->postJson('/api/v1/auth/register', [
+        'name' => 'Gui',
+        'email' => ' Gui@Example.com ',
+        'password' => 'password123',
+        'password_confirmation' => 'password123',
+    ])->assertCreated()->assertJsonPath('data.email', 'gui@example.com');
+
+    expect(User::where('email', 'gui@example.com')->exists())->toBeTrue();
+});
+
+it('recusa cadastro com email já usado em outra caixa', function () {
+    config(['finangui.registration_enabled' => true]);
+
+    User::factory()->create(['email' => 'gui@example.com']);
+
+    $this->postJson('/api/v1/auth/register', [
+        'name' => 'Gui',
+        'email' => 'GUI@example.com',
+        'password' => 'password123',
+        'password_confirmation' => 'password123',
+    ])->assertStatus(422)->assertJsonValidationErrors('email');
 });

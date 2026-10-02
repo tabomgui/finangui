@@ -12,6 +12,10 @@ class DatabaseSeeder extends Seeder
      */
     public function run(CreateUser $createUser): void
     {
+        if (app()->isProduction()) {
+            return;
+        }
+
         $createUser->handle('Dev', 'dev@finangui.test', 'password');
     }
 }

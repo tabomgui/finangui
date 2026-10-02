@@ -13,20 +13,6 @@ final class RegisterController extends Controller
 {
     public function __invoke(RegisterRequest $request, CreateUser $createUser): JsonResponse
     {
-        if (! config('finangui.registration_enabled')) {
-            return response()->json([
-                'code' => 'registration_closed',
-                'message' => 'O cadastro está fechado nesta instância.',
-            ], 403);
-        }
-
-        if (! $request->hasSession()) {
-            return response()->json([
-                'code' => 'session_required',
-                'message' => 'Cadastro só é aceito a partir do frontend (origem stateful).',
-            ], 400);
-        }
-
         $user = $createUser->handle(
             $request->string('name')->value(),
             $request->string('email')->value(),

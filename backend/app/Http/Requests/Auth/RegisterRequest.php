@@ -7,6 +7,13 @@ use Illuminate\Validation\Rules\Password;
 
 final class RegisterRequest extends ApiRequest
 {
+    protected function prepareForValidation(): void
+    {
+        if (is_string($this->input('email'))) {
+            $this->merge(['email' => mb_strtolower(trim($this->input('email')))]);
+        }
+    }
+
     /**
      * @return array<string, mixed>
      */
