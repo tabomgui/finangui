@@ -6,6 +6,8 @@ use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Auth;
 
 function projectedParcel(User $user, string $date, bool $installment = true): Transaction
@@ -41,4 +43,27 @@ it('não mexe em projetadas que não são parcela', function () {
     (new PostDueInstallments)->handle();
 
     expect(Transaction::query()->withoutGlobalScopes()->findOrFail($other->id)->status)->toBe(TransactionStatus::Projected);
+});
+
+it('é idempotente: rodar de novo não muda nada', function () {
+    $this->travelTo(now()->setDate(2026, 4, 5));
+    $parcel = projectedParcel(User::factory()->create(), '2026-04-05');
+
+    (new PostDueInstallments)->handle();
+    $after = fn () => Transaction::query()->withoutGlobalScopes()->findOrFail($parcel->id);
+    $firstRun = $after();
+
+    (new PostDueInstallments)->handle();
+    $secondRun = $after();
+
+    expect($secondRun->status)->toBe(TransactionStatus::Posted)
+        ->and($secondRun->updated_at->equalTo($firstRun->updated_at))->toBeTrue();
+});
+
+it('está agendado para rodar diariamente', function () {
+    app(Kernel::class)->bootstrap();
+
+    $events = app(Schedule::class)->events();
+
+    expect(collect($events)->contains(fn ($event) => $event->description === PostDueInstallments::class))->toBeTrue();
 });

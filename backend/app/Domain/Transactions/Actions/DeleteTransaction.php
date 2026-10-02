@@ -20,7 +20,7 @@ final class DeleteTransaction
      */
     public function handle(Transaction $transaction): void
     {
-        if ($transaction->installmentPlan !== null) {
+        if ($transaction->isInstallment()) {
             $this->deleteInstallmentPlan->handle($transaction->installmentPlan);
 
             return;

@@ -2,9 +2,12 @@
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Models\InstallmentPlan;
+use App\Domain\Cards\Support\StatementResolver;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Tags\Models\Tag;
 use App\Domain\Transactions\Models\Transaction;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
     $this->travelTo(now()->setDate(2026, 3, 6));
@@ -79,8 +82,9 @@ it('recusa valor menor que o número de parcelas', function () {
 
 it('parcela não muda valor, data, conta nem tipo', function () {
     $id = $this->postJson('/api/v1/transactions', purchase())->json('data.id');
+    $other = Account::factory()->create(['user_id' => $this->user->id]);
 
-    foreach ([['amount' => 1], ['date' => '2026-03-06'], ['direction' => 'in']] as $change) {
+    foreach ([['amount' => 1], ['date' => '2026-03-06'], ['direction' => 'in'], ['account_id' => $other->id]] as $change) {
         $this->patchJson("/api/v1/transactions/{$id}", $change)->assertStatus(409)->assertJsonPath('code', 'installment_locked');
     }
 });
@@ -105,4 +109,74 @@ it('lista mostra a parcela como n de N', function () {
 
     $this->getJson('/api/v1/transactions')->assertOk()
         ->assertJsonPath('data.0.installment.total', 3);
+});
+
+it('com statement_id explícito, as parcelas encadeiam a partir da fatura escolhida, não da data', function () {
+    $chosen = app(StatementResolver::class)->forDate($this->card, CarbonImmutable::parse('2026-04-05'));
+
+    $this->postJson('/api/v1/transactions', purchase(['statement_id' => $chosen->id]))->assertCreated();
+
+    expect(array_column(parcels(), 4))->toBe(['2026-04-20', '2026-05-20', '2026-06-20']);
+});
+
+it('recusa fatura de outro cartão e não cria o parcelamento', function () {
+    $otherCard = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+    $otherStatement = app(StatementResolver::class)->forDate($otherCard, CarbonImmutable::parse('2026-03-05'));
+
+    $this->postJson('/api/v1/transactions', purchase(['statement_id' => $otherStatement->id]))
+        ->assertStatus(409)->assertJsonPath('code', 'statement_account_mismatch');
+
+    expect(InstallmentPlan::count())->toBe(0)->and(Transaction::count())->toBe(0);
+});
+
+it('compra no dia do fechamento cai na fatura seguinte', function () {
+    $this->postJson('/api/v1/transactions', purchase(['date' => '2026-03-10']))->assertCreated();
+
+    expect(array_column(parcels(), 4))->toBe(['2026-04-20', '2026-05-20', '2026-06-20']);
+});
+
+it('compra em 31 de janeiro gera parcelas sem overflow e faturas encadeadas', function () {
+    $this->postJson('/api/v1/transactions', purchase(['date' => '2026-01-31']))->assertCreated();
+
+    expect(array_column(parcels(), 2))->toBe(['2026-01-31', '2026-02-28', '2026-03-31'])
+        ->and(array_column(parcels(), 4))->toBe(['2026-02-20', '2026-03-20', '2026-04-20']);
+});
+
+it('parcela aceita editar is_ignored, fatura, tags e notas', function () {
+    $id = $this->postJson('/api/v1/transactions', purchase())->json('data.id');
+    $tag = Tag::factory()->create(['user_id' => $this->user->id]);
+    $statement = app(StatementResolver::class)->forDate($this->card, CarbonImmutable::parse('2026-04-05'));
+
+    $this->patchJson("/api/v1/transactions/{$id}", [
+        'is_ignored' => true,
+        'statement_id' => $statement->id,
+        'tag_ids' => [$tag->id],
+        'notes' => 'nota',
+    ])->assertOk()
+        ->assertJsonPath('data.is_ignored', true)
+        ->assertJsonPath('data.statement_id', $statement->id)
+        ->assertJsonPath('data.notes', 'nota');
+
+    expect(Transaction::find($id)->tags->pluck('id')->all())->toBe([$tag->id]);
+});
+
+it('excluir uma parcela que não é a primeira exclui o parcelamento, todas as parcelas e os vínculos de tag', function () {
+    $tag = Tag::factory()->create(['user_id' => $this->user->id]);
+    $this->postJson('/api/v1/transactions', purchase(['tag_ids' => [$tag->id]]))->assertCreated();
+
+    $second = Transaction::query()->where('installment_number', 2)->firstOrFail();
+
+    $this->deleteJson("/api/v1/transactions/{$second->id}")->assertNoContent();
+
+    expect(Transaction::count())->toBe(0)
+        ->and(InstallmentPlan::count())->toBe(0)
+        ->and(DB::table('tag_transaction')->count())->toBe(0);
+});
+
+it('mostra o parcelamento no show e no update', function () {
+    $id = $this->postJson('/api/v1/transactions', purchase())->json('data.id');
+
+    $this->getJson("/api/v1/transactions/{$id}")->assertOk()->assertJsonPath('data.installment.total', 3);
+
+    $this->patchJson("/api/v1/transactions/{$id}", ['notes' => 'x'])->assertOk()->assertJsonPath('data.installment.total', 3);
 });

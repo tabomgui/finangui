@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Support\UserContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Queue\Queueable;
 
 /**
@@ -21,19 +22,22 @@ final class PostDueInstallments implements ShouldQueue
     public function handle(): void
     {
         $today = CarbonImmutable::today()->toDateString();
-        $due = fn () => Transaction::query()
+        $due = fn (Builder $query) => $query
             ->where('status', TransactionStatus::Projected->value)
             ->whereNotNull('installment_plan_id')
             ->where('date', '<=', $today);
 
-        $owners = Transaction::query()->withoutGlobalScopes()
-            ->where('status', TransactionStatus::Projected->value)
-            ->whereNotNull('installment_plan_id')
-            ->where('date', '<=', $today)
-            ->select('user_id');
+        $owners = $due(Transaction::query()->withoutGlobalScopes())->select('user_id');
 
-        User::query()->whereIn('id', $owners)->each(
-            fn (User $user) => UserContext::run($user, fn () => $due()->update(['status' => TransactionStatus::Posted->value])),
+        // eachById: owners encolhe a cada usuário processado (ele deixa de ter
+        // parcela vencida); paginação por offset (each/chunk) pularia donos
+        // depois do primeiro lote. eachById pagina pelo id do User, que não
+        // encolhe.
+        User::query()->whereIn('id', $owners)->eachById(
+            fn (User $user) => UserContext::run(
+                $user,
+                fn () => $due(Transaction::query())->update(['status' => TransactionStatus::Posted->value]),
+            ),
         );
     }
 }
