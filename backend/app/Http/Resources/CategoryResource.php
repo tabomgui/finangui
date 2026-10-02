@@ -20,7 +20,7 @@ final class CategoryResource extends JsonResource
             'id' => $this->id,
             'parent_id' => $this->parent_id,
             'name' => $this->name,
-            'kind' => $this->kind->value,
+            'kind' => $this->kind,
             'icon' => $this->icon,
             'color' => $this->color,
             'is_transfer' => $this->is_transfer,

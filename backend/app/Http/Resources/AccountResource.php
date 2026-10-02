@@ -19,7 +19,7 @@ final class AccountResource extends JsonResource
         return [
             'id' => $this->id,
             'name' => $this->name,
-            'type' => $this->type->value,
+            'type' => $this->type,
             'currency' => $this->currency,
             'opening_balance' => $this->opening_balance->cents,
             'balance' => $this->when($this->resource->hasBalance(), fn () => $this->resource->balance()->cents),

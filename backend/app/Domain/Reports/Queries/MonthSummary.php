@@ -2,6 +2,7 @@
 
 namespace App\Domain\Reports\Queries;
 
+use App\Domain\Accounts\Enums\AccountType;
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Transactions\Models\Transaction;
@@ -16,7 +17,7 @@ final class MonthSummary
      *     month: string,
      *     currency: string,
      *     total_balance: int,
-     *     accounts: list<array{id: int, name: string, type: string, currency: string, color: string|null, icon: string|null, balance: int}>,
+     *     accounts: list<array{id: int, name: string, type: AccountType, currency: string, color: string|null, icon: string|null, balance: int}>,
      *     income: int,
      *     expense: int,
      *     net: int,
@@ -53,7 +54,7 @@ final class MonthSummary
             'accounts' => $accounts->map(fn (Account $a) => [
                 'id' => $a->id,
                 'name' => $a->name,
-                'type' => $a->type->value,
+                'type' => $a->type,
                 'currency' => $a->currency,
                 'color' => $a->color,
                 'icon' => $a->icon,
