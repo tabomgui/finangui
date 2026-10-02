@@ -25,7 +25,7 @@ export function KindToggle({ value, onChange, disabled }: KindToggleProps) {
         <ToggleGroupItem
           key={option}
           value={option}
-          className="h-auto flex-col gap-1 rounded-xl border-2 border-border py-3 data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary"
+          className="h-auto flex-col gap-1 rounded-xl border-2 border-border bg-card py-3 text-foreground disabled:opacity-100 data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
         >
           <Icon className="h-5 w-5" />
           <span className="text-xs font-medium">{label}</span>

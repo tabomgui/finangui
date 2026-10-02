@@ -1,8 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { LoaderCircle } from 'lucide-react'
-import { useEffect } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
-import { useCategories } from '@/api/queries/categories'
 import { Field } from '@/components/form/field'
 import { AccountSelect } from '@/components/shared/account-select'
 import { CategoryPicker } from '@/components/shared/category-picker'
@@ -24,21 +22,14 @@ type EntryFormProps = {
   onSubmit: (values: EntryValues) => Promise<void>
   submitLabel: string
   showIgnore?: boolean
+  /** Foco automático no valor: só numa transação nova, nunca ao editar (o campo já tem conteúdo). */
+  autoFocusAmount?: boolean
 }
 
-export function EntryForm({ defaultValues, onSubmit, submitLabel, showIgnore = false }: EntryFormProps) {
-  const { data: categories = [] } = useCategories(true)
+export function EntryForm({ defaultValues, onSubmit, submitLabel, showIgnore = false, autoFocusAmount = false }: EntryFormProps) {
   const form = useForm<EntryValues>({ resolver: zodResolver(entrySchema), defaultValues })
   const { errors, isSubmitting } = form.formState
   const direction = useWatch({ control: form.control, name: 'direction' })
-  const categoryId = useWatch({ control: form.control, name: 'category_id' })
-
-  // Despesa usa categorias de despesa e receita de receita: trocar o sentido limpa uma categoria incompatível.
-  useEffect(() => {
-    const selected = categories.find((category) => category.id === categoryId)
-    const expectedKind = direction === 'out' ? 'expense' : 'income'
-    if (selected && selected.kind !== expectedKind) form.setValue('category_id', null)
-  }, [direction, categoryId, categories, form])
 
   const submit = form.handleSubmit(async (values) => {
     try {
@@ -58,7 +49,13 @@ export function EntryForm({ defaultValues, onSubmit, submitLabel, showIgnore = f
                 control={form.control}
                 name="amount"
                 render={({ field }) => (
-                  <MoneyInput {...control} value={field.value} onChange={field.onChange} onBlur={field.onBlur} autoFocus />
+                  <MoneyInput
+                    {...control}
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    autoFocus={autoFocusAmount}
+                  />
                 )}
               />
             )}

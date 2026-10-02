@@ -37,7 +37,7 @@ function NewTransactionPage() {
 
   const done = () => {
     toast.success('Lançamento salvo.')
-    navigate('/transacoes')
+    navigate('/transacoes', { replace: true })
   }
 
   return (
@@ -50,6 +50,7 @@ function NewTransactionPage() {
             key="transfer"
             defaultValues={transferDefaults({ today: today(), fromAccountId: firstAccountId })}
             submitLabel="Salvar transferência"
+            autoFocusAmount
             onSubmit={async (values) => {
               await createTransfer.mutateAsync(toTransferBody(values))
               done()
@@ -60,6 +61,7 @@ function NewTransactionPage() {
             key={kind}
             defaultValues={entryDefaults({ direction: kind, accountId: firstAccountId, today: today() })}
             submitLabel={kind === 'out' ? 'Salvar despesa' : 'Salvar receita'}
+            autoFocusAmount
             onSubmit={async (values) => {
               await createTransaction.mutateAsync(toTransactionBody(values))
               done()
@@ -74,20 +76,20 @@ function NewTransactionPage() {
 function EditTransactionPage({ id }: { id: number }) {
   const { data: transaction, isPending, isError } = useTransaction(id)
   const transferId = transaction?.transfer_id ?? null
-  const { data: transfer, isPending: transferPending } = useTransfer(transferId)
+  const { data: transfer, isPending: transferPending, isError: transferError } = useTransfer(transferId)
   const updateTransaction = useUpdateTransaction()
   const updateTransfer = useUpdateTransfer()
   const remove = useDeleteTransaction()
   const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  if (isError) return <Navigate to="/transacoes" replace />
+  if (isError || (transferId !== null && transferError)) return <Navigate to="/transacoes" replace />
   if (isPending || (transferId !== null && transferPending)) return <FullPageSpinner />
 
   const isTransfer = transferId !== null && transfer !== undefined
   const done = () => {
     toast.success('Lançamento atualizado.')
-    navigate('/transacoes')
+    navigate('/transacoes', { replace: true })
   }
 
   return (
@@ -134,7 +136,7 @@ function EditTransactionPage({ id }: { id: number }) {
         onConfirm={async () => {
           await remove.mutateAsync(id)
           toast.success('Lançamento excluído.')
-          navigate('/transacoes')
+          navigate('/transacoes', { replace: true })
         }}
       />
     </>

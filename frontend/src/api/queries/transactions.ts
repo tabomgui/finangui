@@ -38,6 +38,12 @@ export function useDeleteTransaction() {
     mutationFn: async (id: number) => {
       await expectOk(api.DELETE('/transactions/{transaction}', { params: { path: { transaction: id } } }))
     },
-    onSuccess: () => invalidateLedger(queryClient),
+    onSuccess: (_data, id) => {
+      // A transação (e, se era perna de uma transferência, a transferência) deixou de existir:
+      // tira do cache em vez de só invalidar, para não reaparecer com dado velho antes do refetch.
+      queryClient.removeQueries({ queryKey: queryKeys.transaction(id) })
+      queryClient.removeQueries({ queryKey: ['transfers'] })
+      return invalidateLedger(queryClient)
+    },
   })
 }

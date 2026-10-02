@@ -18,9 +18,11 @@ type TransferFormProps = {
   defaultValues: TransferValues
   onSubmit: (values: TransferValues) => Promise<void>
   submitLabel: string
+  /** Foco automático no valor: só numa transferência nova, nunca ao editar (o campo já tem conteúdo). */
+  autoFocusAmount?: boolean
 }
 
-export function TransferForm({ defaultValues, onSubmit, submitLabel }: TransferFormProps) {
+export function TransferForm({ defaultValues, onSubmit, submitLabel, autoFocusAmount = false }: TransferFormProps) {
   const form = useForm<TransferValues>({ resolver: zodResolver(transferSchema), defaultValues })
   const { errors, isSubmitting } = form.formState
   const fromAccountId = useWatch({ control: form.control, name: 'from_account_id' })
@@ -43,7 +45,13 @@ export function TransferForm({ defaultValues, onSubmit, submitLabel }: TransferF
                 control={form.control}
                 name="amount"
                 render={({ field }) => (
-                  <MoneyInput {...control} value={field.value} onChange={field.onChange} onBlur={field.onBlur} autoFocus />
+                  <MoneyInput
+                    {...control}
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    autoFocus={autoFocusAmount}
+                  />
                 )}
               />
             )}
@@ -54,7 +62,18 @@ export function TransferForm({ defaultValues, onSubmit, submitLabel }: TransferF
                 <Controller
                   control={form.control}
                   name="from_account_id"
-                  render={({ field }) => <AccountSelect {...control} value={field.value} onChange={field.onChange} />}
+                  render={({ field }) => (
+                    <AccountSelect
+                      {...control}
+                      value={field.value}
+                      onChange={(accountId) => {
+                        field.onChange(accountId)
+                        // Origem e destino não podem ser a mesma conta: trocar a origem para a conta
+                        // já escolhida como destino limpa o destino, em vez de deixar um estado inválido.
+                        if (accountId === form.getValues('to_account_id')) form.setValue('to_account_id', null)
+                      }}
+                    />
+                  )}
                 />
               )}
             </Field>
