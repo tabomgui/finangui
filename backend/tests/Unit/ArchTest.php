@@ -7,3 +7,7 @@ arch('sem helpers de debug')
 arch('controllers não acessam o banco direto pelo facade DB')
     ->expect('App\Http\Controllers')
     ->not->toUse('Illuminate\Support\Facades\DB');
+
+arch('domínio não depende da camada HTTP')
+    ->expect('App\Domain')
+    ->not->toUse('App\Http');
