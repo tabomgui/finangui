@@ -14,6 +14,7 @@ import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { cn } from '@/lib/utils'
 import { AccountFormDialog } from '../accounts/account-form-dialog'
 import { CardLimitBar } from './card-limit-bar'
 import { dueLabel } from './statement-labels'
@@ -21,7 +22,7 @@ import { StatementStatusBadge } from './statement-status-badge'
 
 export function CardsPage() {
   const [showArchived, setShowArchived] = useState(false)
-  const { data: cards, isPending, isError, refetch } = useCards(showArchived)
+  const { data: cards, isPending, isError, isPlaceholderData, refetch } = useCards(showArchived)
   const [formOpen, setFormOpen] = useState(false)
 
   return (
@@ -54,7 +55,10 @@ export function CardsPage() {
             ))}
           </div>
         ) : cards && cards.length > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div
+            aria-busy={isPlaceholderData}
+            className={cn('grid gap-4 transition-opacity sm:grid-cols-2', isPlaceholderData && 'opacity-60')}
+          >
             {cards.map((card) => (
               <CardTile key={card.id} card={card} />
             ))}
@@ -84,13 +88,16 @@ export function CardsPage() {
 function CardTile({ card }: { card: CardData }) {
   const statement = card.current_statement
   return (
-    <Link to={`/cartoes/${card.id}`} className="block">
+    <Link
+      to={`/cartoes/${card.id}`}
+      className="block rounded-2xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+    >
       <Card className="space-y-4 rounded-2xl p-4 shadow-card transition-colors hover:bg-muted/40">
         <div className="flex items-center gap-3">
           <CategoryIcon icon={card.icon} color={card.color} />
           <div className="min-w-0 flex-1">
-            <p className="flex items-center gap-2 truncate font-medium">
-              {card.name}
+            <p className="flex min-w-0 items-center gap-2 font-medium">
+              <span className="truncate">{card.name}</span>
               {card.is_archived && <Badge variant="secondary">Arquivado</Badge>}
             </p>
             {card.last_four && <p className="text-xs text-muted-foreground">•••• {card.last_four}</p>}

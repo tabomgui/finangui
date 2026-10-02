@@ -50,9 +50,13 @@ export function StatementDatesDialog({ open, onOpenChange, statement }: Statemen
     defaultValues: defaultsFor(statement),
   })
 
+  // Reage à troca de fatura (id), não à identidade do objeto: um refetch em segundo plano
+  // pode trazer uma nova referência de `statement` com os mesmos valores e não deve resetar
+  // o formulário enquanto o usuário edita.
   useEffect(() => {
     if (open) form.reset(defaultsFor(statement))
-  }, [open, statement, form])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ver comentário acima: só reage a open/statement.id
+  }, [open, statement.id, form])
 
   const onSubmit = form.handleSubmit(async (values) => {
     try {

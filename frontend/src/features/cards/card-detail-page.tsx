@@ -1,7 +1,8 @@
-import { CreditCard } from 'lucide-react'
+import { CreditCard, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
+import { ApiError } from '@/api/errors'
 import { useCard, useCardStatements } from '@/api/queries/cards'
 import type { Card } from '@/api/types'
 import { PageBody } from '@/components/layout/page-body'
@@ -23,29 +24,74 @@ function cardSubtitle(card: Card): string {
   return `${digits}fecha dia ${card.closing_day}, vence dia ${card.due_day}`
 }
 
+/** Casca fina: só resolve o id da rota. A chave em `cardId` remonta o conteúdo inteiro ao trocar
+ * de cartão, para que abas, diálogos e a fatura selecionada não sobrevivam de um cartão para o outro. */
 export function CardDetailPage() {
   const cardId = Number(useParams().id)
+  return <CardDetailContent key={cardId} cardId={cardId} />
+}
+
+function CardDetailContent({ cardId }: { cardId: number }) {
   const [params, setParams] = useSearchParams()
-  const { data: card, isError: cardError } = useCard(cardId)
-  const { data: statements = [], isPending: statementsPending } = useCardStatements(cardId)
+  const { data: card, error: cardError, isError: cardIsError, refetch: refetchCard } = useCard(cardId)
+  const {
+    data: statements = [],
+    isPending: statementsPending,
+    isError: statementsIsError,
+    refetch: refetchStatements,
+  } = useCardStatements(cardId)
   const [tab, setTab] = useState<DetailTab>('fatura')
   const [paying, setPaying] = useState(false)
   const [editingDates, setEditingDates] = useState(false)
 
+  const notFound = cardIsError && cardError instanceof ApiError && cardError.status === 404
+
   // Toast uma vez (ref) + <Navigate replace />, mesmo padrão de transaction-form-page.tsx:
-  // evita duplicar sob StrictMode e a cada nova renderização.
+  // evita duplicar sob StrictMode e a cada nova renderização. Só para 404 real: outros erros
+  // (500, rede) não existem o cartão, não devem mandar o usuário de volta para a lista.
   const toastShown = useRef(false)
   useEffect(() => {
-    if (cardError && !toastShown.current) {
+    if (notFound && !toastShown.current) {
       toastShown.current = true
       toast.error('Cartão não encontrado.')
     }
-  }, [cardError])
+  }, [notFound])
 
-  if (cardError) return <Navigate to="/cartoes" replace />
+  const selectedId = pickStatementId(statements, params.get('fatura'), card?.current_statement?.id ?? null)
+
+  // Fixa a fatura escolhida na URL assim que resolvida: sem isso, um refetch depois de editar
+  // datas ou pagar poderia recalcular `current_statement` e pular a fatura por baixo do usuário.
+  useEffect(() => {
+    if (card && selectedId !== null && params.get('fatura') !== String(selectedId)) {
+      setParams({ fatura: String(selectedId) }, { replace: true })
+    }
+  }, [card, selectedId, params, setParams])
+
+  if (notFound) return <Navigate to="/cartoes" replace />
+
+  // Erro sem nada em cache: tela de erro com retry. Erro com dado em cache (ex.: um refetch em
+  // segundo plano falhou, mas já tínhamos o cartão carregado) ignora o erro e segue mostrando.
+  if (cardIsError && !card) {
+    return (
+      <>
+        <PageHeader title="Cartão" back="/cartoes" />
+        <PageBody>
+          <EmptyState
+            icon={TriangleAlert}
+            title="Não foi possível carregar o cartão."
+            action={
+              <Button variant="outline" onClick={() => refetchCard()}>
+                Tentar de novo
+              </Button>
+            }
+          />
+        </PageBody>
+      </>
+    )
+  }
+
   if (!card || statementsPending) return <FullPageSpinner />
 
-  const selectedId = pickStatementId(statements, params.get('fatura'), card.current_statement?.id ?? null)
   const selected = statements.find((statement) => statement.id === selectedId) ?? null
 
   return (
@@ -70,7 +116,17 @@ export function CardDetailPage() {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="fatura" className="space-y-4">
-            {selected ? (
+            {statementsIsError ? (
+              <EmptyState
+                icon={TriangleAlert}
+                title="Não foi possível carregar as faturas."
+                action={
+                  <Button variant="outline" onClick={() => refetchStatements()}>
+                    Tentar de novo
+                  </Button>
+                }
+              />
+            ) : selected ? (
               <>
                 <StatementSummary
                   statement={selected}

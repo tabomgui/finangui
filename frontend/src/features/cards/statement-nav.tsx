@@ -10,6 +10,12 @@ type StatementNavProps = {
   onSelect: (id: number) => void
 }
 
+/** `formatMonth` capitaliza para início de frase; no meio de "Fatura de outubro…" precisa ficar minúsculo. */
+function lowercaseMonth(key: string): string {
+  const label = formatMonth(key)
+  return label.charAt(0).toLowerCase() + label.slice(1)
+}
+
 /** Navegação branca entre faturas, para ficar dentro do PageHeader (mesmo padrão do MonthNav do dashboard). */
 export function StatementNav({ statements, selectedId, onSelect }: StatementNavProps) {
   const index = statements.findIndex((statement) => statement.id === selectedId)
@@ -28,8 +34,8 @@ export function StatementNav({ statements, selectedId, onSelect }: StatementNavP
       >
         <ChevronLeft className="h-5 w-5" />
       </button>
-      <div className="text-center">
-        <p className="text-sm font-semibold">Fatura de {formatMonth(selected.due_date.slice(0, 7))}</p>
+      <div className="text-center" aria-live="polite">
+        <p className="text-sm font-semibold">Fatura de {lowercaseMonth(selected.due_date.slice(0, 7))}</p>
         <p className="text-xs text-white/80">Vence {formatDate(selected.due_date)}</p>
       </div>
       <button

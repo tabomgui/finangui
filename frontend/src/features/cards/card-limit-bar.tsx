@@ -1,5 +1,6 @@
 import type { Card } from '@/api/types'
 import { MoneyText } from '@/components/shared/money-text'
+import { formatMoney } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
 type CardLimitBarProps = Pick<Card, 'credit_limit' | 'limit' | 'currency'>
@@ -12,6 +13,7 @@ function share(part: number, whole: number): string {
 
 export function CardLimitBar({ credit_limit, limit, currency }: CardLimitBarProps) {
   const committed = limit.used + limit.projected
+  const clampedCommitted = Math.min(Math.max(committed, 0), credit_limit)
   return (
     <div className="space-y-2">
       <div
@@ -19,7 +21,8 @@ export function CardLimitBar({ credit_limit, limit, currency }: CardLimitBarProp
         aria-label="Uso do limite"
         aria-valuemin={0}
         aria-valuemax={credit_limit}
-        aria-valuenow={committed}
+        aria-valuenow={clampedCommitted}
+        aria-valuetext={`${formatMoney(clampedCommitted, currency)} de ${formatMoney(credit_limit, currency)}`}
         className="flex h-2.5 overflow-hidden rounded-full bg-muted"
       >
         <span className="bg-expense" style={{ width: share(limit.used, credit_limit) }} />

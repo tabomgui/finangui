@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatDayLabel } from '@/lib/date'
+import { cn } from '@/lib/utils'
 import { groupByDay } from '../transactions/group-by-day'
 import { TransactionRow } from '../transactions/transaction-row'
 
@@ -31,7 +32,10 @@ export function StatementTransactions({ statementId }: { statementId: number }) 
 
   return (
     <>
-      <Card className="gap-0 overflow-clip rounded-2xl p-0 shadow-card">
+      <Card
+        aria-busy={query.isPlaceholderData}
+        className={cn('gap-0 overflow-clip rounded-2xl p-0 shadow-card transition-opacity', query.isPlaceholderData && 'opacity-60')}
+      >
         {query.isPending ? (
           <div className="space-y-2 p-3">
             {[0, 1, 2].map((i) => (
