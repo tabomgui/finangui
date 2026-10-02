@@ -40,7 +40,9 @@ export function CategoryPicker({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    // `modal`: o Popover fica dentro de um Sheet (ex.: filtros de transações); sem isso, o scroll-lock
+    // do Sheet intercepta a roda do mouse sobre a lista flutuante e o scroll não funciona.
+    <Popover modal open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button {...control} type="button" variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-normal">
           {selected ? (

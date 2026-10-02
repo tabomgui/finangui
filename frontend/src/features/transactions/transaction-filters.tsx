@@ -19,9 +19,18 @@ const ALL = 'all'
 
 export function TransactionFilters({ filters }: { filters: Filters }) {
   const [, setParams] = useSearchParams()
-  const [search, setSearch] = useState(filters.search ?? '')
+  const urlSearch = filters.search ?? ''
+  const [search, setSearch] = useState(urlSearch)
+  const [seenUrlSearch, setSeenUrlSearch] = useState(urlSearch)
   const debouncedSearch = useDebouncedValue(search, 350)
   const { data: tags = [] } = useTags()
+
+  // A busca também pode mudar por fora (link compartilhado, voltar no histórico, "Limpar filtros").
+  // Comparar com o último valor de URL visto, em vez de usar um efeito, evita um laço com o debounce.
+  if (urlSearch !== seenUrlSearch) {
+    setSeenUrlSearch(urlSearch)
+    if (urlSearch !== debouncedSearch.trim()) setSearch(urlSearch)
+  }
 
   const setFilter = <K extends keyof Filters>(key: K, value: Filters[K] | undefined) =>
     setParams((current) => paramsWithFilter(current, key, value), { replace: true })
@@ -43,7 +52,8 @@ export function TransactionFilters({ filters }: { filters: Filters }) {
           placeholder="Buscar pela descrição"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          className="pl-9"
+          maxLength={100}
+          className="bg-card pl-9 shadow-card dark:bg-card"
         />
       </div>
       <Sheet>
@@ -111,11 +121,11 @@ export function TransactionFilters({ filters }: { filters: Filters }) {
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-2">
                 <Label htmlFor="filter-from">De</Label>
-                <DateInput id="filter-from" value={filters.from ?? ''} onChange={(value) => setFilter('from', value || undefined)} />
+                <DateInput id="filter-from" value={filters.from ?? ''} max={filters.to} onChange={(value) => setFilter('from', value || undefined)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="filter-to">Até</Label>
-                <DateInput id="filter-to" value={filters.to ?? ''} onChange={(value) => setFilter('to', value || undefined)} />
+                <DateInput id="filter-to" value={filters.to ?? ''} min={filters.from} onChange={(value) => setFilter('to', value || undefined)} />
               </div>
             </div>
             <Button

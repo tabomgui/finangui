@@ -33,8 +33,8 @@ export function TransactionRow({ transaction, selectable = false, selected = fal
         <p className={cn('truncate font-medium', transaction.is_ignored && 'text-muted-foreground line-through')}>
           {transaction.description}
         </p>
-        <p className="flex flex-wrap items-center gap-1 truncate text-xs text-muted-foreground">
-          {subtitle}
+        <p className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+          <span className="min-w-0 truncate">{subtitle}</span>
           {transaction.status === 'pending' && <Badge variant="outline">Pendente</Badge>}
           {transaction.status === 'projected' && <Badge variant="outline">Prevista</Badge>}
           {transaction.is_ignored && <Badge variant="secondary">Ignorada</Badge>}
@@ -49,8 +49,8 @@ export function TransactionRow({ transaction, selectable = false, selected = fal
         cents={transaction.amount}
         currency={transaction.currency}
         direction={transaction.direction}
-        colored={!isTransfer}
-        className="shrink-0 font-semibold"
+        colored={!isTransfer && !transaction.is_ignored}
+        className={cn('shrink-0 font-semibold', transaction.is_ignored && 'text-muted-foreground')}
       />
     </>
   )
