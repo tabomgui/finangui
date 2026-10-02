@@ -25,7 +25,14 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <ComingSoonPage title="Início" /> },
           { path: 'transacoes', element: <ComingSoonPage title="Transações" /> },
-          { path: 'transacoes/nova', element: <ComingSoonPage title="Nova transação" /> },
+          {
+            path: 'transacoes/nova',
+            lazy: lazyPage(() => import('@/features/transactions/transaction-form-page'), 'TransactionFormPage'),
+          },
+          {
+            path: 'transacoes/:id',
+            lazy: lazyPage(() => import('@/features/transactions/transaction-form-page'), 'TransactionFormPage'),
+          },
           { path: 'contas', lazy: lazyPage(() => import('@/features/accounts/accounts-page'), 'AccountsPage') },
           { path: 'categorias', lazy: lazyPage(() => import('@/features/categories/categories-page'), 'CategoriesPage') },
           { path: 'tags', lazy: lazyPage(() => import('@/features/tags/tags-page'), 'TagsPage') },
