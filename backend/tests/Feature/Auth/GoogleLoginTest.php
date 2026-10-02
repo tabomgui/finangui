@@ -30,7 +30,11 @@ function frontend(string $path): string
 }
 
 beforeEach(function () {
-    config(['services.google.client_id' => 'client-id', 'services.google.client_secret' => 'secret']);
+    config([
+        'services.google.client_id' => 'client-id',
+        'services.google.client_secret' => 'secret',
+        'services.google.redirect' => 'http://localhost/api/auth/google/callback',
+    ]);
 });
 
 it('volta para o login quando o Google não está configurado', function () {

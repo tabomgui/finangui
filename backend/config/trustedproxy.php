@@ -6,8 +6,9 @@ return [
     | middleware Illuminate\Http\Middleware\TrustProxies).
     |
     | Essa chave é lida em tempo de requisição, dentro de
-    | TrustProxies::handle() (TrustProxies::proxies() ?: config('trustedproxy.proxies')),
-    | e não em bootstrap/app.php: nesse ponto do boot, o closure passado a
+    | TrustProxies::setTrustedProxyIpAddresses() (chamado por handle()):
+    | $this->proxies() ?: config('trustedproxy.proxies'). Não em bootstrap/app.php:
+    | nesse ponto do boot, o closure passado a
     | withMiddleware() já roda (via afterResolving(HttpKernel::class)), mas
     | LoadEnvironmentVariables/LoadConfiguration ainda não — então env() e
     | config() não são confiáveis ali (confirmado lendo o boot do Laravel 13:
