@@ -26,8 +26,9 @@ function account(overrides: Partial<Account> = {}): Account {
 
 const cardAccount = account()
 const checkingAccount = account({ id: 2, name: 'Inter', type: 'checking', credit_limit: null, closing_day: null, due_day: null, last_four: null })
+const otherCardAccount = account({ id: 3, name: 'Outro Cartão' })
 
-let mockAccounts: Account[] = [cardAccount, checkingAccount]
+let mockAccounts: Account[] = [cardAccount, checkingAccount, otherCardAccount]
 let mockPreview: { due_date: string } | undefined = { due_date: '2026-10-17' }
 let mockStatements: CardStatement[] = []
 
@@ -71,7 +72,7 @@ function Harness({ defaultValues, ...rest }: HarnessProps) {
 }
 
 beforeEach(() => {
-  mockAccounts = [cardAccount, checkingAccount]
+  mockAccounts = [cardAccount, checkingAccount, otherCardAccount]
   mockPreview = { due_date: '2026-10-17' }
   mockStatements = []
 })
@@ -136,5 +137,39 @@ describe('CardEntryFields', () => {
 
     expect(screen.getByText('Fatura')).toBeInTheDocument()
     expect(screen.getByText('Vence 17/10/2026 · Aberta')).toBeInTheDocument()
+  })
+
+  it('override não sobrevive à troca de cartão: o select de fatura não aparece numa conta diferente da original', () => {
+    mockPreview = { due_date: '2026-11-17' }
+
+    render(
+      <Harness
+        defaultValues={{ ...entryDefaults({ direction: 'out', accountId: 3, today: '2026-10-05' }), statement_id: 99 }}
+        mode="edit"
+        initialAccountId={1}
+        initialDate="2026-10-05"
+        initialStatementId={50}
+      />,
+    )
+
+    expect(screen.queryByText('Fatura')).not.toBeInTheDocument()
+    expect(screen.getByText('Entra na fatura que vence em 17/11/2026.')).toBeInTheDocument()
+  })
+
+  it('Ajuste: mudar a data (mesma conta, sem escolher fatura) esconde o select e mostra a prévia', () => {
+    mockPreview = { due_date: '2026-11-17' }
+
+    render(
+      <Harness
+        defaultValues={{ ...entryDefaults({ direction: 'out', accountId: 1, today: '2026-10-06' }), statement_id: 50 }}
+        mode="edit"
+        initialAccountId={1}
+        initialDate="2026-10-05"
+        initialStatementId={50}
+      />,
+    )
+
+    expect(screen.queryByText('Fatura')).not.toBeInTheDocument()
+    expect(screen.getByText('Entra na fatura que vence em 17/11/2026.')).toBeInTheDocument()
   })
 })

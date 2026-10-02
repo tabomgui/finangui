@@ -18,9 +18,10 @@ import { KindToggle, type TransactionKind } from './kind-toggle'
 import { TransferForm } from './transfer-form'
 
 /** Destino de volta (botão Voltar, "Cancelar", depois de salvar/excluir): a tela de origem quando é um
- * caminho interno conhecido (ex.: a fatura do cartão), senão a lista de transações. */
+ * caminho interno conhecido (ex.: a fatura do cartão), senão a lista de transações. Rejeita "//..."
+ * (URL relativa de protocolo: o navegador trataria como outro host, não como caminho interno). */
 function backDestination(from: unknown): string {
-  return typeof from === 'string' && from.startsWith('/') ? from : '/transacoes'
+  return typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') ? from : '/transacoes'
 }
 
 const KIND_FROM_PARAM: Record<string, TransactionKind> = { despesa: 'out', receita: 'in', transferencia: 'transfer' }
@@ -32,6 +33,7 @@ export function TransactionFormPage() {
 }
 
 function NewTransactionPage() {
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const [kind, setKind] = useState<TransactionKind>(KIND_FROM_PARAM[searchParams.get('tipo') ?? ''] ?? 'out')
   const { data: accounts, isPending } = useAccounts(false)
@@ -43,15 +45,16 @@ function NewTransactionPage() {
   const contaParam = Number(searchParams.get('conta'))
   const accountFromParam = accounts?.find((account) => account.id === contaParam)
   const firstAccountId = accountFromParam?.id ?? accounts?.[0]?.id ?? null
+  const backTo = backDestination(location.state?.from)
 
   const done = () => {
     toast.success('Lançamento salvo.')
-    navigate('/transacoes', { replace: true })
+    navigate(backTo, { replace: true })
   }
 
   return (
     <>
-      <PageHeader title="Nova transação" back="/transacoes" />
+      <PageHeader title="Nova transação" back={backTo} />
       <PageBody className="max-w-2xl">
         <KindToggle value={kind} onChange={setKind} />
         {kind === 'transfer' ? (
@@ -175,7 +178,7 @@ function EditTransactionPage({ id }: { id: number }) {
         destructive
         onConfirm={async () => {
           await remove.mutateAsync(id)
-          toast.success('Lançamento excluído.')
+          toast.success(kind === 'installment' ? 'Parcelamento excluído.' : 'Lançamento excluído.')
           navigate(backTo, { replace: true })
         }}
       />

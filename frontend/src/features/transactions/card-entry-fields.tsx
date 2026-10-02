@@ -1,8 +1,6 @@
-import { useState } from 'react'
 import { Controller, useWatch, type UseFormReturn } from 'react-hook-form'
 import { useAccounts } from '@/api/queries/accounts'
 import { useCardStatements, useStatementPreview } from '@/api/queries/cards'
-import type { CardStatement } from '@/api/types'
 import { Field } from '@/components/form/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { STATUS_LABELS } from '@/features/cards/statement-labels'
@@ -11,7 +9,7 @@ import type { EntryValues } from './form-values'
 
 const INSTALLMENT_OPTIONS = Array.from({ length: 48 }, (_, index) => index + 1)
 
-type Preview = Pick<CardStatement, 'due_date'>
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
 type CardEntryFieldsProps = {
   form: UseFormReturn<EntryValues>
@@ -30,6 +28,7 @@ export function CardEntryFields({
   initialDate,
   initialStatementId = null,
 }: CardEntryFieldsProps) {
+  const { errors } = form.formState
   const accountId = useWatch({ control: form.control, name: 'account_id' })
   const date = useWatch({ control: form.control, name: 'date' })
   const direction = useWatch({ control: form.control, name: 'direction' })
@@ -40,23 +39,24 @@ export function CardEntryFields({
   const account = accounts.find((item) => item.id === accountId)
   const isCreditCard = account?.type === 'credit_card'
 
-  // Mesma conta e mesma data da transação original: o select de fatura fica disponível. Se o
-  // usuário já escolheu uma fatura diferente da original (via esse mesmo select), ele continua
-  // visível mesmo depois de mudar conta/data — só o valor escolhido é que importa a partir daí.
+  // Select de fatura só com a MESMA conta da transação original (trocar de conta sempre volta pro
+  // automático — o reset de `statement_id` já acontece no onChange da conta, em `entry-form.tsx`;
+  // a condição aqui é defesa redundante). Dentro da mesma conta, fica disponível quando a data
+  // também não mudou, ou quando o usuário já escolheu uma fatura diferente da original por esse
+  // mesmo select (nesse caso continua visível mesmo que a data mude depois).
   const sameAccount = accountId === initialAccountId
   const sameDate = initialDate === undefined || date === initialDate
   const statementOverridden = statementId !== initialStatementId
-  const showStatementSelect = mode === 'edit' && isCreditCard && (statementOverridden || (sameAccount && sameDate))
+  const showStatementSelect = mode === 'edit' && isCreditCard && sameAccount && (sameDate || statementOverridden)
 
-  const previewCardId = isCreditCard && !showStatementSelect ? (accountId ?? null) : null
-  const preview = useStatementPreview(previewCardId, date ?? null)
-  // `useStatementPreview` não usa `keepPreviousData` (serve a outros usos onde isso seria errado);
-  // aqui guardamos o último valor visto para não piscar vazio a cada tecla digitada na data
-  // ("Storing information from previous renders", padrão do próprio React: `setState` direto no
-  // corpo do componente, nunca num efeito, bail-out automático quando o valor não mudou).
-  const [lastPreview, setLastPreview] = useState<Preview | undefined>(undefined)
-  if (preview.data && preview.data !== lastPreview) setLastPreview(preview.data)
-  const previewData = preview.data ?? lastPreview
+  const dateValid = typeof date === 'string' && DATE_ONLY.test(date)
+  const previewEnabled = isCreditCard && !showStatementSelect && accountId !== null && dateValid
+  const preview = useStatementPreview(previewEnabled ? accountId : null, previewEnabled ? date : null)
+  // `useStatementPreview` usa `placeholderData: keepPreviousData` (único uso do hook) pra não
+  // piscar vazio a cada tecla digitada na data; só que isso também mantém o valor da fatura
+  // anterior enquanto a prévia da nova conta/data ainda não chegou ou quando a prévia está
+  // desabilitada — por isso só mostramos o texto quando a consulta está habilitada e sem erro.
+  const previewData = previewEnabled && !preview.isError ? preview.data : undefined
 
   const statements = useCardStatements(showStatementSelect ? (accountId ?? null) : null)
 
@@ -65,7 +65,7 @@ export function CardEntryFields({
   return (
     <div className="space-y-3 rounded-xl border border-border p-3">
       {mode === 'create' && direction === 'out' && (
-        <Field label="Parcelas" htmlFor="entry-installments">
+        <Field label="Parcelas" htmlFor="entry-installments" error={errors.installments?.message}>
           {(control) => (
             <Controller
               control={form.control}
@@ -90,7 +90,7 @@ export function CardEntryFields({
       )}
 
       {showStatementSelect ? (
-        <Field label="Fatura" htmlFor="entry-statement">
+        <Field label="Fatura" htmlFor="entry-statement" error={errors.statement_id?.message}>
           {(control) => (
             <Controller
               control={form.control}
@@ -117,7 +117,7 @@ export function CardEntryFields({
         </Field>
       ) : (
         previewData && (
-          <p className="text-sm text-muted-foreground">
+          <p aria-live="polite" className="text-sm text-muted-foreground">
             {installments > 1
               ? `Primeira parcela na fatura que vence em ${formatDate(previewData.due_date)}. O valor informado é o total da compra.`
               : `Entra na fatura que vence em ${formatDate(previewData.due_date)}.`}

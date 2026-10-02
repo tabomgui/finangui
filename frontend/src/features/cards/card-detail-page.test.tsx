@@ -89,6 +89,12 @@ function LocationProbe() {
   return <div data-testid="location">{location.pathname + location.search}</div>
 }
 
+/** Mostra o `state` recebido por quem navegou pra essa rota (ex.: `from`, pra voltar ao cartão). */
+function LocationStateProbe() {
+  const location = useLocation()
+  return <div data-testid="location-state">{JSON.stringify(location.state)}</div>
+}
+
 function renderPage(initialPath = '/cartoes/1') {
   const client = new QueryClient()
   return render(
@@ -185,6 +191,27 @@ describe('CardDetailPage', () => {
       'href',
       '/transacoes/nova?conta=1',
     )
+  })
+
+  it('"Registrar compra" leva a origem (`state.from`) para o lançamento voltar ao cartão', () => {
+    mockCard = { ...nubank, current_statement: null }
+    mockStatements = []
+
+    const client = new QueryClient()
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/cartoes/1']}>
+          <Routes>
+            <Route path="/cartoes/:id" element={<CardDetailPage />} />
+            <Route path="/transacoes/nova" element={<LocationStateProbe />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('link', { name: 'Registrar compra' }))
+
+    expect(screen.getByTestId('location-state')).toHaveTextContent('/cartoes/1')
   })
 
   it('erro ao carregar as faturas mostra estado de erro com "Tentar de novo"', () => {

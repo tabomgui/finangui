@@ -1,6 +1,6 @@
 import { CreditCard, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ApiError } from '@/api/errors'
 import { useCard, useCardStatements } from '@/api/queries/cards'
@@ -34,6 +34,7 @@ export function CardDetailPage() {
 }
 
 function CardDetailContent({ cardId }: { cardId: number }) {
+  const location = useLocation()
   const [params, setParams] = useSearchParams()
   const { data: card, error: cardError, isError: cardIsError, refetch: refetchCard } = useCard(cardId)
   const {
@@ -145,7 +146,12 @@ function CardDetailContent({ cardId }: { cardId: number }) {
                 description="Registre a primeira compra do cartão para começar a fatura."
                 action={
                   <Button asChild>
-                    <Link to={`/transacoes/nova?conta=${card.id}`}>Registrar compra</Link>
+                    <Link
+                      to={`/transacoes/nova?conta=${card.id}`}
+                      state={{ from: location.pathname + location.search }}
+                    >
+                      Registrar compra
+                    </Link>
                   </Button>
                 }
               />

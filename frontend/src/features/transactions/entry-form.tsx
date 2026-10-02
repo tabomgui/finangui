@@ -68,7 +68,7 @@ export function EntryForm({
   return (
     <form className="space-y-4" onSubmit={submit} noValidate>
       {lockedReason && (
-        <div className="flex items-start gap-2 rounded-xl bg-muted p-3 text-sm text-muted-foreground">
+        <div role="note" className="flex items-start gap-2 rounded-xl bg-muted p-3 text-sm text-muted-foreground">
           <Info className="h-4 w-4 shrink-0" />
           <p>{lockedReason}</p>
         </div>
@@ -103,7 +103,19 @@ export function EntryForm({
                   control={form.control}
                   name="account_id"
                   render={({ field }) => (
-                    <AccountSelect {...control} value={field.value} onChange={field.onChange} disabled={locked} />
+                    <AccountSelect
+                      {...control}
+                      value={field.value}
+                      onChange={(accountId) => {
+                        field.onChange(accountId)
+                        // Trocar de conta invalida parcelas e fatura escolhidas: o backend recalcula
+                        // a fatura automaticamente, e "parcelas" só faz sentido na conta de cartão
+                        // original (ver `card-entry-fields.tsx`).
+                        form.setValue('installments', 1)
+                        form.setValue('statement_id', defaultValues.statement_id ?? null)
+                      }}
+                      disabled={locked}
+                    />
                   )}
                 />
               )}

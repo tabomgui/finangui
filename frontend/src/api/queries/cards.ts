@@ -31,7 +31,12 @@ export function useCardStatements(cardId: number | null) {
   })
 }
 
-/** Fatura em que um lançamento na data cairia (sem criar nada). */
+/**
+ * Fatura em que um lançamento na data cairia (sem criar nada). Único uso é o texto auxiliar em
+ * `card-entry-fields.tsx`, que troca de conta/data a cada tecla: `keepPreviousData` evita que o
+ * texto pisque vazio enquanto a nova prévia carrega (o chamador decide quando a conta muda demais
+ * para o valor anterior ainda fazer sentido).
+ */
 export function useStatementPreview(cardId: number | null, date: string | null) {
   return useQuery({
     queryKey: queryKeys.statementPreview(cardId ?? 0, date ?? ''),
@@ -44,6 +49,7 @@ export function useStatementPreview(cardId: number | null, date: string | null) 
           }),
         )
       ).data,
+    placeholderData: keepPreviousData,
   })
 }
 

@@ -153,4 +153,16 @@ describe('TransactionFormPage', () => {
     await waitFor(() => expect(screen.getByText('Cartão')).toBeInTheDocument())
     expect(updateTransactionMutateAsync).toHaveBeenCalled()
   })
+
+  it('criação a partir do cartão ("Registrar compra"): salvar volta para a origem', async () => {
+    mockAccounts = [account({ id: 1, name: 'Inter' })]
+
+    renderPage([{ pathname: '/transacoes/nova', state: { from: '/cartoes/5' } }])
+
+    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '10,00' } })
+    fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Compra' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))
+
+    await waitFor(() => expect(screen.getByText('Cartão')).toBeInTheDocument())
+  })
 })
