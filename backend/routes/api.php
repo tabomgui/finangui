@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\Auth\AuthStatusController;
 use App\Http\Controllers\Api\V1\Auth\SessionController;
+use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\MeController;
 use Illuminate\Support\Facades\Route;
 
@@ -12,5 +13,6 @@ Route::prefix('v1')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('auth/logout', [SessionController::class, 'destroy']);
         Route::get('me', [MeController::class, 'show']);
+        Route::apiResource('categories', CategoryController::class);
     });
 });

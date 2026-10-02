@@ -14,7 +14,6 @@ use Illuminate\Support\Facades\Auth;
  * Por isso toda rota que toca um model com este trait PRECISA estar atrás de
  * auth:sanctum — o middleware é a barreira real.
  */
-// @phpstan-ignore trait.unused (ainda não há model de domínio consumindo o trait; entrará em uso nas próximas tasks)
 trait BelongsToUser
 {
     protected static function bootBelongsToUser(): void
