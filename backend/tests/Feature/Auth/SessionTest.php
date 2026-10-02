@@ -50,6 +50,11 @@ it('limita tentativas de login por email', function () {
         ->assertStatus(429);
 });
 
+it('recusa email em formato inválido sem derrubar o rate limiter', function () {
+    $this->postJson('/api/v1/auth/login', ['email' => ['x'], 'password' => 'a'])
+        ->assertStatus(422);
+});
+
 it('faz logout e invalida a sessão', function () {
     User::factory()->create(['email' => 'gui@example.com', 'password' => 'password123']);
 
@@ -70,6 +75,10 @@ it('regenera o id da sessão no login', function () {
     $before = $this->getJson('/api/v1/auth/status');
     $idBefore = session()->getId();
     $cookie = $before->getCookie($cookieName, false)?->getValue();
+
+    // Prova que o replay do cookie realmente mantém a mesma sessão (senão o teste seria vazio).
+    $this->withUnencryptedCookie($cookieName, $cookie)->getJson('/api/v1/auth/status');
+    expect(session()->getId())->toBe($idBefore);
 
     $this->withUnencryptedCookie($cookieName, $cookie)
         ->postJson('/api/v1/auth/login', ['email' => 'gui@example.com', 'password' => 'password123'])
