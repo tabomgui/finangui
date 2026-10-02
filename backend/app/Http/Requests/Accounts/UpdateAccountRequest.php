@@ -18,14 +18,14 @@ final class UpdateAccountRequest extends ApiRequest
      */
     public function rules(): array
     {
-        /** @var Account $account */
+        // Scramble chama rules() fora de uma request real (sem rota) para gerar a
+        // doc da API: $account precisa ser null-safe, e as regras de tipo (integer/
+        // string) precisam aparecer sempre, sem depender de closures condicionais,
+        // para o schema gerado não cair em "string" por falta de pista.
         $account = $this->route('account');
-        $type = $this->input('type', $account->type->value);
-        $isCard = $type === AccountType::CreditCard->value;
-        $becomingCard = $isCard && ! $account->isCreditCard();
-        $card = fn (array $rules) => $isCard
-            ? [$becomingCard ? 'required' : 'sometimes', ...$rules]
-            : ['prohibited'];
+        $current = $account instanceof Account ? $account->type->value : null;
+        $isCard = $this->input('type', $current) === AccountType::CreditCard->value;
+        $becomingCard = $isCard && $current !== AccountType::CreditCard->value;
 
         return [
             'name' => ['sometimes', 'required', 'string', 'max:60'],
@@ -34,10 +34,10 @@ final class UpdateAccountRequest extends ApiRequest
             'color' => ['sometimes', 'nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'icon' => ['sometimes', 'nullable', 'string', 'max:50'],
             'is_archived' => ['sometimes', 'boolean'],
-            'credit_limit' => $card(['integer', 'between:0,1000000000000000']),
-            'closing_day' => $card(['integer', 'between:1,31']),
-            'due_day' => $card(['integer', 'between:1,31']),
-            'last_four' => $isCard ? ['sometimes', 'nullable', 'string', 'regex:/^\d{4}$/'] : ['prohibited'],
+            'credit_limit' => [Rule::requiredIf($becomingCard), Rule::prohibitedIf(! $isCard), 'integer', 'between:0,1000000000000000'],
+            'closing_day' => [Rule::requiredIf($becomingCard), Rule::prohibitedIf(! $isCard), 'integer', 'between:1,31'],
+            'due_day' => [Rule::requiredIf($becomingCard), Rule::prohibitedIf(! $isCard), 'integer', 'between:1,31'],
+            'last_four' => [Rule::prohibitedIf(! $isCard), 'nullable', 'string', 'regex:/^\d{4}$/'],
         ];
     }
 }

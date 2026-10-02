@@ -22,6 +22,7 @@ use LogicException;
  * @property Money|null $credit_limit
  * @property int|null $closing_day
  * @property int|null $due_day
+ * @property string|null $last_four
  */
 class Account extends Model
 {

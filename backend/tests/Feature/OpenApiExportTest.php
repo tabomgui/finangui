@@ -129,6 +129,17 @@ it('documenta is_transfer_effective como booleano', function () {
         ->toBe('boolean');
 });
 
+it('documenta os campos de cartão de UpdateAccountRequest com o tipo real, não string', function () {
+    $document = exportOpenApiDocument();
+
+    $properties = $document['components']['schemas']['UpdateAccountRequest']['properties'];
+
+    expect($properties['credit_limit']['type'])->toBe('integer');
+    expect($properties['closing_day']['type'])->toBe('integer');
+    expect($properties['due_day']['type'])->toBe('integer');
+    expect($properties['last_four']['type'])->toContain('string');
+});
+
 /**
  * @return array<string, mixed>
  */

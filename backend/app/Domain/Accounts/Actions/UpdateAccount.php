@@ -5,6 +5,7 @@ namespace App\Domain\Accounts\Actions;
 use App\Domain\Accounts\Enums\AccountType;
 use App\Domain\Accounts\Errors\AccountTypeLocked;
 use App\Domain\Accounts\Models\Account;
+use Illuminate\Support\Facades\DB;
 
 final class UpdateAccount
 {
@@ -17,14 +18,23 @@ final class UpdateAccount
      */
     public function handle(Account $account, array $input): Account
     {
-        if (array_key_exists('type', $input)) {
-            $newType = AccountType::from($input['type']);
-            $cardChange = ($newType === AccountType::CreditCard) !== $account->isCreditCard();
+        return DB::transaction(function () use ($account, $input) {
+            // Trava a linha pela duração do check+update: sem isso, uma transação
+            // criada entre o "existe lançamento?" e o update poderia deixar a conta
+            // com histórico de um tipo e cartão/comum do outro.
+            $account = $account->newQuery()->whereKey($account->getKey())->lockForUpdate()->firstOrFail();
 
-            // Faturas e parcelas dependem do tipo: trocar com histórico deixaria
-            // lançamentos de cartão numa conta comum (ou o contrário).
-            if ($cardChange && $account->transactions()->exists()) {
-                throw new AccountTypeLocked;
+            if (array_key_exists('type', $input)) {
+                $newType = $input['type'] instanceof AccountType ? $input['type'] : AccountType::from($input['type']);
+                $cardChange = ($newType === AccountType::CreditCard) !== $account->isCreditCard();
+
+                // Faturas e parcelas dependem do tipo: trocar com histórico deixaria
+                // lançamentos de cartão numa conta comum (ou o contrário).
+                if ($cardChange && $account->transactions()->exists()) {
+                    throw new AccountTypeLocked;
+                }
+            } else {
+                $newType = $account->type;
             }
 
             if ($newType !== AccountType::CreditCard) {
@@ -32,10 +42,10 @@ final class UpdateAccount
                     $input[$field] = null;
                 }
             }
-        }
 
-        $account->update($input);
+            $account->update($input);
 
-        return $account;
+            return $account;
+        });
     }
 }
