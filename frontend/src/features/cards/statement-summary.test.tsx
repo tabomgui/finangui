@@ -15,6 +15,7 @@ function statement(overrides: Partial<CardStatement> = {}): CardStatement {
     remaining: 0,
     status: 'open',
     days_until_due: 14,
+    is_overdue: false,
     has_divergence: false,
     ...overrides,
   }

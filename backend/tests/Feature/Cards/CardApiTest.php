@@ -61,6 +61,34 @@ it('fatura atual é a próxima a vencer, com dias até o vencimento', function (
         ->assertJsonPath('data.current_statement.days_until_due', 14);
 });
 
+it('fatura fechada e não paga é a atual, mesmo havendo uma aberta mais adiante', function () {
+    $overdue = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-01-10', 'due_date' => '2026-01-20']);
+    Transaction::factory()->create(['account_id' => $this->card->id, 'statement_id' => $overdue->id, 'amount' => 5000, 'direction' => 'out']);
+    CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-03-10', 'due_date' => '2026-03-20']);
+
+    $this->getJson("/api/v1/cards/{$this->card->id}")->assertOk()
+        ->assertJsonPath('data.current_statement.id', $overdue->id)
+        ->assertJsonPath('data.current_statement.status', 'closed')
+        ->assertJsonPath('data.current_statement.is_overdue', true);
+});
+
+it('fatura paga no passado é ignorada; a atual passa a ser a próxima a vencer', function () {
+    $paid = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-01-10', 'due_date' => '2026-01-20']);
+    Transaction::factory()->create(['account_id' => $this->card->id, 'statement_id' => $paid->id, 'amount' => 5000, 'direction' => 'out']);
+    $checking = Account::factory()->create(['user_id' => $this->user->id]);
+    $this->postJson("/api/v1/card-statements/{$paid->id}/payments", [
+        'from_account_id' => $checking->id,
+        'amount' => 5000,
+        'date' => '2026-01-15',
+    ])->assertCreated();
+    $next = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-03-10', 'due_date' => '2026-03-20']);
+
+    $this->getJson("/api/v1/cards/{$this->card->id}")->assertOk()
+        ->assertJsonPath('data.current_statement.id', $next->id)
+        ->assertJsonPath('data.current_statement.status', 'open')
+        ->assertJsonPath('data.current_statement.is_overdue', false);
+});
+
 it('cartão sem faturas tem fatura atual nula', function () {
     $this->getJson("/api/v1/cards/{$this->card->id}")->assertOk()->assertJsonPath('data.current_statement', null);
 });

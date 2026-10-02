@@ -5,7 +5,7 @@ import { CategoryIcon } from '@/components/shared/category-icon'
 import { MoneyText } from '@/components/shared/money-text'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { dueLabel, isOverdue } from '../cards/statement-labels'
+import { dueLabel } from '../cards/statement-labels'
 
 export function StatementsCard() {
   const { data: cards = [] } = useCards(false)
@@ -36,7 +36,7 @@ export function StatementsCard() {
                 <p className="truncate text-sm font-medium">{card.name}</p>
                 <p className="text-xs text-muted-foreground">{dueLabel(statement)}</p>
               </div>
-              {isOverdue(statement) && <Badge variant="destructive">Vencida</Badge>}
+              {statement.is_overdue && <Badge variant="destructive">Vencida</Badge>}
               <MoneyText cents={statement.remaining} currency={card.currency} className="font-semibold" />
             </Link>
           )

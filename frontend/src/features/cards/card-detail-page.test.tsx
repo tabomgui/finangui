@@ -62,6 +62,7 @@ function statement(id: number, overrides: Partial<CardStatement> = {}): CardStat
     remaining: 10000 * id - 1,
     status: 'open',
     days_until_due: 14,
+    is_overdue: false,
     has_divergence: false,
     ...overrides,
   }

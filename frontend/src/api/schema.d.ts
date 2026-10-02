@@ -450,6 +450,7 @@ export interface components {
             remaining: number;
             status: components["schemas"]["StatementStatus"];
             days_until_due: number;
+            is_overdue: boolean;
             has_divergence: boolean;
         };
         /**

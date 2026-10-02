@@ -42,6 +42,7 @@ const nubank: Card = {
     remaining: 120000,
     status: 'open',
     days_until_due: 14,
+    is_overdue: false,
     has_divergence: false,
   },
 }
@@ -62,7 +63,7 @@ describe('StatementsCard', () => {
     mockData = [
       {
         ...nubank,
-        current_statement: { ...nubank.current_statement!, status: 'closed', days_until_due: -2 },
+        current_statement: { ...nubank.current_statement!, status: 'closed', days_until_due: -2, is_overdue: true },
       },
     ]
 

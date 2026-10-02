@@ -9,10 +9,6 @@ export const STATUS_LABELS: Record<StatementStatus, string> = {
   paid: 'Paga',
 }
 
-export function isOverdue({ days_until_due, status }: DueInfo): boolean {
-  return days_until_due < 0 && (status === 'closed' || status === 'partial')
-}
-
 export function dueLabel({ days_until_due: days, status }: DueInfo): string {
   if (status === 'paid') return 'Paga'
   if (days > 1) return `Vence em ${days} dias`

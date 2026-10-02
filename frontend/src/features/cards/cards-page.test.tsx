@@ -51,6 +51,7 @@ const nubank: Card = {
     remaining: 120000,
     status: 'open',
     days_until_due: 14,
+    is_overdue: false,
     has_divergence: false,
   },
 }
