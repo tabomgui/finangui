@@ -81,7 +81,7 @@ class Account extends Model
             ->whereColumn('transactions.account_id', 'accounts.id')
             ->where('status', TransactionStatus::Posted->value)
             ->where('is_ignored', false)
-            ->when($asOf, fn (Builder $q) => $q->whereDate('date', '<=', $asOf->toDateString())),
+            ->when($asOf, fn (Builder $q) => $q->where('date', '<=', $asOf->toDateString())),
         ]);
     }
 
