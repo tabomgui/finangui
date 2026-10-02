@@ -1,4 +1,5 @@
 import { List, Plus, TriangleAlert } from 'lucide-react'
+import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useTransactions } from '@/api/queries/transactions'
 import { PageBody } from '@/components/layout/page-body'
@@ -10,6 +11,7 @@ import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { formatDayLabel } from '@/lib/date'
+import { BulkActionBar } from './bulk-action-bar'
 import { activeFilterCount, filtersFromParams } from './filters'
 import { groupByDay } from './group-by-day'
 import { TransactionFilters } from './transaction-filters'
@@ -21,6 +23,28 @@ export function TransactionsPage() {
   const query = useTransactions(filters)
   const transactions = query.data?.pages.flatMap((page) => page.data) ?? []
   const filtered = activeFilterCount(filters) > 0 || filters.search !== undefined
+
+  const [selecting, setSelecting] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const selected = transactions.filter((transaction) => selectedIds.has(transaction.id))
+
+  // Os filtros mudam a lista: ids selecionados que não aparecem mais não devem ficar presos na seleção.
+  // Comparar com a última chave de filtros vista durante o render evita um efeito extra (mesmo truque de transaction-filters.tsx).
+  const filtersKey = JSON.stringify(filters)
+  const [seenFiltersKey, setSeenFiltersKey] = useState(filtersKey)
+  if (filtersKey !== seenFiltersKey) {
+    setSeenFiltersKey(filtersKey)
+    setSelectedIds(new Set())
+  }
+
+  const toggleSelected = (id: number) => {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   return (
     <>
@@ -37,6 +61,20 @@ export function TransactionsPage() {
       />
       <PageBody>
         <TransactionFilters filters={filters} />
+        {!query.isError && transactions.length > 0 && (
+          <div className="flex justify-end">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSelecting((value) => !value)
+                setSelectedIds(new Set())
+              }}
+            >
+              {selecting ? 'Cancelar seleção' : 'Selecionar'}
+            </Button>
+          </div>
+        )}
         {query.isError ? (
           <Card className="rounded-2xl p-0 shadow-card">
             <EmptyState
@@ -82,7 +120,12 @@ export function TransactionsPage() {
                   <ul className="divide-y divide-border">
                     {group.items.map((transaction) => (
                       <li key={transaction.id}>
-                        <TransactionRow transaction={transaction} />
+                        <TransactionRow
+                          transaction={transaction}
+                          selectable={selecting}
+                          selected={selectedIds.has(transaction.id)}
+                          onToggle={toggleSelected}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -97,6 +140,15 @@ export function TransactionsPage() {
           onLoadMore={() => query.fetchNextPage()}
         />
       </PageBody>
+      {selecting && selected.length > 0 && (
+        <BulkActionBar
+          selected={selected}
+          onDone={() => {
+            setSelecting(false)
+            setSelectedIds(new Set())
+          }}
+        />
+      )}
     </>
   )
 }
