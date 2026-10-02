@@ -3,6 +3,8 @@ import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { headerIconButton, ThemeToggle } from './theme-toggle'
 
+export const headerButton = 'border-0 bg-white/20 text-white shadow-none hover:bg-white/30'
+
 type PageHeaderProps = {
   title: string
   subtitle?: string

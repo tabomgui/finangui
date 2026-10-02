@@ -1,17 +1,24 @@
+import type { ComponentType } from 'react'
 import { createBrowserRouter } from 'react-router-dom'
 import { AppShell } from '@/components/layout/app-shell'
+import { FullPageSpinner } from '@/components/shared/full-page-spinner'
 import { LoginPage } from '@/features/auth/login-page'
 import { ProtectedRoute } from '@/features/auth/protected-route'
 import { RegisterPage } from '@/features/auth/register-page'
 import { ComingSoonPage } from '@/features/misc/coming-soon-page'
 import { NotFoundPage } from '@/features/misc/not-found-page'
-import { SettingsPage } from '@/features/settings/settings-page'
+
+/** Adapta um módulo com export nomeado ao formato `lazy` do react-router. */
+function lazyPage<K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) {
+  return async () => ({ Component: (await load())[name] })
+}
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   { path: '/cadastro', element: <RegisterPage /> },
   {
     element: <ProtectedRoute />,
+    hydrateFallbackElement: <FullPageSpinner />,
     children: [
       {
         element: <AppShell />,
@@ -22,7 +29,7 @@ export const router = createBrowserRouter([
           { path: 'contas', element: <ComingSoonPage title="Contas" /> },
           { path: 'categorias', element: <ComingSoonPage title="Categorias" /> },
           { path: 'tags', element: <ComingSoonPage title="Tags" /> },
-          { path: 'configuracoes', element: <SettingsPage /> },
+          { path: 'configuracoes', lazy: lazyPage(() => import('@/features/settings/settings-page'), 'SettingsPage') },
           { path: '*', element: <NotFoundPage /> },
         ],
       },

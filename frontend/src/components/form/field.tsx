@@ -1,8 +1,14 @@
-import { cloneElement, type AriaAttributes, type ReactElement } from 'react'
+import { cloneElement, type AriaAttributes, type ReactElement, type ReactNode } from 'react'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 
-type ControlProps = Pick<AriaAttributes, 'aria-describedby' | 'aria-invalid'>
+type ElementControlProps = Pick<AriaAttributes, 'aria-describedby' | 'aria-invalid'>
+
+export type FieldControlProps = {
+  id: string
+  'aria-describedby'?: string
+  'aria-invalid'?: true
+}
 
 type FieldProps = {
   label: string
@@ -10,19 +16,33 @@ type FieldProps = {
   error?: string
   hint?: string
   className?: string
-  children: ReactElement<ControlProps>
+  /**
+   * Um elemento (recebe aria-describedby/aria-invalid por clone) ou uma função que recebe
+   * id e atributos para aplicar no controle certo — necessário em controles compostos,
+   * como o gatilho de um Select ou de um combobox.
+   */
+  children: ReactElement<ElementControlProps> | ((control: FieldControlProps) => ReactNode)
 }
 
 export function Field({ label, htmlFor, error, hint, className, children }: FieldProps) {
   const message = error ?? hint
   const messageId = `${htmlFor}-message`
 
-  const control = message
-    ? cloneElement(children, {
-        'aria-describedby': messageId,
-        'aria-invalid': error ? true : children.props['aria-invalid'],
-      })
-    : children
+  let control: ReactNode
+  if (typeof children === 'function') {
+    control = children({
+      id: htmlFor,
+      ...(message ? { 'aria-describedby': messageId } : {}),
+      ...(error ? { 'aria-invalid': true as const } : {}),
+    })
+  } else {
+    control = message
+      ? cloneElement(children, {
+          'aria-describedby': messageId,
+          'aria-invalid': error ? true : children.props['aria-invalid'],
+        })
+      : children
+  }
 
   return (
     <div className={cn('space-y-2', className)}>
