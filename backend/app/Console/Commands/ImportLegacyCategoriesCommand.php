@@ -81,10 +81,31 @@ final class ImportLegacyCategoriesCommand extends Command
 
         $rows = [];
         foreach ($lines as $line) {
-            [$id, $name, $type, $color, $parentId] = array_pad(explode("\t", $line), 5, 'NULL');
+            $fields = explode("\t", $line);
+            if (count($fields) < 5) {
+                $this->warn("Linha ignorada (formato inválido): {$line}");
+
+                continue;
+            }
+
+            [$id, $name, $type, $color, $parentId] = $fields;
+            $id = trim($id);
+            if (! ctype_digit($id)) {
+                $this->warn("Linha ignorada (formato inválido): {$line}");
+
+                continue;
+            }
+
+            $name = trim($this->unescape($name));
+            if ($name === '') {
+                $this->warn("Linha ignorada (formato inválido): {$line}");
+
+                continue;
+            }
+
             $rows[(int) $id] = [
                 'id' => (int) $id,
-                'name' => trim($name),
+                'name' => $name,
                 'type' => trim($type),
                 'color' => preg_match('/^#[0-9a-fA-F]{6}$/', trim($color)) === 1 ? trim($color) : null,
                 'parent_id' => trim($parentId) === 'NULL' ? null : (int) $parentId,
@@ -92,6 +113,20 @@ final class ImportLegacyCategoriesCommand extends Command
         }
 
         return $rows;
+    }
+
+    /**
+     * Desfaz o escape que o `mysql --batch` aplica em tab, newline e barra
+     * invertida na saída (ex.: um nome com tab literal sai como `\t`).
+     */
+    private function unescape(string $value): string
+    {
+        return preg_replace_callback('/\\\\(.)/', fn (array $matches): string => match ($matches[1]) {
+            't' => "\t",
+            'n' => "\n",
+            '\\' => '\\',
+            default => $matches[0],
+        }, $value) ?? $value;
     }
 
     /**

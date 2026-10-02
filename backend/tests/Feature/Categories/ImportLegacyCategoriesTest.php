@@ -32,6 +32,34 @@ it('é idempotente', function () {
     expect(Category::query()->where('user_id', $user->id)->count())->toBe(5);
 });
 
+it('ignora linhas com formato inválido e importa as válidas', function () {
+    $user = User::factory()->create(['email' => 'gui@example.com']);
+
+    $path = tempnam(sys_get_temp_dir(), 'legacy');
+    expect($path)->not->toBeFalse();
+    file_put_contents($path, implode("\n", [
+        "id\tname\ttype\tcolor\tparent_id",
+        '7',
+        "abc\tInválida\texpense\t#f97316\tNULL",
+        "1\tAlimentação\texpense\t#f97316\tNULL",
+    ])."\n");
+
+    $this->artisan('legacy:import-categories', [
+        'file' => $path,
+        'email' => 'gui@example.com',
+    ])->assertSuccessful();
+
+    unlink($path);
+
+    $categories = Category::query()->where('user_id', $user->id)->get()->keyBy('name');
+
+    expect($categories)->toHaveCount(1)
+        ->and($categories->has('NULL'))->toBeFalse()
+        ->and($categories->has('abc'))->toBeFalse()
+        ->and($categories->has('Inválida'))->toBeFalse()
+        ->and($categories->has('Alimentação'))->toBeTrue();
+});
+
 it('falha para usuário inexistente ou arquivo ilegível', function () {
     User::factory()->create(['email' => 'gui@example.com']);
 
