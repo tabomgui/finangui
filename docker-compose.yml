@@ -1,0 +1,46 @@
+# Ambiente de desenvolvimento. Credenciais do banco ficam em backend/.env
+# (não em `environment:`), para o phpunit.xml conseguir forçar o banco de teste.
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: docker/php/Dockerfile
+  volumes:
+    - ./backend:/var/www/html
+  depends_on:
+    db:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: finangui
+      POSTGRES_USER: finangui
+      POSTGRES_PASSWORD: finangui
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finangui -d finangui"]
+      interval: 5s
+      retries: 20
+
+  backend:
+    <<: *backend
+    command: sh -c "composer install --no-interaction && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"
+    ports:
+      - "${BACKEND_PORT:-8001}:8000"
+
+  worker:
+    <<: *backend
+    command: php artisan queue:work --tries=3 --sleep=3
+
+  scheduler:
+    <<: *backend
+    command: php artisan schedule:work
+
+volumes:
+  db-data:
