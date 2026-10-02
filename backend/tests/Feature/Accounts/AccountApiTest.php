@@ -20,6 +20,26 @@ it('cria conta', function () {
         ->assertJsonPath('data.is_archived', false);
 });
 
+it('cria conta com opening_balance enviado como string numérica', function () {
+    actingAsUser();
+
+    $this->postJson('/api/v1/accounts', [
+        'name' => 'Inter',
+        'type' => 'checking',
+        'opening_balance' => '4590',
+    ])->assertCreated()
+        ->assertJsonPath('data.opening_balance', 4590);
+});
+
+it('atualiza opening_balance enviado como float sem parte fracionária', function () {
+    actingAsUser();
+    $account = Account::factory()->create();
+
+    $this->patchJson("/api/v1/accounts/{$account->id}", ['opening_balance' => 2000.0])
+        ->assertOk()
+        ->assertJsonPath('data.opening_balance', 2000);
+});
+
 it('valida a conta', function () {
     actingAsUser();
 

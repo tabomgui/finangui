@@ -77,6 +77,25 @@ it('não aceita pai de outro usuário', function () {
         ->assertJsonValidationErrors('parent_id');
 });
 
+it('expõe is_transfer_effective herdado do pai marcado como transferência', function () {
+    actingAsUser();
+    $parent = Category::factory()->transfer()->create(['name' => 'Investimentos']);
+    $child = Category::factory()->create(['name' => 'Tesouro', 'parent_id' => $parent->id, 'is_transfer' => false]);
+
+    $this->getJson("/api/v1/categories/{$child->id}")
+        ->assertOk()
+        ->assertJsonPath('data.is_transfer', false)
+        ->assertJsonPath('data.is_transfer_effective', true);
+
+    $this->getJson('/api/v1/categories?include_archived=1')
+        ->assertOk()
+        ->assertJsonFragment(['id' => $child->id, 'is_transfer_effective' => true]);
+
+    $this->getJson("/api/v1/categories/{$parent->id}")
+        ->assertJsonPath('data.is_transfer', true)
+        ->assertJsonPath('data.is_transfer_effective', true);
+});
+
 it('atualiza categoria', function () {
     actingAsUser();
     $category = Category::factory()->create(['name' => 'Mercado']);

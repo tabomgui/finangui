@@ -51,6 +51,35 @@ it('agrupa as maiores despesas pela categoria raiz', function () {
         ->assertJsonPath('data.top_categories.2.name', 'Sem categoria');
 });
 
+it('exclui transações de subcategoria cujo pai é marcado como transferência', function () {
+    actingAsUser();
+    $parent = Category::factory()->transfer()->create(['name' => 'Investimentos']);
+    $child = Category::factory()->create(['name' => 'Tesouro', 'parent_id' => $parent->id, 'is_transfer' => false]);
+
+    Transaction::factory()->create(['date' => '2026-10-05', 'amount' => 10000, 'category_id' => $child->id]);
+
+    $this->getJson('/api/v1/dashboard?month=2026-10')
+        ->assertJsonPath('data.expense', 0)
+        ->assertJsonCount(0, 'data.top_categories');
+});
+
+it('passa a incluir/excluir a subcategoria quando o pai liga ou desliga a transferência', function () {
+    actingAsUser();
+    $parent = Category::factory()->create(['name' => 'Investimentos', 'is_transfer' => false]);
+    $child = Category::factory()->create(['name' => 'Tesouro', 'parent_id' => $parent->id]);
+    Transaction::factory()->create(['date' => '2026-10-05', 'amount' => 10000, 'category_id' => $child->id]);
+
+    $this->getJson('/api/v1/dashboard?month=2026-10')->assertJsonPath('data.expense', 10000);
+
+    $parent->update(['is_transfer' => true]);
+
+    $this->getJson('/api/v1/dashboard?month=2026-10')->assertJsonPath('data.expense', 0);
+
+    $parent->update(['is_transfer' => false]);
+
+    $this->getJson('/api/v1/dashboard?month=2026-10')->assertJsonPath('data.expense', 10000);
+});
+
 it('mostra saldo total e por conta sem contas arquivadas', function () {
     actingAsUser();
     Account::factory()->create(['name' => 'A', 'opening_balance' => 1000]);

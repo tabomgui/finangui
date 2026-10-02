@@ -24,6 +24,8 @@ final class CategoryResource extends JsonResource
             'icon' => $this->icon,
             'color' => $this->color,
             'is_transfer' => $this->is_transfer,
+            // @phpstan-ignore nullsafe.neverNull (falso positivo: Larastan não enxerga que parent_id/parent são nullable; em runtime uma categoria raiz não tem parent)
+            'is_transfer_effective' => $this->is_transfer || ($this->parent?->is_transfer ?? false),
             'is_archived' => $this->is_archived,
         ];
     }

@@ -106,7 +106,9 @@ class Transaction extends Model
 
     /**
      * Transações que contam como receita/despesa em relatórios: lançadas, não
-     * ignoradas, fora de transferências e fora de categorias marcadas como transferência.
+     * ignoradas, fora de transferências e fora de categorias marcadas como
+     * transferência — incluindo subcategorias cujo pai é marcado como
+     * transferência (ex.: "Tesouro" dentro de "Investimentos").
      *
      * @param  Builder<Transaction>  $query
      */
@@ -116,6 +118,8 @@ class Transaction extends Model
             ->where('transactions.is_ignored', false)
             ->whereNull('transactions.transfer_id')
             ->where(fn (Builder $q) => $q->whereNull('transactions.category_id')
-                ->orWhereHas('category', fn (Builder $c) => $c->where('is_transfer', false)));
+                ->orWhereHas('category', fn (Builder $c) => $c->where('is_transfer', false)
+                    ->where(fn (Builder $c2) => $c2->whereNull('parent_id')
+                        ->orWhereHas('parent', fn (Builder $p) => $p->where('is_transfer', false)))));
     }
 }

@@ -17,6 +17,7 @@ final class CategoryController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         $categories = Category::query()
+            ->with('parent')
             ->when(! $request->boolean('include_archived'), fn ($q) => $q->where('is_archived', false))
             ->orderBy('name')
             ->get();
@@ -26,19 +27,21 @@ final class CategoryController extends Controller
 
     public function store(StoreCategoryRequest $request): CategoryResource
     {
-        return CategoryResource::make(Category::create($request->validated()));
+        $category = Category::create($request->validated());
+
+        return CategoryResource::make($category->loadMissing('parent'));
     }
 
     public function show(Category $category): CategoryResource
     {
-        return CategoryResource::make($category);
+        return CategoryResource::make($category->loadMissing('parent'));
     }
 
     public function update(UpdateCategoryRequest $request, Category $category): CategoryResource
     {
         $category->update($request->validated());
 
-        return CategoryResource::make($category);
+        return CategoryResource::make($category->loadMissing('parent'));
     }
 
     public function destroy(Category $category, DeleteCategory $deleteCategory): Response
