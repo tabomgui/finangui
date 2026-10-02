@@ -3,14 +3,36 @@
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Route as RouteFacade;
 
-it('toda rota da API v1 exige auth:sanctum, exceto as públicas', function () {
-    $public = ['api/v1/auth/status', 'api/v1/auth/login', 'api/v1/auth/register'];
+it('toda rota da API exige auth:sanctum, exceto as públicas', function () {
+    $public = [
+        'GET api/v1/auth/status',
+        'POST api/v1/auth/login',
+        'POST api/v1/auth/register',
+        // Rotas web do OAuth Google (Task 9): públicas por natureza, ainda não existem.
+        'GET api/auth/google/redirect',
+        'GET api/auth/google/callback',
+    ];
 
-    $unprotected = collect(RouteFacade::getRoutes()->getRoutes())
-        ->filter(fn (Route $route) => str_starts_with($route->uri(), 'api/v1/'))
-        ->reject(fn (Route $route) => in_array($route->uri(), $public, true))
-        ->reject(fn (Route $route) => in_array('auth:sanctum', $route->gatherMiddleware(), true))
-        ->map(fn (Route $route) => implode('|', $route->methods()).' '.$route->uri())
+    $apiRoutes = collect(RouteFacade::getRoutes()->getRoutes())
+        ->filter(fn (Route $route) => str_starts_with($route->uri(), 'api/'));
+
+    expect($apiRoutes)->not->toBeEmpty();
+
+    $unprotected = $apiRoutes
+        ->flatMap(function (Route $route) {
+            $isProtected = in_array('auth:sanctum', $route->gatherMiddleware(), true)
+                && ! in_array('auth:sanctum', $route->excludedMiddleware(), true);
+
+            return collect($route->methods())
+                ->reject(fn (string $method) => $method === 'HEAD')
+                ->map(fn (string $method) => [
+                    'key' => $method.' '.$route->uri(),
+                    'protected' => $isProtected,
+                ]);
+        })
+        ->reject(fn (array $entry) => in_array($entry['key'], $public, true))
+        ->reject(fn (array $entry) => $entry['protected'])
+        ->map(fn (array $entry) => $entry['key'])
         ->values()
         ->all();
 

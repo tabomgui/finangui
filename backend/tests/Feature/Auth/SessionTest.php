@@ -27,10 +27,55 @@ it('recusa login de conta sem senha (só Google)', function () {
         ->assertStatus(422);
 });
 
-it('faz logout', function () {
-    actingAsUser();
+it('recusa login sem sessão stateful mesmo com credenciais corretas', function () {
+    User::factory()->create(['email' => 'gui@example.com', 'password' => 'password123']);
+
+    $this->withHeader('Referer', 'http://evil.test')
+        ->postJson('/api/v1/auth/login', ['email' => 'gui@example.com', 'password' => 'password123'])
+        ->assertStatus(400)
+        ->assertJsonPath('code', 'session_required');
+
+    $this->assertGuest();
+});
+
+it('limita tentativas de login por email', function () {
+    User::factory()->create(['email' => 'gui@example.com', 'password' => 'password123']);
+
+    for ($i = 0; $i < 5; $i++) {
+        $this->postJson('/api/v1/auth/login', ['email' => 'gui@example.com', 'password' => 'errada'])
+            ->assertStatus(422);
+    }
+
+    $this->postJson('/api/v1/auth/login', ['email' => 'gui@example.com', 'password' => 'errada'])
+        ->assertStatus(429);
+});
+
+it('faz logout e invalida a sessão', function () {
+    User::factory()->create(['email' => 'gui@example.com', 'password' => 'password123']);
+
+    $this->postJson('/api/v1/auth/login', ['email' => 'gui@example.com', 'password' => 'password123'])
+        ->assertOk();
 
     $this->postJson('/api/v1/auth/logout')->assertNoContent();
+
+    $this->assertGuest('web');
+});
+
+it('regenera o id da sessão no login', function () {
+    User::factory()->create(['email' => 'gui@example.com', 'password' => 'password123']);
+
+    $this->withCredentials();
+    $cookieName = config('session.cookie');
+
+    $before = $this->getJson('/api/v1/auth/status');
+    $idBefore = session()->getId();
+    $cookie = $before->getCookie($cookieName, false)?->getValue();
+
+    $this->withUnencryptedCookie($cookieName, $cookie)
+        ->postJson('/api/v1/auth/login', ['email' => 'gui@example.com', 'password' => 'password123'])
+        ->assertOk();
+
+    expect(session()->getId())->not->toBe($idBefore);
 });
 
 it('exige autenticação em /me', function () {
