@@ -1,10 +1,20 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ensureCsrf, expectOk, unwrap } from '@/api/client'
 import { toApiError } from '@/api/errors'
 import type { User } from '@/api/types'
 
 export const meKey = ['me'] as const
 export const authStatusKey = ['auth-status'] as const
+
+/**
+ * Encerra a sessão no cliente: descarta todo cache que dependia do usuário logado, mas preserva
+ * a própria query `me` (só zera seu valor) para quem a observa — ex. `ProtectedRoute` — ver a
+ * mudança em vez de perder a assinatura.
+ */
+export function resetSession(queryClient: QueryClient): void {
+  queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== meKey[0] })
+  queryClient.setQueryData(meKey, null)
+}
 
 export function useMe() {
   return useQuery({
@@ -59,10 +69,7 @@ export function useLogout() {
     mutationFn: async () => {
       await expectOk(api.POST('/auth/logout'))
     },
-    onSettled: () => {
-      queryClient.clear()
-      queryClient.setQueryData(meKey, null)
-    },
+    onSettled: () => resetSession(queryClient),
   })
 }
 

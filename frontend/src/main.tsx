@@ -4,13 +4,13 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider } from 'react-router-dom'
 import { onUnauthorized } from '@/api/client'
-import { meKey } from '@/api/queries/auth'
+import { resetSession } from '@/api/queries/auth'
 import { Toaster } from '@/components/ui/sonner'
 import { queryClient } from '@/lib/query-client'
 import { router } from '@/router'
 import './index.css'
 
-onUnauthorized(() => queryClient.setQueryData(meKey, null))
+onUnauthorized(() => resetSession(queryClient))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

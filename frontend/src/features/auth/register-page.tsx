@@ -7,7 +7,7 @@ import { useAuthStatus, useMe, useRegister } from '@/api/queries/auth'
 import { Field } from '@/components/form/field'
 import { FullPageSpinner } from '@/components/shared/full-page-spinner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { applyFieldErrors, notifyError } from '@/lib/form-errors'
 import { AuthLayout } from './auth-layout'
@@ -28,7 +28,7 @@ type FormValues = z.infer<typeof schema>
 
 export function RegisterPage() {
   const { data: user } = useMe()
-  const { data: status, isPending } = useAuthStatus()
+  const { data: status, isPending, isError, refetch } = useAuthStatus()
   const register = useRegister()
   const navigate = useNavigate()
 
@@ -39,6 +39,22 @@ export function RegisterPage() {
 
   if (user) return <Navigate to="/" replace />
   if (isPending) return <FullPageSpinner />
+
+  if (isError) {
+    return (
+      <AuthLayout>
+        <Card className="rounded-2xl shadow-card">
+          <CardHeader className="text-center">
+            <h1 className="text-2xl leading-none font-semibold">Criar conta</h1>
+          </CardHeader>
+          <CardContent className="space-y-4 text-center">
+            <p className="text-muted-foreground">Não foi possível verificar o cadastro. Tente novamente.</p>
+            <Button onClick={() => refetch()}>Tentar de novo</Button>
+          </CardContent>
+        </Card>
+      </AuthLayout>
+    )
+  }
 
   const onSubmit = form.handleSubmit(async (values) => {
     try {
@@ -57,7 +73,7 @@ export function RegisterPage() {
     <AuthLayout>
       <Card className="rounded-2xl shadow-card">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Criar conta</CardTitle>
+          <h1 className="text-2xl leading-none font-semibold">Criar conta</h1>
           {!status?.registration_enabled && <CardDescription>O cadastro está fechado nesta instância.</CardDescription>}
         </CardHeader>
         <CardContent className="space-y-4">

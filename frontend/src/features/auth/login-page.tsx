@@ -2,13 +2,14 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { LoaderCircle } from 'lucide-react'
 import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
-import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { useAuthStatus, useLogin, useMe } from '@/api/queries/auth'
 import { Field } from '@/components/form/field'
+import { FullPageSpinner } from '@/components/shared/full-page-spinner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { applyFieldErrors, notifyError } from '@/lib/form-errors'
@@ -23,10 +24,9 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>
 
 export function LoginPage() {
-  const { data: user } = useMe()
+  const { data: user, isPending: userPending } = useMe()
   const { data: status } = useAuthStatus()
   const login = useLogin()
-  const navigate = useNavigate()
   const location = useLocation()
   const [params, setParams] = useSearchParams()
 
@@ -40,14 +40,18 @@ export function LoginPage() {
     setParams(params, { replace: true })
   }, [params, setParams])
 
-  if (user) return <Navigate to="/" replace />
-
   const from = (location.state as { from?: string } | null)?.from ?? '/'
+
+  // Esperar `useMe` resolver antes de decidir entre o formulário e o redirecionamento evita
+  // mostrar o formulário por um instante para quem já está logado (flash).
+  if (userPending) return <FullPageSpinner />
+  if (user) return <Navigate to={from} replace />
 
   const onSubmit = form.handleSubmit(async (values) => {
     try {
+      // `useLogin.onSuccess` grava o usuário em `meKey`; o re-render resultante faz este
+      // componente cair no `if (user)` acima e navegar para `from`, sem chamada imperativa aqui.
       await login.mutateAsync(values)
-      navigate(from, { replace: true })
     } catch (error) {
       if (!applyFieldErrors(error, form.setError, ['email', 'password'])) notifyError(error)
     }
@@ -59,7 +63,7 @@ export function LoginPage() {
     <AuthLayout>
       <Card className="rounded-2xl shadow-card">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Entrar</CardTitle>
+          <h1 className="text-2xl leading-none font-semibold">Entrar</h1>
           <CardDescription>Acesse sua conta para continuar.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
