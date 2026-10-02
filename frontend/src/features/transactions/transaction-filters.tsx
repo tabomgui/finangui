@@ -72,7 +72,13 @@ export function TransactionFilters({ filters }: { filters: Filters }) {
             <div className="space-y-2">
               <Label htmlFor="filter-account">Conta</Label>
               <div className="flex gap-2">
-                <AccountSelect id="filter-account" value={filters.account_id ?? null} onChange={(id) => setFilter('account_id', id)} placeholder="Todas" />
+                <AccountSelect
+                  id="filter-account"
+                  value={filters.account_id ?? null}
+                  onChange={(id) => setFilter('account_id', id)}
+                  placeholder="Todas"
+                  includeArchived
+                />
                 {filters.account_id && (
                   <Button variant="ghost" size="icon" aria-label="Limpar conta" onClick={() => setFilter('account_id', undefined)}>
                     <X className="h-4 w-4" />
@@ -87,6 +93,8 @@ export function TransactionFilters({ filters }: { filters: Filters }) {
                 value={filters.category_id ?? null}
                 onChange={(id) => setFilter('category_id', id ?? undefined)}
                 placeholder="Todas"
+                allowNone={false}
+                includeArchived
               />
             </div>
             <div className="space-y-2">
