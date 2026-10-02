@@ -32,6 +32,21 @@ Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`;
 - `package.json` tem `overrides` fixando o peer `typescript` do `openapi-typescript` na nossa versão do TS; não usar `--legacy-peer-deps`.
 - Testes: Vitest + Testing Library, `globals` desligado (importe `describe`/`it`/`expect`); `src/test/setup.ts` registra a limpeza (`cleanup`) entre testes.
 - Nenhuma regra de negócio no frontend.
+- Chaves de query só em `src/api/query-keys.ts`. Mutações que mexem em saldo chamam `invalidateLedger`; categorias, `invalidateCategories`; tags, `invalidateTags`.
+- Telas de feature carregam sob demanda: rotas usam `lazyPage(() => import(...), 'NomeDaPagina')` em `router.tsx`.
+- `Field` aceita render-prop `(control) => ...` para controles compostos (Select, combobox): espalhe `control` no gatilho.
+- Seletores prontos em `components/shared`: `AccountSelect`, `CategoryPicker`, `TagPicker`, `ColorPicker`, `IconPicker`.
+- Filtros de transações vivem na URL (`features/transactions/filters.ts`, nomes curtos em português: `conta`, `categoria`, `tag`, `de`, `ate`, `tipo`, `busca`).
+- Seletores com busca (`CategoryPicker`, `TagPicker`) usam um filtro do cmdk que ignora acentuação (`lib/search.ts`, `accentInsensitiveFilter`); os itens do `Command` levam `value={String(id)}` e `keywords={[nome]}`.
+- `CategoryPicker` abre o `Popover` com `modal`: necessário para o scroll da lista funcionar quando o picker fica dentro de um `Sheet` (o scroll-lock do Sheet senão intercepta a roda do mouse).
+- Formulário em diálogo reseta ao abrir: `useForm` recebe `defaultValues` fixo e um `useEffect(() => { if (open) form.reset(defaultsFor(...)) }, [open, ...])`; nunca usar a prop `values` do react-hook-form (ela resetaria o form a cada render, inclusive durante a digitação).
+- Para ler um campo só para exibição/condicional (sem re-render de tudo), use `useWatch`, nunca `form.watch` (que não é reativo do jeito que o React espera aqui).
+- Campo opcional com zod `.nullable().refine(...)`: o tipo de entrada do form (`z.input<typeof schema>`) ainda tem `| null`, só o de saída (`z.output`) não — tipar o form com `z.input`, não com o tipo inferido default (`z.output`).
+- Listas com filtro que troca de página/categoria usam `placeholderData: keepPreviousData` no `useQuery`/`useInfiniteQuery`, e a UI esmaece com `isPlaceholderData` enquanto a próxima página carrega, pra evitar flash de vazio.
+- Toda página com dados mostra um estado de erro com botão "Tentar de novo" (refetch), não só um alerta.
+- Qualquer superfície no topo do `PageBody` fica sobre a faixa esmeralda do `PageHeader`: precisa ser opaca (ex.: `bg-card` no input), senão a faixa verde aparece atrás.
+- `CardHeader` do shadcn é um grid (pensado pra `CardAction`); quando o conteúdo é só título + algo à direita em linha, declare `flex flex-row items-center justify-between` explicitamente na própria instância.
+- jsdom não implementa `ResizeObserver` nem `scrollIntoView` (usados por componentes radix-ui/cmdk); os stubs ficam em `src/test/setup.ts`, não devem ser duplicados em testes individuais.
 - Antes de commit: `make front-check`.
 
 ## UI

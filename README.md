@@ -2,6 +2,8 @@
 
 Gerenciador financeiro pessoal, self-hosted. Backend Laravel 13 + Postgres; frontend React em `frontend/`.
 
+Telas disponíveis: Início (dashboard do mês), Transações (com filtros e edição em massa), Contas, Categorias, Tags e Configurações.
+
 ## Desenvolvimento
 
 Requisitos: Docker e Make.
