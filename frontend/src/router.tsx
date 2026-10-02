@@ -1,4 +1,5 @@
-import { createBrowserRouter, Outlet } from 'react-router-dom'
+import { createBrowserRouter } from 'react-router-dom'
+import { AppShell } from '@/components/layout/app-shell'
 import { LoginPage } from '@/features/auth/login-page'
 import { ProtectedRoute } from '@/features/auth/protected-route'
 import { RegisterPage } from '@/features/auth/register-page'
@@ -12,7 +13,7 @@ export const router = createBrowserRouter([
     element: <ProtectedRoute />,
     children: [
       {
-        element: <Outlet />,
+        element: <AppShell />,
         children: [
           { index: true, element: <ComingSoonPage title="Início" /> },
           { path: 'transacoes', element: <ComingSoonPage title="Transações" /> },
