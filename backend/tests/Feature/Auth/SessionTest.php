@@ -110,10 +110,10 @@ it('retorna o usuário autenticado em /me', function () {
 });
 
 it('informa a moeda principal configurada', function () {
-    config(['finangui.primary_currency' => 'BRL']);
+    config(['finangui.primary_currency' => 'USD']);
     actingAsUser();
 
-    $this->getJson('/api/v1/me')->assertOk()->assertJsonPath('data.primary_currency', 'BRL');
+    $this->getJson('/api/v1/me')->assertOk()->assertJsonPath('data.primary_currency', 'USD');
 });
 
 it('informa o status de auth da instância', function () {

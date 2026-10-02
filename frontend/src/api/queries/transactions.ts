@@ -64,7 +64,7 @@ export function useUpdateTransaction() {
 export function useBulkUpdateTransactions() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ ids, body }: { ids: number[]; body: (id: number) => UpdateTransactionRequest }) =>
+    mutationFn: ({ ids, body }: { ids: number[]; body: (id: number) => UpdateTransactionRequest }) =>
       runInBatches(ids, (id) =>
         unwrap(api.PATCH('/transactions/{transaction}', { params: { path: { transaction: id } }, body: body(id) })),
       ),

@@ -124,5 +124,10 @@ describe('AccountSelect', () => {
     )
 
     expect(screen.getByRole('combobox')).toHaveTextContent('Poupança')
+
+    fireEvent.click(screen.getByRole('combobox'))
+    const options = screen.getAllByRole('option').map((option) => option.textContent)
+
+    expect(options).toContain('Poupança')
   })
 })
