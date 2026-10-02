@@ -2,18 +2,22 @@
 
 use App\Domain\Categories\Models\Category;
 use App\Models\User;
+use GuzzleHttp\Exception\ClientException;
+use GuzzleHttp\Psr7\Request as Psr7Request;
+use GuzzleHttp\Psr7\Response as Psr7Response;
 use Laravel\Socialite\Contracts\Provider;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\InvalidStateException;
 use Laravel\Socialite\Two\User as SocialiteUser;
 
-function fakeGoogleUser(?string $email, string $id = 'google-123'): void
+function fakeGoogleUser(?string $email, string $id = 'google-123', bool $emailVerified = true): void
 {
     $googleUser = Mockery::mock(SocialiteUser::class);
     $googleUser->shouldReceive('getId')->andReturn($id);
     $googleUser->shouldReceive('getEmail')->andReturn($email);
     $googleUser->shouldReceive('getName')->andReturn('Gui');
     $googleUser->shouldReceive('getAvatar')->andReturn('https://avatar.test/gui.png');
+    $googleUser->shouldReceive('getRaw')->andReturn(['email_verified' => $emailVerified]);
 
     $provider = Mockery::mock(Provider::class);
     $provider->shouldReceive('user')->andReturn($googleUser);
@@ -120,4 +124,77 @@ it('redireciona para login com erro quando o Google não retorna email', functio
     $this->get('/api/auth/google/callback')->assertRedirect(frontend('/login?error=google_failed'));
 
     expect(User::count())->toBe(0);
+});
+
+it('trata erro reportado pelo Google na query string', function () {
+    $this->get('/api/auth/google/callback?error=access_denied')
+        ->assertRedirect(frontend('/login?error=google_failed'));
+
+    expect(User::count())->toBe(0);
+});
+
+it('trata erro de rede ao buscar o usuário do Google como falha de login', function () {
+    $provider = Mockery::mock(Provider::class);
+    $provider->shouldReceive('user')->andThrow(new ClientException(
+        'bad',
+        new Psr7Request('POST', 'x'),
+        new Psr7Response(400),
+    ));
+    Socialite::shouldReceive('driver')->with('google')->andReturn($provider);
+
+    $this->get('/api/auth/google/callback')->assertRedirect(frontend('/login?error=google_failed'));
+});
+
+it('recusa login quando o Google informa que o email não foi verificado', function () {
+    $user = User::factory()->create(['email' => 'gui@gmail.com', 'google_id' => null]);
+    fakeGoogleUser('gui@gmail.com', emailVerified: false);
+
+    $this->get('/api/auth/google/callback')->assertRedirect(frontend('/login?error=google_failed'));
+
+    expect($user->fresh()->google_id)->toBeNull();
+    $this->assertGuest();
+});
+
+it('recusa vincular por email quando ele já pertence a outro google_id', function () {
+    $user = User::factory()->create(['email' => 'gui@gmail.com', 'google_id' => 'outro-google-id']);
+    fakeGoogleUser('gui@gmail.com', id: 'google-123');
+
+    $this->get('/api/auth/google/callback')->assertRedirect(frontend('/login?error=google_conflict'));
+
+    expect($user->fresh()->google_id)->toBe('outro-google-id');
+    $this->assertGuest();
+});
+
+it('exige login com senha para vincular conta não verificada e com senha', function () {
+    $user = User::factory()->unverified()->create(['email' => 'gui@gmail.com', 'google_id' => null]);
+    fakeGoogleUser('gui@gmail.com');
+
+    $this->get('/api/auth/google/callback')->assertRedirect(frontend('/login?error=google_link_requires_password'));
+
+    expect($user->fresh()->google_id)->toBeNull();
+    $this->assertGuest();
+});
+
+it('vincula conta criada por user:create (email verificado) ao fazer login com Google', function () {
+    $this->artisan('user:create', ['email' => 'gui@gmail.com', '--name' => 'Gui'])
+        ->expectsQuestion('Senha', 'password123')
+        ->expectsQuestion('Confirme a senha', 'password123')
+        ->assertSuccessful();
+
+    $user = User::where('email', 'gui@gmail.com')->firstOrFail();
+    fakeGoogleUser('gui@gmail.com');
+
+    $this->get('/api/auth/google/callback')->assertRedirect(frontend('/'));
+
+    expect($user->fresh()->google_id)->toBe('google-123');
+    $this->assertAuthenticatedAs($user->fresh());
+});
+
+it('não religa quando o usuário logado já tem outro google_id vinculado', function () {
+    $user = actingAsUser(['google_id' => 'ja-vinculado']);
+    fakeGoogleUser('outro@gmail.com', id: 'google-123');
+
+    $this->get('/api/auth/google/callback')->assertRedirect(frontend('/configuracoes?google=already_linked'));
+
+    expect($user->fresh()->google_id)->toBe('ja-vinculado');
 });

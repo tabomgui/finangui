@@ -16,8 +16,9 @@ final class CreateUser
         ?string $password = null,
         ?string $googleId = null,
         ?string $avatar = null,
+        bool $emailVerified = false,
     ): User {
-        return DB::transaction(function () use ($name, $email, $password, $googleId, $avatar) {
+        return DB::transaction(function () use ($name, $email, $password, $googleId, $avatar, $emailVerified) {
             $user = User::create([
                 'name' => $name,
                 'email' => $email,
@@ -25,6 +26,12 @@ final class CreateUser
                 'google_id' => $googleId,
                 'avatar' => $avatar,
             ]);
+
+            // email_verified_at não é fillable (só quem confirmou a posse do email
+            // por um canal confiável, aqui o operador via CLI ou o próprio Google, pode setá-lo).
+            if ($emailVerified) {
+                $user->forceFill(['email_verified_at' => now()])->save();
+            }
 
             $this->seedDefaultCategories->handle($user);
 

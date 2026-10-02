@@ -39,7 +39,8 @@ final class CreateUserCommand extends Command
             return self::FAILURE;
         }
 
-        $user = $createUser->handle($name, $email, $password);
+        // Quem roda este comando é o operador da instância: o email já é confiável.
+        $user = $createUser->handle($name, $email, $password, emailVerified: true);
         $this->info("Usuário #{$user->id} criado: {$user->email}");
 
         return self::SUCCESS;

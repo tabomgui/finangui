@@ -16,6 +16,6 @@ class DatabaseSeeder extends Seeder
             return;
         }
 
-        $createUser->handle('Dev', 'dev@finangui.test', 'password');
+        $createUser->handle('Dev', 'dev@finangui.test', 'password', emailVerified: true);
     }
 }
