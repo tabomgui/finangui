@@ -17,6 +17,7 @@ final class MonthSummary
      *     month: string,
      *     currency: string,
      *     total_balance: int,
+     *     balance_date: string,
      *     accounts: list<array{id: int, name: string, type: AccountType, currency: string, color: string|null, icon: string|null, balance: int}>,
      *     income: int,
      *     expense: int,
@@ -29,10 +30,13 @@ final class MonthSummary
         $start = $month->startOfMonth()->toDateString();
         $end = $month->endOfMonth()->toDateString();
 
+        $now = CarbonImmutable::now();
+        $asOf = $month->isSameMonth($now) ? $now : $month->endOfMonth();
+
         /** @var string $primaryCurrency */
         $primaryCurrency = config('finangui.primary_currency');
 
-        $accounts = Account::query()->withBalance()->where('is_archived', false)->orderBy('name')->get();
+        $accounts = Account::query()->withBalance($asOf)->where('is_archived', false)->orderBy('name')->get();
 
         $totals = Transaction::query()
             ->reportable()
@@ -51,6 +55,7 @@ final class MonthSummary
             'currency' => $primaryCurrency,
             'total_balance' => (int) $accounts->where('currency', $primaryCurrency)
                 ->sum(fn (Account $a) => $a->balance()->cents),
+            'balance_date' => $asOf->toDateString(),
             'accounts' => $accounts->map(fn (Account $a) => [
                 'id' => $a->id,
                 'name' => $a->name,

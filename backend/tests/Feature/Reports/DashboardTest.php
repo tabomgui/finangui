@@ -113,8 +113,51 @@ it('restringe os totais à moeda principal mas lista todas as contas', function 
         ->assertJsonPath('data.accounts.1.currency', 'USD');
 });
 
+it('calcula o saldo das contas até o fim do mês consultado quando o mês já passou', function () {
+    actingAsUser();
+    $this->travelTo('2026-10-15');
+    $account = Account::factory()->create(['opening_balance' => 1000]);
+    Transaction::factory()->for($account)->income()->create(['date' => '2026-09-10', 'amount' => 500]);
+    Transaction::factory()->for($account)->create(['date' => '2026-10-10', 'amount' => 200]);
+
+    $this->getJson('/api/v1/dashboard?month=2026-09')
+        ->assertOk()
+        ->assertJsonPath('data.balance_date', '2026-09-30')
+        ->assertJsonPath('data.total_balance', 1500)
+        ->assertJsonPath('data.accounts.0.balance', 1500);
+});
+
+it('calcula o saldo das contas até hoje quando o mês consultado é o mês atual', function () {
+    actingAsUser();
+    $this->travelTo('2026-10-15');
+    $account = Account::factory()->create(['opening_balance' => 1000]);
+    Transaction::factory()->for($account)->income()->create(['date' => '2026-09-10', 'amount' => 500]);
+    Transaction::factory()->for($account)->create(['date' => '2026-10-10', 'amount' => 200]);
+
+    $this->getJson('/api/v1/dashboard?month=2026-10')
+        ->assertOk()
+        ->assertJsonPath('data.balance_date', '2026-10-15')
+        ->assertJsonPath('data.total_balance', 1300)
+        ->assertJsonPath('data.accounts.0.balance', 1300);
+});
+
+it('não conta no saldo transação futura dentro do próprio mês atual, mas conta na receita/despesa do mês', function () {
+    actingAsUser();
+    $this->travelTo('2026-10-15');
+    $account = Account::factory()->create(['opening_balance' => 1000]);
+    Transaction::factory()->for($account)->create(['date' => '2026-10-20', 'amount' => 200]);
+
+    $this->getJson('/api/v1/dashboard?month=2026-10')
+        ->assertOk()
+        ->assertJsonPath('data.balance_date', '2026-10-15')
+        ->assertJsonPath('data.total_balance', 1000)
+        ->assertJsonPath('data.accounts.0.balance', 1000)
+        ->assertJsonPath('data.expense', 200);
+});
+
 it('isola o resumo de dados de outro usuário', function () {
     $user = actingAsUser();
+    $this->travelTo('2026-10-15');
     $account = Account::factory()->create(['opening_balance' => 1000]);
     $category = Category::factory()->create(['name' => 'Categoria do usuário']);
     Transaction::factory()->for($account)->income()->create(['date' => '2026-10-05', 'amount' => 50000]);

@@ -8,6 +8,7 @@ use App\Domain\Transactions\Models\Transaction;
 use App\Models\Concerns\BelongsToUser;
 use App\Support\Money\Money;
 use App\Support\Money\MoneyCast;
+use Carbon\CarbonInterface;
 use Database\Factories\AccountFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -68,17 +69,19 @@ class Account extends Model
     /**
      * Carrega o saldo calculado numa única query (subselect por conta).
      * Saldo = opening_balance + Σ(posted, não ignoradas) com sinal por direction.
+     * Com $asOf, considera só transações com date <= $asOf (comparação por data, sem hora).
      *
      * @param  Builder<Account>  $query
      */
-    public function scopeWithBalance(Builder $query): void
+    public function scopeWithBalance(Builder $query, ?CarbonInterface $asOf = null): void
     {
         $query->select('accounts.*')->addSelect(['balance_net' => Transaction::query()
             ->withoutGlobalScopes()
             ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0)")
             ->whereColumn('transactions.account_id', 'accounts.id')
             ->where('status', TransactionStatus::Posted->value)
-            ->where('is_ignored', false),
+            ->where('is_ignored', false)
+            ->when($asOf, fn (Builder $q) => $q->whereDate('date', '<=', $asOf->toDateString())),
         ]);
     }
 
