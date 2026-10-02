@@ -22,6 +22,7 @@ final class AccountResource extends JsonResource
             'type' => $this->type->value,
             'currency' => $this->currency,
             'opening_balance' => $this->opening_balance->cents,
+            'balance' => $this->when($this->resource->hasBalance(), fn () => $this->resource->balance()->cents),
             'color' => $this->color,
             'icon' => $this->icon,
             'is_archived' => $this->is_archived,

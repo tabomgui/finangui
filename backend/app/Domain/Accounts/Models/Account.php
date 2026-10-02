@@ -3,14 +3,17 @@
 namespace App\Domain\Accounts\Models;
 
 use App\Domain\Accounts\Enums\AccountType;
+use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\Concerns\BelongsToUser;
 use App\Support\Money\Money;
 use App\Support\Money\MoneyCast;
 use Database\Factories\AccountFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use LogicException;
 
 /**
  * @property AccountType $type
@@ -60,5 +63,36 @@ class Account extends Model
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class);
+    }
+
+    /**
+     * Carrega o saldo calculado numa única query (subselect por conta).
+     * Saldo = opening_balance + Σ(posted, não ignoradas) com sinal por direction.
+     *
+     * @param  Builder<Account>  $query
+     */
+    public function scopeWithBalance(Builder $query): void
+    {
+        $query->select('accounts.*')->addSelect(['balance_net' => Transaction::query()
+            ->withoutGlobalScopes()
+            ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0)")
+            ->whereColumn('transactions.account_id', 'accounts.id')
+            ->where('status', TransactionStatus::Posted->value)
+            ->where('is_ignored', false),
+        ]);
+    }
+
+    public function hasBalance(): bool
+    {
+        return array_key_exists('balance_net', $this->attributes);
+    }
+
+    public function balance(): Money
+    {
+        if (! $this->hasBalance()) {
+            throw new LogicException('Carregue a conta com withBalance() antes de ler o saldo.');
+        }
+
+        return $this->opening_balance->plus(Money::cents((int) $this->attributes['balance_net']));
     }
 }

@@ -17,6 +17,7 @@ final class AccountController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         $accounts = Account::query()
+            ->withBalance()
             ->when(! $request->boolean('include_archived'), fn ($q) => $q->where('is_archived', false))
             ->orderBy('is_archived')
             ->orderBy('name')
@@ -27,19 +28,21 @@ final class AccountController extends Controller
 
     public function store(StoreAccountRequest $request): AccountResource
     {
-        return AccountResource::make(Account::create($request->validated()));
+        $account = Account::create($request->validated());
+
+        return AccountResource::make($this->withBalance($account));
     }
 
     public function show(Account $account): AccountResource
     {
-        return AccountResource::make($account);
+        return AccountResource::make($this->withBalance($account));
     }
 
     public function update(UpdateAccountRequest $request, Account $account): AccountResource
     {
         $account->update($request->validated());
 
-        return AccountResource::make($account);
+        return AccountResource::make($this->withBalance($account));
     }
 
     public function destroy(Account $account): Response
@@ -51,5 +54,13 @@ final class AccountController extends Controller
         $account->delete();
 
         return response()->noContent();
+    }
+
+    private function withBalance(Account $account): Account
+    {
+        $loaded = Account::query()->withBalance()->findOrFail($account->id);
+        $loaded->wasRecentlyCreated = $account->wasRecentlyCreated;
+
+        return $loaded;
     }
 }
