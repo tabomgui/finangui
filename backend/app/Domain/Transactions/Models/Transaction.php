@@ -13,6 +13,7 @@ use App\Support\Money\Money;
 use App\Support\Money\MoneyCast;
 use Carbon\CarbonImmutable;
 use Database\Factories\TransactionFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -101,5 +102,20 @@ class Transaction extends Model
     public function isTransferLeg(): bool
     {
         return $this->transfer_id !== null;
+    }
+
+    /**
+     * Transações que contam como receita/despesa em relatórios: lançadas, não
+     * ignoradas, fora de transferências e fora de categorias marcadas como transferência.
+     *
+     * @param  Builder<Transaction>  $query
+     */
+    public function scopeReportable(Builder $query): void
+    {
+        $query->where('transactions.status', TransactionStatus::Posted->value)
+            ->where('transactions.is_ignored', false)
+            ->whereNull('transactions.transfer_id')
+            ->where(fn (Builder $q) => $q->whereNull('transactions.category_id')
+                ->orWhereHas('category', fn (Builder $c) => $c->where('is_transfer', false)));
     }
 }

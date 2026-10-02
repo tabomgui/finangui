@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\Auth\AuthStatusController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\SessionController;
 use App\Http\Controllers\Api\V1\CategoryController;
+use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\TagController;
 use App\Http\Controllers\Api\V1\TransactionController;
@@ -22,6 +23,7 @@ Route::prefix('v1')->group(function () {
         Route::post('auth/logout', [SessionController::class, 'destroy']);
         Route::get('me', [MeController::class, 'show']);
         Route::patch('me', [MeController::class, 'update']);
+        Route::get('dashboard', DashboardController::class);
         Route::apiResource('accounts', AccountController::class);
         Route::apiResource('categories', CategoryController::class);
         Route::apiResource('tags', TagController::class)->except('show');
