@@ -8,19 +8,22 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { LoadMore } from '@/components/shared/load-more'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { formatDayLabel } from '@/lib/date'
 import { BulkActionBar } from './bulk-action-bar'
-import { activeFilterCount, filtersFromParams } from './filters'
+import { activeFilterCount, effectiveTransactionFilters, filtersFromParams, paramsWithFuture, showFutureFromParams } from './filters'
 import { groupByDay } from './group-by-day'
 import { TransactionFilters } from './transaction-filters'
 import { TransactionRow } from './transaction-row'
 
 export function TransactionsPage() {
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const filters = filtersFromParams(params)
-  const query = useTransactions(filters)
+  const showFuture = showFutureFromParams(params)
+  const query = useTransactions(effectiveTransactionFilters(filters, showFuture))
   const transactions = query.data?.pages.flatMap((page) => page.data) ?? []
   const filtered = activeFilterCount(filters) > 0 || filters.search !== undefined
 
@@ -139,6 +142,16 @@ export function TransactionsPage() {
           loading={query.isFetchingNextPage}
           onLoadMore={() => query.fetchNextPage()}
         />
+        <div className="flex items-center justify-end gap-2 px-1">
+          <Switch
+            id="show-future-transactions"
+            checked={showFuture}
+            onCheckedChange={(checked) => setParams((current) => paramsWithFuture(current, checked), { replace: true })}
+          />
+          <Label htmlFor="show-future-transactions" className="text-sm text-muted-foreground">
+            Mostrar lançamentos futuros
+          </Label>
+        </div>
       </PageBody>
       {selecting && selected.length > 0 && (
         <BulkActionBar

@@ -1,5 +1,6 @@
 import type { TransactionFilters } from '@/api/query-keys'
 import type { Direction } from '@/api/types'
+import { today } from '@/lib/date'
 
 /**
  * Nomes curtos e em português na URL, para links legíveis e compartilháveis.
@@ -58,4 +59,28 @@ export function paramsWithFilter<K extends keyof Omit<TransactionFilters, 'state
 
 export function activeFilterCount(filters: TransactionFilters): number {
   return Object.entries(filters).filter(([key, value]) => key !== 'search' && value !== undefined).length
+}
+
+const FUTURE_PARAM = 'futuros'
+
+/** `futuros=1` tira o limite implícito de hoje da lista de transações (ver effectiveTransactionFilters). */
+export function showFutureFromParams(params: URLSearchParams): boolean {
+  return params.get(FUTURE_PARAM) === '1'
+}
+
+export function paramsWithFuture(params: URLSearchParams, show: boolean): URLSearchParams {
+  const next = new URLSearchParams(params)
+  if (show) next.set(FUTURE_PARAM, '1')
+  else next.delete(FUTURE_PARAM)
+  return next
+}
+
+/**
+ * Por padrão, a lista de transações não mostra parcelas projetadas futuras:
+ * limita implicitamente a hoje. Um "até" explícito sempre vence; o switch
+ * "Mostrar lançamentos futuros" tira esse limite implícito.
+ */
+export function effectiveTransactionFilters(filters: TransactionFilters, showFuture: boolean): TransactionFilters {
+  if (showFuture || filters.to !== undefined) return filters
+  return { ...filters, to: today() }
 }
