@@ -16,7 +16,7 @@ final class StoreTransactionRequest extends ApiRequest
         return [
             'account_id' => ['required', 'integer', Rule::exists('accounts', 'id')->where('user_id', $this->userId())],
             'date' => ['required', 'date_format:Y-m-d'],
-            'amount' => ['required', 'integer', 'min:1'],
+            'amount' => ['required', 'integer', 'min:1', 'max:1000000000000000'],
             'direction' => ['required', Rule::enum(Direction::class)],
             'description' => ['required', 'string', 'max:255'],
             'category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')->where('user_id', $this->userId())],

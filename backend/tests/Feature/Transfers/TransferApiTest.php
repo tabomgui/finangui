@@ -40,6 +40,17 @@ it('recusa transferência para a mesma conta', function () {
     ])->assertStatus(422)->assertJsonValidationErrors('to_account_id');
 });
 
+it('recusa amount acima do limite máximo', function () {
+    actingAsUser();
+    $inter = Account::factory()->create();
+    $nubank = Account::factory()->create();
+
+    $this->postJson('/api/v1/transfers', [
+        'from_account_id' => $inter->id, 'to_account_id' => $nubank->id, 'date' => '2026-10-01',
+        'amount' => 1_000_000_000_000_001, 'description' => 'x',
+    ])->assertStatus(422)->assertJsonValidationErrors('amount');
+});
+
 it('recusa transferência entre moedas diferentes', function () {
     actingAsUser();
     $brl = Account::factory()->create(['currency' => 'BRL']);

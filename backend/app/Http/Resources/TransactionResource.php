@@ -43,6 +43,8 @@ final class TransactionResource extends JsonResource
                 'icon' => $this->category->icon,
                 'color' => $this->category->color,
                 'is_transfer' => $this->category->is_transfer,
+                // @phpstan-ignore nullsafe.neverNull (falso positivo: Larastan não enxerga que parent_id/parent são nullable; em runtime uma categoria raiz não tem parent)
+                'is_transfer_effective' => $this->category->is_transfer || ($this->category->parent?->is_transfer ?? false),
             ] : null),
             'tags' => TagResource::collection($this->whenLoaded('tags')),
             'status' => $this->status,

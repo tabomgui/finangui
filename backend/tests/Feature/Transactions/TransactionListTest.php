@@ -54,6 +54,18 @@ it('filtra por conta, período, sentido e busca', function () {
         ->assertJsonPath('data.0.description', 'Uber *trip');
 });
 
+it('expõe is_transfer_effective herdado do pai marcado como transferência', function () {
+    actingAsUser();
+    $parent = Category::factory()->transfer()->create(['name' => 'Investimentos']);
+    $child = Category::factory()->create(['name' => 'Tesouro', 'parent_id' => $parent->id, 'is_transfer' => false]);
+    Transaction::factory()->create(['date' => '2026-10-05', 'category_id' => $child->id]);
+
+    $this->getJson('/api/v1/transactions')
+        ->assertOk()
+        ->assertJsonPath('data.0.category.is_transfer', false)
+        ->assertJsonPath('data.0.category.is_transfer_effective', true);
+});
+
 it('filtro por categoria inclui as subcategorias', function () {
     actingAsUser();
     $food = Category::factory()->create();

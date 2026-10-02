@@ -40,6 +40,14 @@ it('atualiza opening_balance enviado como float sem parte fracionária', functio
         ->assertJsonPath('data.opening_balance', 2000);
 });
 
+it('recusa opening_balance acima do limite máximo', function () {
+    actingAsUser();
+
+    $this->postJson('/api/v1/accounts', [
+        'name' => 'Inter', 'type' => 'checking', 'opening_balance' => 1_000_000_000_000_001,
+    ])->assertStatus(422)->assertJsonValidationErrors('opening_balance');
+});
+
 it('valida a conta', function () {
     actingAsUser();
 

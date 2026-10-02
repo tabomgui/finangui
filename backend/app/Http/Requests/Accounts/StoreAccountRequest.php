@@ -17,7 +17,7 @@ final class StoreAccountRequest extends ApiRequest
             'name' => ['required', 'string', 'max:60'],
             'type' => ['required', Rule::enum(AccountType::class)],
             'currency' => ['sometimes', 'string', 'regex:/^[A-Z]{3}$/'],
-            'opening_balance' => ['sometimes', 'integer'],
+            'opening_balance' => ['sometimes', 'integer', 'between:-1000000000000000,1000000000000000'],
             'color' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'icon' => ['nullable', 'string', 'max:50'],
         ];

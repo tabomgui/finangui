@@ -18,7 +18,7 @@ final class StoreTransferRequest extends ApiRequest
             'from_account_id' => ['required', 'integer', $ownAccount],
             'to_account_id' => ['required', 'integer', 'different:from_account_id', $ownAccount],
             'date' => ['required', 'date_format:Y-m-d'],
-            'amount' => ['required', 'integer', 'min:1'],
+            'amount' => ['required', 'integer', 'min:1', 'max:1000000000000000'],
             'description' => ['required', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:2000'],
         ];

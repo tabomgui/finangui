@@ -45,6 +45,16 @@ it('recusa string não inteira', function () {
         ->toThrow(InvalidArgumentException::class);
 });
 
+it('recusa string numérica fora do range de inteiro', function () {
+    expect(fn () => $this->cast->set($this->model, 'amount', '99999999999999999999999', []))
+        ->toThrow(InvalidArgumentException::class);
+});
+
+it('recusa float fora do range de inteiro', function () {
+    expect(fn () => $this->cast->set($this->model, 'amount', 1e20, []))
+        ->toThrow(InvalidArgumentException::class);
+});
+
 it('recusa infinito, NaN e tipos não escalares', function () {
     expect(fn () => $this->cast->set($this->model, 'amount', INF, []))
         ->toThrow(InvalidArgumentException::class)

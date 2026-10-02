@@ -63,6 +63,15 @@ it('valida valor, sentido e propriedade da conta', function () {
     ])->assertStatus(422)->assertJsonValidationErrors('amount');
 });
 
+it('recusa amount acima do limite máximo', function () {
+    actingAsUser();
+    $account = Account::factory()->create();
+
+    $this->postJson('/api/v1/transactions', [
+        'account_id' => $account->id, 'date' => '2026-10-01', 'amount' => 1_000_000_000_000_001, 'direction' => 'out', 'description' => 'x',
+    ])->assertStatus(422)->assertJsonValidationErrors('amount');
+});
+
 it('editar a descrição trava contra regras e mantém a original', function () {
     actingAsUser();
     $tx = Transaction::factory()->create(['description' => 'PAG*IFOOD', 'original_description' => 'PAG*IFOOD']);

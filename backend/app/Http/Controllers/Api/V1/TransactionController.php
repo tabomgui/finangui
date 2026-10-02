@@ -34,7 +34,7 @@ final class TransactionController extends Controller
 
     public function show(Transaction $transaction): TransactionResource
     {
-        return TransactionResource::make($transaction->load(['account', 'category', 'tags']));
+        return TransactionResource::make($transaction->load(['account', 'category.parent', 'tags']));
     }
 
     public function update(UpdateTransactionRequest $request, Transaction $transaction, UpdateTransaction $updateTransaction): TransactionResource

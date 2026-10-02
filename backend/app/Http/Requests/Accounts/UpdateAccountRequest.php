@@ -20,7 +20,7 @@ final class UpdateAccountRequest extends ApiRequest
         return [
             'name' => ['sometimes', 'required', 'string', 'max:60'],
             'type' => ['sometimes', Rule::enum(AccountType::class)],
-            'opening_balance' => ['sometimes', 'integer'],
+            'opening_balance' => ['sometimes', 'integer', 'between:-1000000000000000,1000000000000000'],
             'color' => ['sometimes', 'nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'icon' => ['sometimes', 'nullable', 'string', 'max:50'],
             'is_archived' => ['sometimes', 'boolean'],

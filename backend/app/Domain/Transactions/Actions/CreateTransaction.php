@@ -35,7 +35,7 @@ final class CreateTransaction
 
             $transaction->tags()->sync($data->tagIds);
 
-            return $transaction->load(['account', 'category', 'tags']);
+            return $transaction->load(['account', 'category.parent', 'tags']);
         });
     }
 }
