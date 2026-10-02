@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDate, formatDayLabel, formatMonth, monthKey, parseDateOnly, shiftMonth, toDateOnly } from './date'
+import { formatDate, formatDayLabel, formatMonth, monthKey, monthRange, parseDateOnly, shiftMonth, toDateOnly } from './date'
 
 describe('parseDateOnly', () => {
   it('interpreta em horário local, sem deslocar o dia', () => {
@@ -42,5 +42,10 @@ describe('meses', () => {
 
   it('formata o nome do mês', () => {
     expect(formatMonth('2026-10')).toBe('Outubro de 2026')
+  })
+
+  it('calcula o intervalo de datas do mês, incluindo mês com 31 dias e fevereiro', () => {
+    expect(monthRange('2026-10')).toEqual({ from: '2026-10-01', to: '2026-10-31' })
+    expect(monthRange('2024-02')).toEqual({ from: '2024-02-01', to: '2024-02-29' })
   })
 })

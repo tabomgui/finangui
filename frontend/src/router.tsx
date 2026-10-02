@@ -5,7 +5,6 @@ import { FullPageSpinner } from '@/components/shared/full-page-spinner'
 import { LoginPage } from '@/features/auth/login-page'
 import { ProtectedRoute } from '@/features/auth/protected-route'
 import { RegisterPage } from '@/features/auth/register-page'
-import { ComingSoonPage } from '@/features/misc/coming-soon-page'
 import { NotFoundPage } from '@/features/misc/not-found-page'
 
 /** Adapta um módulo com export nomeado ao formato `lazy` do react-router. */
@@ -23,7 +22,7 @@ export const router = createBrowserRouter([
       {
         element: <AppShell />,
         children: [
-          { index: true, element: <ComingSoonPage title="Início" /> },
+          { index: true, lazy: lazyPage(() => import('@/features/dashboard/dashboard-page'), 'DashboardPage') },
           { path: 'transacoes', lazy: lazyPage(() => import('@/features/transactions/transactions-page'), 'TransactionsPage') },
           {
             path: 'transacoes/nova',
