@@ -10,5 +10,8 @@ backend/storage/framework/cache/*
 backend/storage/framework/sessions/*
 backend/storage/framework/views/*
 backend/storage/app/openapi.json
+backend/bootstrap/cache/*.php
+backend/storage/app/private/*
+backend/storage/app/public/*
 frontend/node_modules
 frontend/dist
