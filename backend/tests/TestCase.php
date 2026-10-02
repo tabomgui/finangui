@@ -12,7 +12,7 @@ abstract class TestCase extends BaseTestCase
         $app = parent::createApplication();
 
         // Trava de segurança: RefreshDatabase apaga tudo. Nunca rodar fora do banco de teste.
-        $database = (string) $app['config']->get('database.connections.pgsql.database');
+        $database = (string) $app['db']->connection()->getDatabaseName();
         if (! str_ends_with($database, '_test')) {
             throw new RuntimeException("Recusando rodar testes no banco [{$database}].");
         }
