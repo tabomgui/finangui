@@ -24,7 +24,7 @@ export const router = createBrowserRouter([
         element: <AppShell />,
         children: [
           { index: true, element: <ComingSoonPage title="Início" /> },
-          { path: 'transacoes', element: <ComingSoonPage title="Transações" /> },
+          { path: 'transacoes', lazy: lazyPage(() => import('@/features/transactions/transactions-page'), 'TransactionsPage') },
           {
             path: 'transacoes/nova',
             lazy: lazyPage(() => import('@/features/transactions/transaction-form-page'), 'TransactionFormPage'),

@@ -1,10 +1,34 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, expectOk, unwrap } from '@/api/client'
-import { invalidateLedger, queryKeys } from '@/api/query-keys'
+import { compactFilters, invalidateLedger, queryKeys, type TransactionFilters } from '@/api/query-keys'
 import type { components } from '@/api/schema'
 
 type StoreTransactionRequest = components['schemas']['StoreTransactionRequest']
 type UpdateTransactionRequest = components['schemas']['UpdateTransactionRequest']
+
+const PAGE_SIZE = 30
+
+export function useTransactions(filters: TransactionFilters) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.transactions(filters),
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam }) =>
+      unwrap(
+        api.GET('/transactions', {
+          params: { query: { ...compactFilters(filters), per_page: PAGE_SIZE, ...(pageParam ? { cursor: pageParam } : {}) } },
+        }),
+      ),
+    getNextPageParam: (lastPage) => lastPage.meta.next_cursor,
+    placeholderData: keepPreviousData,
+  })
+}
+
+export function useRecentTransactions(limit = 5) {
+  return useQuery({
+    queryKey: queryKeys.recentTransactions(),
+    queryFn: async () => (await unwrap(api.GET('/transactions', { params: { query: { per_page: limit } } }))).data,
+  })
+}
 
 export function useTransaction(id: number | null) {
   return useQuery({
