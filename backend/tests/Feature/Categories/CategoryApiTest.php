@@ -107,6 +107,28 @@ it('não deixa categoria ser pai de si mesma', function () {
         ->assertJsonValidationErrors('parent_id');
 });
 
+it('recusa mover categoria para um pai que já tem uma filha com o mesmo nome', function () {
+    actingAsUser();
+    $moradia = Category::factory()->create(['name' => 'Moradia']);
+    Category::factory()->create(['name' => 'Casa', 'parent_id' => $moradia->id]);
+    $rootCasa = Category::factory()->create(['name' => 'Casa']);
+
+    $this->patchJson("/api/v1/categories/{$rootCasa->id}", ['parent_id' => $moradia->id])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('parent_id');
+});
+
+it('recusa promover subcategoria para raiz quando já existe uma categoria raiz com o mesmo nome', function () {
+    actingAsUser();
+    $root = Category::factory()->create();
+    Category::factory()->create(['name' => 'Casa']);
+    $child = Category::factory()->create(['name' => 'Casa', 'parent_id' => $root->id]);
+
+    $this->patchJson("/api/v1/categories/{$child->id}", ['parent_id' => null])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('parent_id');
+});
+
 it('recusa excluir categoria com subcategorias', function () {
     actingAsUser();
     $root = Category::factory()->create();

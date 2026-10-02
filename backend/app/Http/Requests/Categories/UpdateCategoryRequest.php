@@ -45,12 +45,36 @@ final class UpdateCategoryRequest extends ApiRequest
     public function after(): array
     {
         return [function (Validator $validator): void {
-            if ($validator->errors()->isNotEmpty() || ! $this->filled('parent_id')) {
+            if ($validator->errors()->isNotEmpty() || ! $this->has('parent_id')) {
                 return;
             }
 
             $category = $this->category();
-            $parent = Category::query()->find($this->integer('parent_id'));
+            $newParentId = $this->input('parent_id');
+            $name = $this->input('name', $category->name);
+
+            $duplicate = Category::query()
+                ->where('user_id', $this->userId())
+                ->where('name', $name)
+                ->where('id', '!=', $category->id)
+                ->when(
+                    $newParentId !== null,
+                    fn ($q) => $q->where('parent_id', (int) $newParentId),
+                    fn ($q) => $q->whereNull('parent_id'),
+                )
+                ->exists();
+
+            if ($duplicate) {
+                $validator->errors()->add('parent_id', 'Já existe uma categoria com esse nome nesse nível.');
+
+                return;
+            }
+
+            if ($newParentId === null) {
+                return;
+            }
+
+            $parent = Category::query()->find((int) $newParentId);
             if ($parent === null) {
                 return;
             }
