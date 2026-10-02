@@ -1,0 +1,85 @@
+# Produção: SPA e API no mesmo domínio. O TLS termina num proxy externo (Caddy,
+# Cloudflare Tunnel) apontando para a porta do serviço `web`.
+#
+# Uso: docker compose -f docker-compose.prod.yml --env-file backend/.env up -d --build
+# (o --env-file preenche as credenciais do Postgres a partir do mesmo .env do backend)
+name: finangui-prod
+
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: docker/php/Dockerfile
+    target: prod
+  env_file: ${BACKEND_ENV_FILE:-backend/.env}
+  # Falha rápido se o .env apontado por --env-file não tiver APP_KEY, em vez
+  # de o container subir sem chave e quebrar sessão/criptografia silenciosamente.
+  # Funciona porque ${APP_KEY} é interpolado pelo próprio `docker compose` a
+  # partir do mesmo arquivo passado em --env-file (não depende do env_file:
+  # acima, que só injeta variáveis dentro do container); o valor resolvido é
+  # o mesmo, então não há conflito de precedência entre as duas formas.
+  environment:
+    APP_KEY: "${APP_KEY:?Defina APP_KEY no .env do backend}"
+  volumes:
+    - storage:/var/www/html/storage
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-finangui}
+      POSTGRES_USER: ${DB_USERNAME:-finangui}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Defina DB_PASSWORD no .env do backend}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-finangui} -d ${DB_DATABASE:-finangui}"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  backend:
+    <<: *backend
+    command: sh -c "php artisan config:cache && php artisan route:cache && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8000/up') === false ? 1 : 0);"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  worker:
+    <<: *backend
+    command: php artisan queue:work --tries=3 --sleep=3
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  scheduler:
+    <<: *backend
+    command: php artisan schedule:work
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    ports:
+      - "${FINANGUI_BIND:-127.0.0.1}:${FINANGUI_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  storage:

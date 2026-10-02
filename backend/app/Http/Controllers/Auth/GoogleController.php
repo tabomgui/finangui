@@ -41,7 +41,7 @@ final class GoogleController extends Controller
         // cancelou) sem nunca chegar a emitir um `code`. Tratamos antes de tentar
         // trocar o código por um usuário.
         if ($request->filled('error')) {
-            return redirect()->away($this->frontend('/login?error=google_failed'));
+            return redirect()->away($this->frontend($this->failureRedirect()));
         }
 
         try {
@@ -49,7 +49,7 @@ final class GoogleController extends Controller
         } catch (InvalidStateException|GuzzleException) {
             // InvalidStateException: `state` não bate com a sessão (CSRF/sessão expirada).
             // GuzzleException: falha de rede/HTTP ao trocar o código com o Google.
-            return redirect()->away($this->frontend('/login?error=google_failed'));
+            return redirect()->away($this->frontend($this->failureRedirect()));
         }
 
         if (Auth::check()) {
@@ -183,5 +183,15 @@ final class GoogleController extends Controller
     private function frontend(string $path): string
     {
         return rtrim((string) config('app.frontend_url'), '/').$path;
+    }
+
+    /**
+     * Falha antes de identificar o usuário do Google: quem já estava logado veio
+     * de Configurações tentando vincular a conta, então volta para lá em vez do
+     * `/login` usado pelo fluxo de entrada.
+     */
+    private function failureRedirect(): string
+    {
+        return Auth::check() ? '/configuracoes?google=failed' : '/login?error=google_failed';
     }
 }
