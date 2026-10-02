@@ -16,7 +16,8 @@ const decimalFormatter = new Intl.NumberFormat('pt-BR', { minimumFractionDigits:
 export type Direction = 'in' | 'out'
 
 export function formatMoney(cents: number, currency = 'BRL'): string {
-  return currencyFormatter(currency).format(cents / 100)
+  const normalized = cents === 0 ? 0 : cents
+  return currencyFormatter(currency).format(normalized / 100)
 }
 
 export function formatSignedMoney(cents: number, direction: Direction, currency = 'BRL'): string {
@@ -24,7 +25,8 @@ export function formatSignedMoney(cents: number, direction: Direction, currency 
 }
 
 export function centsToInputString(cents: number): string {
-  return decimalFormatter.format(cents / 100)
+  const normalized = cents === 0 ? 0 : cents
+  return decimalFormatter.format(normalized / 100)
 }
 
 const GROUPED_INTEGER = /^\d{1,3}(\.\d{3})*$/
@@ -51,6 +53,7 @@ export function parseMoneyInput(raw: string): number | null {
     value = value.slice(1)
   }
   if (!/^[\d.,]+$/.test(value)) return null
+  if (!/\d/.test(value)) return null
 
   let integerPart: string | null
   let decimalPart = ''
@@ -76,5 +79,5 @@ export function parseMoneyInput(raw: string): number | null {
   const cents = Number(integerPart) * 100 + Number(decimalPart.padEnd(2, '0'))
   if (!Number.isSafeInteger(cents)) return null
 
-  return negative ? -cents : cents
+  return negative && cents !== 0 ? -cents : cents
 }

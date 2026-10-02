@@ -13,6 +13,10 @@ describe('formatMoney', () => {
   it('aceita outra moeda', () => {
     expect(formatMoney(1050, 'USD')).toBe(`US$${nbsp}10,50`)
   })
+
+  it('normaliza zero negativo para não exibir sinal', () => {
+    expect(formatMoney(-0)).toBe(`R$${nbsp}0,00`)
+  })
 })
 
 describe('formatSignedMoney', () => {
@@ -39,8 +43,16 @@ describe('parseMoneyInput', () => {
     expect(parseMoneyInput(input)).toBe(expected)
   })
 
-  it.each(['', '   ', 'abc', '10,999', '1,2,3', '1.', '12.34.5', '--1'])('rejeita %s', (input) => {
-    expect(parseMoneyInput(input)).toBeNull()
+  it.each(['', '   ', 'abc', '10,999', '1,2,3', '1.', '12.34.5', '--1', ',', '.', '-', 'R$'])(
+    'rejeita %s',
+    (input) => {
+      expect(parseMoneyInput(input)).toBeNull()
+    },
+  )
+
+  it('normaliza zero negativo para zero', () => {
+    expect(Object.is(parseMoneyInput('-0'), 0)).toBe(true)
+    expect(Object.is(parseMoneyInput('-0,00'), 0)).toBe(true)
   })
 })
 
@@ -49,5 +61,9 @@ describe('centsToInputString', () => {
     expect(centsToInputString(106936)).toBe('1.069,36')
     expect(centsToInputString(5)).toBe('0,05')
     expect(centsToInputString(-1050)).toBe('-10,50')
+  })
+
+  it('normaliza zero negativo para não exibir sinal', () => {
+    expect(centsToInputString(-0)).toBe('0,00')
   })
 })
