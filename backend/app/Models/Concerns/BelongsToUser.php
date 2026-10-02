@@ -10,18 +10,21 @@ use Illuminate\Support\Facades\Auth;
 /**
  * Isola os dados por usuário: global scope por auth()->id() e user_id automático.
  *
- * Sem usuário autenticado (seeders, factories, comandos) o scope não filtra.
- * Por isso toda rota que toca um model com este trait PRECISA estar atrás de
- * auth:sanctum — o middleware é a barreira real.
+ * Sem usuário autenticado o scope falha fechado (MissingUserContext). Fora de
+ * request, rode o trabalho dentro de App\Support\UserContext::run(); acesso
+ * global legítimo (seeders, factories, importação) usa withoutGlobalScopes().
+ * Toda rota que toca um model com este trait fica atrás de auth:sanctum.
  */
 trait BelongsToUser
 {
     protected static function bootBelongsToUser(): void
     {
         static::addGlobalScope('user', function (Builder $builder) {
-            if (Auth::hasUser()) {
-                $builder->where($builder->getModel()->getTable().'.user_id', Auth::id());
+            if (! Auth::hasUser()) {
+                throw MissingUserContext::forModel($builder->getModel()::class);
             }
+
+            $builder->where($builder->getModel()->getTable().'.user_id', Auth::id());
         });
 
         static::creating(function ($model) {

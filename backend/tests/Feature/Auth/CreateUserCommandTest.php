@@ -15,7 +15,7 @@ it('cria usuário com categorias padrão', function () {
     expect($user->name)->toBe('Gui')
         ->and(Hash::check('password123', $user->password))->toBeTrue()
         ->and($user->email_verified_at)->not->toBeNull()
-        ->and(Category::query()->where('user_id', $user->id)->count())->toBeGreaterThan(10);
+        ->and(Category::query()->withoutGlobalScopes()->where('user_id', $user->id)->count())->toBeGreaterThan(10);
 });
 
 it('recusa email já cadastrado', function () {

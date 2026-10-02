@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Concerns\MissingUserContext;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Auth;
@@ -33,12 +34,19 @@ it('só retorna registros do usuário autenticado', function () {
     expect(ScopedNote::pluck('body')->all())->toBe(['meu']);
 });
 
-it('não filtra quando não há usuário autenticado', function () {
+it('falha fechado quando não há usuário autenticado', function () {
+    $a = User::factory()->create();
+    ScopedNote::create(['user_id' => $a->id, 'body' => 'a']);
+
+    expect(Auth::hasUser())->toBeFalse();
+    expect(fn () => ScopedNote::count())->toThrow(MissingUserContext::class);
+});
+
+it('permite bypass explícito com withoutGlobalScopes', function () {
     $a = User::factory()->create();
     $b = User::factory()->create();
     ScopedNote::create(['user_id' => $a->id, 'body' => 'a']);
     ScopedNote::create(['user_id' => $b->id, 'body' => 'b']);
 
-    expect(Auth::hasUser())->toBeFalse()
-        ->and(ScopedNote::count())->toBe(2);
+    expect(ScopedNote::query()->withoutGlobalScopes()->count())->toBe(2);
 });

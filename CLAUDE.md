@@ -6,7 +6,7 @@ Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`;
 
 - Pastas por domínio em `app/Domain/<Domínio>/{Models,Actions,Data,Enums,Queries,Errors,Support}`.
 - Controllers finos (`app/Http/Controllers/Api/V1`): FormRequest valida, Action executa regra de negócio, JsonResource responde. CRUD trivial pode usar Eloquent direto no controller; qualquer regra vai para uma Action.
-- Todo model de domínio usa `App\Models\Concerns\BelongsToUser`. Toda rota de recurso fica atrás de `auth:sanctum`. `tests/Feature/RouteAuthenticationTest.php` garante isso automaticamente para toda rota `api/*`, exceto as da allowlist no próprio teste — rota pública nova precisa entrar nessa lista.
+- Todo model de domínio usa `App\Models\Concerns\BelongsToUser`. O global scope falha fechado: sem usuário autenticado lança `MissingUserContext`. Fora de request (job, comando, scheduler), rode o trabalho dentro de `App\Support\UserContext::run($user, fn () => ...)`; acesso global legítimo (seeders, factories, importação) usa `withoutGlobalScopes()` explicitamente. Jobs em `app/Domain/*/Jobs` precisam usar `UserContext::run(` (arch test). Toda rota de recurso fica atrás de `auth:sanctum`. `tests/Feature/RouteAuthenticationTest.php` garante isso automaticamente para toda rota `api/*`, exceto as da allowlist no próprio teste — rota pública nova precisa entrar nessa lista.
 - Regras `exists`/`unique` que referenciam recursos do usuário são escopadas por `user_id`.
 - Dinheiro: `bigint` em centavos, `App\Support\Money\Money` + `MoneyCast`. `amount` sempre positivo; sentido em `direction` (`in`/`out`). Nunca float.
 - Valores derivados (saldos, totais) são calculados no backend, nunca gravados e nunca calculados no frontend.
