@@ -10,6 +10,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { notifyError } from '@/lib/form-errors'
 
 type ConfirmDialogProps = {
   open: boolean
@@ -38,6 +39,8 @@ export function ConfirmDialog({
     try {
       await onConfirm()
       onOpenChange(false)
+    } catch (error) {
+      notifyError(error)
     } finally {
       setPending(false)
     }
