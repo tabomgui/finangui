@@ -29,13 +29,16 @@ export function buildCategoryTree(categories: Category[], kind: CategoryKind): C
 
 /**
  * Opções para seletores: pais seguidos das filhas, sem arquivadas (exceto `keepId`, para não
- * sumir a categoria já escolhida num lançamento antigo). Sem `kind`, junta despesas e receitas.
+ * sumir a categoria já escolhida num lançamento antigo, ou `includeArchived`, para filtros que
+ * precisam listar tudo). Sem `kind`, junta despesas e receitas.
  */
 export function flattenCategoryOptions(
   categories: Category[],
-  { kind, keepId }: { kind?: CategoryKind; keepId?: number | null },
+  { kind, keepId, includeArchived }: { kind?: CategoryKind; keepId?: number | null; includeArchived?: boolean },
 ): CategoryOption[] {
-  const visible = categories.filter((category) => !category.is_archived || category.id === keepId)
+  const visible = includeArchived
+    ? categories
+    : categories.filter((category) => !category.is_archived || category.id === keepId)
   const kinds: CategoryKind[] = kind ? [kind] : ['expense', 'income']
 
   return kinds.flatMap((each) =>

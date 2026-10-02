@@ -19,6 +19,8 @@ type CategoryPickerProps = Partial<FieldControlProps> & {
   placeholder?: string
   /** Permite escolher "Sem categoria". */
   allowNone?: boolean
+  /** Lista também categorias arquivadas (ex.: filtros, que precisam achar lançamentos antigos). */
+  includeArchived?: boolean
   disabled?: boolean
   'aria-label'?: string
 }
@@ -29,13 +31,14 @@ export function CategoryPicker({
   kind,
   placeholder = 'Escolha a categoria',
   allowNone = true,
+  includeArchived = false,
   disabled = false,
   'aria-label': ariaLabel,
   ...control
 }: CategoryPickerProps) {
   const [open, setOpen] = useState(false)
   const { data: categories = [] } = useCategories(true)
-  const options = flattenCategoryOptions(categories, { kind, keepId: value })
+  const options = flattenCategoryOptions(categories, { kind, keepId: value, includeArchived })
   const selected = categories.find((category) => category.id === value)
 
   const choose = (id: number | null) => {

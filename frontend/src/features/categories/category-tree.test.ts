@@ -68,6 +68,12 @@ describe('flattenCategoryOptions', () => {
     expect(flattenCategoryOptions(categories, {}).some((option) => option.category.name === 'Salário')).toBe(true)
   })
 
+  it('com includeArchived, inclui arquivadas sem precisar de keepId', () => {
+    const options = flattenCategoryOptions(categories, { kind: 'expense', includeArchived: true })
+
+    expect(options.some((option) => option.category.name === 'Delivery')).toBe(true)
+  })
+
   it('categoria cujo pai está arquivado (e por isso some da lista) aparece como opção raiz', () => {
     const withArchivedParent: Category[] = [
       category({ id: 10, name: 'Lazer', is_archived: true }),
