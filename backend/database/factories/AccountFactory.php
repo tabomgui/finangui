@@ -36,4 +36,17 @@ class AccountFactory extends Factory
     {
         return $this->state(['is_archived' => true]);
     }
+
+    public function creditCard(int $closingDay = 3, int $dueDay = 10, int $limit = 500000): static
+    {
+        return $this->state([
+            'name' => 'Cartão',
+            'type' => AccountType::CreditCard,
+            'icon' => 'credit-card',
+            'credit_limit' => $limit,
+            'closing_day' => $closingDay,
+            'due_day' => $dueDay,
+            'last_four' => '4242',
+        ]);
+    }
 }

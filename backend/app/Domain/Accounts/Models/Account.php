@@ -19,6 +19,9 @@ use LogicException;
 /**
  * @property AccountType $type
  * @property Money $opening_balance
+ * @property Money|null $credit_limit
+ * @property int|null $closing_day
+ * @property int|null $due_day
  */
 class Account extends Model
 {
@@ -27,7 +30,10 @@ class Account extends Model
     /** @use HasFactory<AccountFactory> */
     use HasFactory;
 
-    protected $fillable = ['user_id', 'name', 'type', 'currency', 'opening_balance', 'color', 'icon', 'is_archived'];
+    protected $fillable = [
+        'user_id', 'name', 'type', 'currency', 'opening_balance', 'color', 'icon', 'is_archived',
+        'credit_limit', 'closing_day', 'due_day', 'last_four',
+    ];
 
     /**
      * Espelham os defaults da migration: sem isso, um create() sem a chave
@@ -50,12 +56,20 @@ class Account extends Model
             'type' => AccountType::class,
             'opening_balance' => MoneyCast::class,
             'is_archived' => 'boolean',
+            'credit_limit' => MoneyCast::class,
+            'closing_day' => 'integer',
+            'due_day' => 'integer',
         ];
     }
 
     protected static function newFactory(): AccountFactory
     {
         return AccountFactory::new();
+    }
+
+    public function isCreditCard(): bool
+    {
+        return $this->type === AccountType::CreditCard;
     }
 
     /**
