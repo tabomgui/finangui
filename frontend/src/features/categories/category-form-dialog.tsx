@@ -49,14 +49,16 @@ function defaultsFor(category: Category | undefined, parentId: number | null): F
 }
 
 export function CategoryFormDialog({ open, onOpenChange, kind, category, parentId = null }: CategoryFormDialogProps) {
-  const { data: categories = [] } = useCategories(false)
+  // Inclui arquivadas: `hasChildren` precisa considerar também subcategorias arquivadas (uma
+  // categoria com filhas arquivadas continua sem poder virar subcategoria de outra).
+  const { data: categories = [] } = useCategories(true)
   const create = useCreateCategory()
   const update = useUpdateCategory()
   const pending = create.isPending || update.isPending
 
   const hasChildren = category ? categories.some((each) => each.parent_id === category.id) : false
   const parentOptions = categories.filter(
-    (each) => each.kind === kind && each.parent_id === null && each.id !== category?.id,
+    (each) => each.kind === kind && each.parent_id === null && each.id !== category?.id && !each.is_archived,
   )
 
   const form = useForm<FormValues>({

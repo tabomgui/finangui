@@ -5,18 +5,24 @@ export type CategoryOption = { category: Category; depth: 0 | 1 }
 
 const byName = (a: Category, b: Category) => a.name.localeCompare(b.name, 'pt-BR')
 
-/** Árvore de um nível (pai → filhas) de um tipo, ordenada por nome. Inclui arquivadas. */
+/**
+ * Árvore de um nível (pai → filhas) de um tipo, ordenada por nome. Inclui arquivadas.
+ *
+ * Uma categoria cujo `parent_id` não está presente na lista recebida (ex.: pai arquivado e
+ * omitido pelo chamador) é tratada como raiz, para continuar visível e editável.
+ */
 export function buildCategoryTree(categories: Category[], kind: CategoryKind): CategoryNode[] {
   const ofKind = categories.filter((category) => category.kind === kind)
+  const ids = new Set(ofKind.map((category) => category.id))
   const childrenByParent = new Map<number, Category[]>()
   for (const category of ofKind) {
-    if (category.parent_id !== null) {
+    if (category.parent_id !== null && ids.has(category.parent_id)) {
       childrenByParent.set(category.parent_id, [...(childrenByParent.get(category.parent_id) ?? []), category])
     }
   }
 
   return ofKind
-    .filter((category) => category.parent_id === null)
+    .filter((category) => category.parent_id === null || !ids.has(category.parent_id))
     .sort(byName)
     .map((category) => ({ category, children: (childrenByParent.get(category.id) ?? []).sort(byName) }))
 }

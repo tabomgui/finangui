@@ -33,6 +33,17 @@ describe('buildCategoryTree', () => {
     expect(tree.map((node) => node.category.name)).toEqual(['Alimentação', 'Moradia'])
     expect(tree[0].children.map((child) => child.name)).toEqual(['Delivery', 'Mercado'])
   })
+
+  it('mostra como raiz uma categoria cujo pai não está na lista (ex.: pai arquivado oculto)', () => {
+    // 'Moradia' (id 1) foi removida da lista, como se estivesse arquivada e oculta pelo chamador.
+    const withoutHiddenParent = categories.filter((category) => category.id !== 1)
+
+    const tree = buildCategoryTree(withoutHiddenParent, 'expense')
+
+    expect(tree.map((node) => node.category.name)).toEqual(['Alimentação', 'Aluguel'])
+    const orphan = tree.find((node) => node.category.name === 'Aluguel')
+    expect(orphan?.children).toEqual([])
+  })
 })
 
 describe('flattenCategoryOptions', () => {
@@ -55,5 +66,16 @@ describe('flattenCategoryOptions', () => {
 
   it('sem tipo, inclui todas', () => {
     expect(flattenCategoryOptions(categories, {}).some((option) => option.category.name === 'Salário')).toBe(true)
+  })
+
+  it('categoria cujo pai está arquivado (e por isso some da lista) aparece como opção raiz', () => {
+    const withArchivedParent: Category[] = [
+      category({ id: 10, name: 'Lazer', is_archived: true }),
+      category({ id: 11, name: 'Viagens', parent_id: 10 }),
+    ]
+
+    const options = flattenCategoryOptions(withArchivedParent, { kind: 'expense' })
+
+    expect(options).toEqual([{ category: withArchivedParent[1], depth: 0 }])
   })
 })
