@@ -44,10 +44,10 @@ Route::prefix('v1')->group(function () {
         Route::delete('transfers/{transfer}', [TransferController::class, 'destroy'])->whereUuid('transfer');
 
         Route::get('cards', [CardController::class, 'index']);
-        Route::get('cards/{account}', [CardController::class, 'show']);
-        Route::get('cards/{account}/statements', [CardController::class, 'statements']);
-        Route::get('cards/{account}/statement-preview', [CardController::class, 'statementPreview']);
-        Route::get('card-statements/{statement}', [CardStatementController::class, 'show']);
-        Route::patch('card-statements/{statement}', [CardStatementController::class, 'update']);
+        Route::get('cards/{account}', [CardController::class, 'show'])->whereNumber('account');
+        Route::get('cards/{account}/statements', [CardController::class, 'statements'])->whereNumber('account');
+        Route::get('cards/{account}/statement-preview', [CardController::class, 'statementPreview'])->whereNumber('account');
+        Route::get('card-statements/{statement}', [CardStatementController::class, 'show'])->whereNumber('statement');
+        Route::patch('card-statements/{statement}', [CardStatementController::class, 'update'])->whereNumber('statement');
     });
 });

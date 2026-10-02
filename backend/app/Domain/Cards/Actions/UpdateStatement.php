@@ -17,7 +17,9 @@ use Illuminate\Validation\ValidationException;
  * anterior e a da próxima (vizinhas por closing_date, não pela data nova —
  * senão a fatura poderia "pular" por cima de uma vizinha). A trava na linha
  * da conta serializa edições concorrentes do mesmo cartão (a mesma trava que
- * StatementResolver::forDate usa para criar fatura nova).
+ * StatementResolver::forDate usa para criar fatura nova); a fatura em si
+ * também é relida travada, já que closing_date/due_date podem ter mudado
+ * entre o binding da rota e esta transação.
  */
 final class UpdateStatement
 {
@@ -30,15 +32,20 @@ final class UpdateStatement
     {
         return DB::transaction(function () use ($statement, $input) {
             Account::query()->whereKey($statement->account_id)->lockForUpdate()->firstOrFail();
+            $statement = CardStatement::query()->whereKey($statement->id)->lockForUpdate()->firstOrFail();
 
-            $closing = array_key_exists('closing_date', $input)
-                ? CarbonImmutable::parse($input['closing_date'])->startOfDay()
-                : $statement->closing_date;
-            $due = array_key_exists('due_date', $input)
-                ? CarbonImmutable::parse($input['due_date'])->startOfDay()
-                : $statement->due_date;
+            $datesChanged = array_key_exists('closing_date', $input) || array_key_exists('due_date', $input);
 
-            $this->ensureOrdered($statement, $closing, $due);
+            if ($datesChanged) {
+                $closing = array_key_exists('closing_date', $input)
+                    ? CarbonImmutable::parse($input['closing_date'])->startOfDay()
+                    : $statement->closing_date;
+                $due = array_key_exists('due_date', $input)
+                    ? CarbonImmutable::parse($input['due_date'])->startOfDay()
+                    : $statement->due_date;
+
+                $this->ensureOrdered($statement, $closing, $due);
+            }
 
             $statement->update($input);
 
@@ -48,6 +55,12 @@ final class UpdateStatement
 
     private function ensureOrdered(CardStatement $statement, CarbonImmutable $closing, CarbonImmutable $due): void
     {
+        if (! $due->greaterThan($closing)) {
+            throw ValidationException::withMessages([
+                'due_date' => 'O vencimento precisa ser depois do fechamento.',
+            ]);
+        }
+
         $others = CardStatement::query()->where('account_id', $statement->account_id)->where('id', '!=', $statement->id);
 
         $previous = (clone $others)->where('closing_date', '<', $statement->closing_date)->orderByDesc('closing_date')->first();
@@ -77,7 +90,7 @@ final class UpdateStatement
             ]);
         }
 
-        if ($closing->diffInDays($due) > self::MAX_SPAN_DAYS) {
+        if ($due->greaterThan($closing->addDays(self::MAX_SPAN_DAYS))) {
             throw ValidationException::withMessages([
                 'due_date' => 'O vencimento não pode passar de 40 dias depois do fechamento.',
             ]);

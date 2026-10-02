@@ -39,6 +39,18 @@ it('pagamento libera limite', function () {
     $this->getJson("/api/v1/cards/{$this->card->id}")->assertJsonPath('data.limit.used', 20000);
 });
 
+it('transação pendente conta como limite usado', function () {
+    Transaction::factory()->create(['account_id' => $this->card->id, 'amount' => 15000, 'status' => 'pending']);
+
+    $this->getJson("/api/v1/cards/{$this->card->id}")->assertJsonPath('data.limit.used', 15000);
+});
+
+it('projetada que não é de parcelamento não conta como limite projetado', function () {
+    Transaction::factory()->create(['account_id' => $this->card->id, 'amount' => 15000, 'status' => 'projected', 'installment_plan_id' => null]);
+
+    $this->getJson("/api/v1/cards/{$this->card->id}")->assertJsonPath('data.limit.projected', 0);
+});
+
 it('fatura atual é a próxima a vencer, com dias até o vencimento', function () {
     CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-02-10', 'due_date' => '2026-02-20']);
     $mar = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-03-10', 'due_date' => '2026-03-20']);
@@ -60,17 +72,30 @@ it('arquivados só com include_archived', function () {
     $this->getJson('/api/v1/cards?include_archived=1')->assertJsonCount(1, 'data');
 });
 
-it('conta que não é cartão dá 404 no detalhe', function () {
+it('include_archived aceita "true"/"false" (como o openapi-fetch do frontend envia)', function () {
+    $this->card->update(['is_archived' => true]);
+
+    $this->getJson('/api/v1/cards?include_archived=false')->assertOk()->assertJsonCount(0, 'data');
+    $this->getJson('/api/v1/cards?include_archived=true')->assertOk()->assertJsonCount(1, 'data');
+});
+
+it('conta que não é cartão dá 404 no detalhe e na prévia', function () {
     $checking = Account::factory()->create(['user_id' => $this->user->id]);
 
     $this->getJson("/api/v1/cards/{$checking->id}")->assertNotFound();
+    $this->getJson("/api/v1/cards/{$checking->id}/statement-preview?date=2026-03-10")->assertNotFound();
 });
 
-it('cartão de outro usuário dá 404', function () {
+it('cartão de outro usuário dá 404, inclusive na prévia', function () {
     $other = Account::factory()->creditCard()->create(['user_id' => User::factory()->create()->id]);
 
     $this->getJson("/api/v1/cards/{$other->id}")->assertNotFound();
     $this->getJson("/api/v1/cards/{$other->id}/statements")->assertNotFound();
+    $this->getJson("/api/v1/cards/{$other->id}/statement-preview?date=2026-03-10")->assertNotFound();
+});
+
+it('id de cartão não numérico dá 404, não erro', function () {
+    $this->getJson('/api/v1/cards/abc')->assertNotFound();
 });
 
 it('lista as faturas do cartão em ordem de vencimento, com totais', function () {

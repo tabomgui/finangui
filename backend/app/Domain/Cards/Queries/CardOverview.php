@@ -46,12 +46,16 @@ final class CardOverview
      */
     private function attachCurrentStatements(Collection $cards): Collection
     {
+        // DISTINCT ON (Postgres): uma linha por conta, a de menor due_date —
+        // sem isso, uma conta com várias faturas futuras trazia todas elas
+        // (uma query maior do que precisa) só para descartar na mão com unique().
         $current = CardStatement::query()->withTotals()
-            ->whereIn('account_id', $cards->modelKeys())
+            ->whereIn('card_statements.account_id', $cards->modelKeys())
             ->where('due_date', '>=', CarbonImmutable::today()->toDateString())
+            ->orderBy('card_statements.account_id')
             ->orderBy('due_date')
+            ->distinct(['card_statements.account_id'])
             ->get()
-            ->unique('account_id')
             ->keyBy('account_id');
 
         return $cards->each(fn (Account $card) => $card->setRelation('currentStatement', $current->get($card->id)));

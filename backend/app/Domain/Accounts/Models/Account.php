@@ -99,7 +99,11 @@ class Account extends Model
      */
     public function scopeWithBalance(Builder $query, ?CarbonInterface $asOf = null): void
     {
-        $query->select('accounts.*')->addSelect(['balance_net' => Transaction::query()
+        if ($query->getQuery()->columns === null) {
+            $query->select('accounts.*');
+        }
+
+        $query->addSelect(['balance_net' => Transaction::query()
             ->withoutGlobalScopes()
             ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0)")
             ->whereColumn('transactions.account_id', 'accounts.id')

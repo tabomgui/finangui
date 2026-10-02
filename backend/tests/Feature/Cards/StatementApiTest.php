@@ -55,9 +55,11 @@ it('fatura de outro usuário dá 404', function () {
     $this->patchJson("/api/v1/card-statements/{$other->id}", ['reported_total' => 1])->assertNotFound();
 });
 
-// Ajuste: a edição de datas precisa manter as faturas do cartão ordenadas e
-// sem sobreposição em relação às vizinhas por closing_date (não só à atual).
-describe('ordenação com as faturas vizinhas', function () {
+it('id de fatura não numérico dá 404, não erro', function () {
+    $this->getJson('/api/v1/card-statements/abc')->assertNotFound();
+});
+
+describe('mantém as faturas do cartão ordenadas e sem sobreposição com as vizinhas por closing_date ao editar datas', function () {
     beforeEach(function () {
         $this->previous = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-02-10', 'due_date' => '2026-02-20']);
         $this->next = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-04-10', 'due_date' => '2026-04-20']);
@@ -79,9 +81,27 @@ describe('ordenação com as faturas vizinhas', function () {
             ->assertUnprocessable()->assertJsonValidationErrors(['due_date']);
     });
 
+    it('vencimento no mesmo dia ou antes do vencimento da fatura anterior é rejeitado', function () {
+        // closing_date também precisa mover (senão due_date < closing_date falha
+        // antes de chegar na checagem de vizinhas) — o que importa aqui é due_date
+        // ficar <= due_date da fatura anterior (2026-02-20).
+        $this->patchJson("/api/v1/card-statements/{$this->statement->id}", ['closing_date' => '2026-02-12', 'due_date' => '2026-02-20'])
+            ->assertUnprocessable()->assertJsonValidationErrors(['due_date']);
+
+        $this->patchJson("/api/v1/card-statements/{$this->statement->id}", ['closing_date' => '2026-02-12', 'due_date' => '2026-02-18'])
+            ->assertUnprocessable()->assertJsonValidationErrors(['due_date']);
+    });
+
     it('vencimento não pode passar de 40 dias depois do fechamento', function () {
         $this->patchJson("/api/v1/card-statements/{$this->statement->id}", ['closing_date' => '2026-03-01', 'due_date' => '2026-04-15'])
             ->assertUnprocessable()->assertJsonValidationErrors(['due_date']);
+    });
+
+    it('aceita exatamente 40 dias entre fechamento e vencimento', function () {
+        $this->patchJson("/api/v1/card-statements/{$this->statement->id}", ['closing_date' => '2026-03-01', 'due_date' => '2026-04-10'])
+            ->assertOk()
+            ->assertJsonPath('data.closing_date', '2026-03-01')
+            ->assertJsonPath('data.due_date', '2026-04-10');
     });
 
     it('edita dentro dos limites das vizinhas sem problema', function () {
@@ -89,5 +109,13 @@ describe('ordenação com as faturas vizinhas', function () {
             ->assertOk()
             ->assertJsonPath('data.closing_date', '2026-03-12')
             ->assertJsonPath('data.due_date', '2026-03-22');
+    });
+
+    it('edita só o total informado sem checar as datas contra as vizinhas', function () {
+        $this->patchJson("/api/v1/card-statements/{$this->statement->id}", ['reported_total' => 4242])
+            ->assertOk()
+            ->assertJsonPath('data.reported_total', 4242)
+            ->assertJsonPath('data.closing_date', '2026-03-10')
+            ->assertJsonPath('data.due_date', '2026-03-20');
     });
 });

@@ -6,12 +6,10 @@ use App\Domain\Cards\Models\CardStatement;
 use App\Http\Requests\ApiRequest;
 use Illuminate\Validation\Rule;
 
-/**
- * Checagens de ordem relativa (fechamento/vencimento x vizinhas, limite de 40
- * dias) ficam em App\Domain\Cards\Actions\UpdateStatement, dentro da mesma
- * transação que trava a conta — aqui só o formato dos campos e o conflito
- * óbvio com a própria fatura (closing/due atuais) ou com o due_date de outra.
- */
+// Checagens de ordem relativa (fechamento/vencimento x vizinhas, limite de 40
+// dias) ficam em App\Domain\Cards\Actions\UpdateStatement, dentro da mesma
+// transação que trava a conta — aqui só o formato dos campos e o conflito
+// óbvio com a própria fatura (closing/due atuais) ou com o due_date de outra.
 final class UpdateStatementRequest extends ApiRequest
 {
     /**
