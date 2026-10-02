@@ -28,6 +28,7 @@ final class StoreTransactionRequest extends ApiRequest
             // Sem `nullable`: enviar statement_id como null é rejeitado de propósito.
             // A escolha é automática quando o campo simplesmente não é enviado.
             'statement_id' => ['sometimes', 'integer', Rule::exists('card_statements', 'id')->where('user_id', $this->userId())],
+            'installments' => ['sometimes', 'integer', 'between:1,48'],
         ];
     }
 }

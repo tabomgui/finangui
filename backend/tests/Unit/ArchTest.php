@@ -33,6 +33,6 @@ it('todo job de domínio roda dentro de UserContext', function () {
     expect($files)->toBeArray();
 
     foreach ($files as $file) {
-        expect(file_get_contents($file))->toContain('UserContext::run(', basename($file).' precisa usar UserContext::run()');
+        expect(file_get_contents($file))->toContain('UserContext::run(');
     }
 });

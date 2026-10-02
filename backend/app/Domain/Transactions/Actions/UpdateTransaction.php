@@ -4,6 +4,7 @@ namespace App\Domain\Transactions\Actions;
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Actions\AssignStatement;
+use App\Domain\Cards\Errors\InstallmentLocked;
 use App\Domain\Transactions\Errors\TransactionCurrencyMismatch;
 use App\Domain\Transactions\Models\Transaction;
 use App\Domain\Transfers\Errors\TransferLegLocked;
@@ -15,20 +16,28 @@ final class UpdateTransaction
     /** Campos que, numa perna de transferência, só mudam pelo endpoint de transferência. */
     private const TRANSFER_LOCKED = ['account_id', 'date', 'amount', 'direction', 'is_ignored'];
 
+    /** Campos que, numa parcela, seguem o parcelamento. */
+    private const INSTALLMENT_LOCKED = ['account_id', 'date', 'amount', 'direction'];
+
     public function __construct(private readonly AssignStatement $assignStatement) {}
 
     /**
      * @param  array<string, mixed>  $input  dados já validados (parciais)
      *
      * @throws TransferLegLocked
+     * @throws InstallmentLocked
      * @throws TransactionCurrencyMismatch
      */
     public function handle(Transaction $transaction, array $input): Transaction
     {
         $input = $this->normalizeTypes($input);
 
-        if ($transaction->isTransferLeg() && $this->lockedFieldsChanged($transaction, $input)) {
+        if ($transaction->isTransferLeg() && $this->lockedFieldsChanged($transaction, $input, self::TRANSFER_LOCKED)) {
             throw new TransferLegLocked;
+        }
+
+        if ($transaction->isInstallment() && $this->lockedFieldsChanged($transaction, $input, self::INSTALLMENT_LOCKED)) {
+            throw new InstallmentLocked;
         }
 
         return DB::transaction(function () use ($transaction, $input) {
@@ -64,7 +73,7 @@ final class UpdateTransaction
                 $transaction->tags()->sync($tagIds);
             }
 
-            return $transaction->load(['account', 'category.parent', 'tags']);
+            return $transaction->load(['account', 'category.parent', 'tags', 'installmentPlan']);
         });
     }
 
@@ -98,8 +107,9 @@ final class UpdateTransaction
      * campo bloqueado realmente muda de valor, não apenas por estar presente.
      *
      * @param  array<string, mixed>  $input
+     * @param  list<string>  $fields
      */
-    private function lockedFieldsChanged(Transaction $transaction, array $input): bool
+    private function lockedFieldsChanged(Transaction $transaction, array $input, array $fields): bool
     {
         $current = [
             'account_id' => $transaction->account_id,
@@ -109,7 +119,7 @@ final class UpdateTransaction
             'is_ignored' => $transaction->is_ignored,
         ];
 
-        foreach (self::TRANSFER_LOCKED as $field) {
+        foreach ($fields as $field) {
             if (array_key_exists($field, $input) && $input[$field] !== $current[$field]) {
                 return true;
             }

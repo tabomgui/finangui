@@ -4,6 +4,7 @@ namespace App\Domain\Transactions\Actions;
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Actions\AssignStatement;
+use App\Domain\Cards\Actions\CreateInstallmentPurchase;
 use App\Domain\Transactions\Data\TransactionData;
 use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Enums\TransactionStatus;
@@ -12,10 +13,17 @@ use Illuminate\Support\Facades\DB;
 
 final class CreateTransaction
 {
-    public function __construct(private readonly AssignStatement $assignStatement) {}
+    public function __construct(
+        private readonly AssignStatement $assignStatement,
+        private readonly CreateInstallmentPurchase $createInstallmentPurchase,
+    ) {}
 
     public function handle(TransactionData $data): Transaction
     {
+        if ($data->installments > 1) {
+            return $this->createInstallmentPurchase->handle($data);
+        }
+
         return DB::transaction(function () use ($data) {
             $account = Account::query()->findOrFail($data->accountId);
 
@@ -41,7 +49,7 @@ final class CreateTransaction
 
             $transaction->tags()->sync($data->tagIds);
 
-            return $transaction->load(['account', 'category.parent', 'tags']);
+            return $transaction->load(['account', 'category.parent', 'tags', 'installmentPlan']);
         });
     }
 }
