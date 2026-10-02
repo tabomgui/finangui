@@ -12,4 +12,11 @@ describe('ColorPicker', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Azul' }))
     expect(onChange).toHaveBeenCalledWith('#0ea5e9')
   })
+
+  it('usa marca de confirmação escura sobre cor clara (Amarelo)', () => {
+    render(<ColorPicker value="#eab308" onChange={vi.fn()} />)
+
+    const check = screen.getByRole('button', { name: 'Amarelo' }).querySelector('svg')
+    expect(check).toHaveClass('text-neutral-900')
+  })
 })

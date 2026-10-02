@@ -8,7 +8,7 @@ describe('IconPicker', () => {
     render(<IconPicker id="icon" value="tag" color="#10b981" onChange={onChange} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Escolher ícone' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Ícone utensils' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ícone Talheres' }))
 
     expect(onChange).toHaveBeenCalledWith('utensils')
   })

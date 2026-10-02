@@ -14,3 +14,19 @@ export const COLOR_PALETTE = [
 ] as const
 
 export const DEFAULT_COLOR = COLOR_PALETTE[0].hex
+
+function toLinearChannel(value: number): number {
+  const c = value / 255
+  return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+}
+
+/** Luminância relativa (WCAG) do hex; acima de 0,45 é considerado claro. */
+export function isLightColor(hex: string): boolean {
+  const r = Number.parseInt(hex.slice(1, 3), 16)
+  const g = Number.parseInt(hex.slice(3, 5), 16)
+  const b = Number.parseInt(hex.slice(5, 7), 16)
+
+  const luminance = 0.2126 * toLinearChannel(r) + 0.7152 * toLinearChannel(g) + 0.0722 * toLinearChannel(b)
+
+  return luminance > 0.45
+}
