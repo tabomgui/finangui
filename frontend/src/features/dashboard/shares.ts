@@ -1,12 +1,6 @@
-const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
+import type { TopCategory } from '@/api/types'
 
-export type TopCategory = {
-  category_id: number | null
-  name: string
-  icon: string | null
-  color: string | null
-  amount: number
-}
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 
 export type CategoryShare = TopCategory & { barPercent: number; expensePercent: number }
 

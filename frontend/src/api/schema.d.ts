@@ -493,6 +493,11 @@ export interface components {
             avatar: string | null;
             has_password: boolean;
             google_linked: boolean;
+            /**
+             * @description Configuração da instância (ainda não é por usuário); fica aqui para o
+             *     frontend não fixar 'BRL' ao decidir quando mostrar a moeda de uma conta.
+             */
+            primary_currency: string;
         };
     };
     responses: {

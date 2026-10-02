@@ -1,6 +1,10 @@
-import type { components } from './schema'
+import type { components, paths } from './schema'
 
 type Schemas = components['schemas']
+
+export type DashboardSummary = paths['/dashboard']['get']['responses'][200]['content']['application/json']['data']
+export type DashboardAccount = DashboardSummary['accounts'][number]
+export type TopCategory = DashboardSummary['top_categories'][number]
 
 export type User = Schemas['UserResource']
 export type Account = Schemas['AccountResource']

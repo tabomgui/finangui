@@ -1,4 +1,5 @@
 import { useAccounts } from '@/api/queries/accounts'
+import type { Account, AccountType } from '@/api/types'
 import type { FieldControlProps } from '@/components/form/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CategoryIcon } from './category-icon'
@@ -12,6 +13,10 @@ type AccountSelectProps = Partial<FieldControlProps> & {
   excludeId?: number | null
   /** Lista também contas arquivadas, depois das ativas (ex.: filtros, que precisam achar lançamentos antigos). */
   includeArchived?: boolean
+  /** Só estes tipos (ex.: só cartões). */
+  types?: AccountType[]
+  /** Esconde estes tipos (ex.: pagar fatura não aceita cartão como origem). */
+  excludeTypes?: AccountType[]
 }
 
 export function AccountSelect({
@@ -20,10 +25,16 @@ export function AccountSelect({
   placeholder = 'Escolha a conta',
   excludeId,
   includeArchived = false,
+  types,
+  excludeTypes,
   ...control
 }: AccountSelectProps) {
   const { data: accounts = [] } = useAccounts(true)
-  const visible = accounts.filter((account) => account.id !== excludeId)
+  const typeAllowed = (account: Account) =>
+    (!types || types.includes(account.type)) && !(excludeTypes ?? []).includes(account.type)
+  const visible = accounts.filter(
+    (account) => account.id !== excludeId && (typeAllowed(account) || account.id === value),
+  )
   const options = includeArchived
     ? [...visible.filter((account) => !account.is_archived), ...visible.filter((account) => account.is_archived)]
     : visible.filter((account) => !account.is_archived || account.id === value)

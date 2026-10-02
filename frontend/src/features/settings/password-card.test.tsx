@@ -4,7 +4,15 @@ import { describe, expect, it } from 'vitest'
 import type { User } from '@/api/types'
 import { PasswordCard } from './password-card'
 
-const baseUser: User = { id: 1, name: 'Gui', email: 'gui@example.com', avatar: null, has_password: true, google_linked: false }
+const baseUser: User = {
+  id: 1,
+  name: 'Gui',
+  email: 'gui@example.com',
+  avatar: null,
+  has_password: true,
+  google_linked: false,
+  primary_currency: 'BRL',
+}
 
 function renderCard(user: User) {
   render(

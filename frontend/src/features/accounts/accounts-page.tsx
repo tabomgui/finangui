@@ -2,6 +2,7 @@ import { Archive, ArchiveRestore, EllipsisVertical, Landmark, Pencil, Plus, Tras
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useAccounts, useDeleteAccount, useUpdateAccount } from '@/api/queries/accounts'
+import { useMe } from '@/api/queries/auth'
 import type { Account } from '@/api/types'
 import { PageBody } from '@/components/layout/page-body'
 import { headerButton, PageHeader } from '@/components/layout/page-header'
@@ -29,6 +30,7 @@ import { ACCOUNT_TYPE_LABELS } from './account-labels'
 export function AccountsPage() {
   const [showArchived, setShowArchived] = useState(false)
   const { data: accounts, isPending, isError, refetch } = useAccounts(showArchived)
+  const { data: me } = useMe()
   const update = useUpdateAccount()
   const remove = useDeleteAccount()
 
@@ -92,7 +94,7 @@ export function AccountsPage() {
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {ACCOUNT_TYPE_LABELS[account.type]}
-                      {account.currency !== 'BRL' && ` · ${account.currency}`}
+                      {account.currency !== (me?.primary_currency ?? account.currency) && ` · ${account.currency}`}
                     </p>
                   </div>
                   <MoneyText cents={account.balance} currency={account.currency} className="font-semibold" />

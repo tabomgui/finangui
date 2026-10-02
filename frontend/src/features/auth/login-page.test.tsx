@@ -48,6 +48,7 @@ describe('LoginPage', () => {
       avatar: null,
       has_password: true,
       google_linked: false,
+      primary_currency: 'BRL',
     }
 
     await act(async () => {

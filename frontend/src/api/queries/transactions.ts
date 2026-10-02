@@ -2,6 +2,7 @@ import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClie
 import { api, expectOk, unwrap } from '@/api/client'
 import { compactFilters, invalidateLedger, queryKeys, type TransactionFilters } from '@/api/query-keys'
 import type { components } from '@/api/schema'
+import { runInBatches } from '@/lib/batches'
 
 type StoreTransactionRequest = components['schemas']['StoreTransactionRequest']
 type UpdateTransactionRequest = components['schemas']['UpdateTransactionRequest']
@@ -53,6 +54,21 @@ export function useUpdateTransaction() {
     mutationFn: async ({ id, body }: { id: number; body: UpdateTransactionRequest }) =>
       (await unwrap(api.PATCH('/transactions/{transaction}', { params: { path: { transaction: id } }, body }))).data,
     onSuccess: () => invalidateLedger(queryClient),
+  })
+}
+
+/**
+ * Atualiza várias transações (no máximo 4 requisições em paralelo, sem parar na primeira falha)
+ * e invalida o razão uma vez no fim.
+ */
+export function useBulkUpdateTransactions() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ ids, body }: { ids: number[]; body: (id: number) => UpdateTransactionRequest }) =>
+      runInBatches(ids, (id) =>
+        unwrap(api.PATCH('/transactions/{transaction}', { params: { path: { transaction: id } }, body: body(id) })),
+      ),
+    onSettled: () => invalidateLedger(queryClient),
   })
 }
 

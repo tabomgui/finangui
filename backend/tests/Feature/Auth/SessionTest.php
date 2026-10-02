@@ -109,6 +109,13 @@ it('retorna o usuário autenticado em /me', function () {
         ->assertJsonPath('data.google_linked', false);
 });
 
+it('informa a moeda principal configurada', function () {
+    config(['finangui.primary_currency' => 'BRL']);
+    actingAsUser();
+
+    $this->getJson('/api/v1/me')->assertOk()->assertJsonPath('data.primary_currency', 'BRL');
+});
+
 it('informa o status de auth da instância', function () {
     config([
         'services.google.client_id' => null,
