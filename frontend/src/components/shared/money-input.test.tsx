@@ -30,4 +30,31 @@ describe('MoneyInput', () => {
 
     expect(screen.getByLabelText('Valor')).toHaveValue('45,90')
   })
+
+  it('por padrão (allowNegative ausente), "-" inicial informa null', () => {
+    const onChange = vi.fn()
+    render(<MoneyInput aria-label="Valor" value={null} onChange={onChange} />)
+
+    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '-10,00' } })
+
+    expect(onChange).toHaveBeenLastCalledWith(null)
+  })
+
+  it('allowNegative=false: "-" inicial informa null', () => {
+    const onChange = vi.fn()
+    render(<MoneyInput aria-label="Valor" value={null} onChange={onChange} allowNegative={false} />)
+
+    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '-10,00' } })
+
+    expect(onChange).toHaveBeenLastCalledWith(null)
+  })
+
+  it('allowNegative=true: aceita valor negativo', () => {
+    const onChange = vi.fn()
+    render(<MoneyInput aria-label="Valor" value={null} onChange={onChange} allowNegative />)
+
+    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '-10,00' } })
+
+    expect(onChange).toHaveBeenLastCalledWith(-1000)
+  })
 })

@@ -7,9 +7,27 @@ type MoneyInputProps = Omit<ComponentProps<typeof Input>, 'value' | 'onChange' |
   value: number | null
   onChange: (cents: number | null) => void
   currencySymbol?: string
+  /** Quando false (padrão), um "-" inicial é inválido e informa onChange(null). */
+  allowNegative?: boolean
 }
 
-export function MoneyInput({ value, onChange, currencySymbol = 'R$', className, onBlur, ...props }: MoneyInputProps) {
+/** Mesma normalização de prefixo/espaços de `parseMoneyInput`, só para detectar o sinal digitado. */
+function hasLeadingMinus(raw: string): boolean {
+  return raw
+    .replace(/R\$/gi, '')
+    .replace(/[\s ]/g, '')
+    .startsWith('-')
+}
+
+export function MoneyInput({
+  value,
+  onChange,
+  currencySymbol = 'R$',
+  className,
+  onBlur,
+  allowNegative = false,
+  ...props
+}: MoneyInputProps) {
   const [text, setText] = useState(() => (value === null ? '' : centsToInputString(value)))
   // Último valor que este campo emitiu: mudanças vindas de fora (reset do formulário) reescrevem o texto;
   // o eco do que o próprio usuário digitou não.
@@ -36,13 +54,14 @@ export function MoneyInput({ value, onChange, currencySymbol = 'R$', className, 
         value={text}
         className={cn('pl-10 text-lg font-semibold tabular-nums', className)}
         onChange={(event) => {
-          const cents = parseMoneyInput(event.target.value)
+          const rejected = !allowNegative && hasLeadingMinus(event.target.value)
+          const cents = rejected ? null : parseMoneyInput(event.target.value)
           setText(event.target.value)
           lastEmitted.current = cents
           onChange(cents)
         }}
         onBlur={(event) => {
-          const cents = parseMoneyInput(text)
+          const cents = lastEmitted.current
           if (cents !== null) setText(centsToInputString(cents))
           onBlur?.(event)
         }}
