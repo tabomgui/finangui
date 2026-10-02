@@ -1,5 +1,6 @@
 import { Archive, ArchiveRestore, EllipsisVertical, Landmark, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { useAccounts, useDeleteAccount, useUpdateAccount } from '@/api/queries/accounts'
 import type { Account } from '@/api/types'
 import { PageBody } from '@/components/layout/page-body'
@@ -43,6 +44,7 @@ export function AccountsPage() {
   const toggleArchive = async (account: Account) => {
     try {
       await update.mutateAsync({ id: account.id, body: { is_archived: !account.is_archived } })
+      toast.success(account.is_archived ? 'Conta desarquivada.' : 'Conta arquivada.')
     } catch (error) {
       notifyError(error)
     }

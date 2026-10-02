@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, expectOk, unwrap } from '@/api/client'
 import { invalidateLedger, queryKeys } from '@/api/query-keys'
 import type { components } from '@/api/schema'
@@ -11,6 +11,7 @@ export function useAccounts(includeArchived = false) {
     queryKey: queryKeys.accounts(includeArchived),
     queryFn: async () =>
       (await unwrap(api.GET('/accounts', { params: { query: { include_archived: includeArchived } } }))).data,
+    placeholderData: keepPreviousData,
   })
 }
 

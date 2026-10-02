@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { LoaderCircle } from 'lucide-react'
-import { Controller, useForm } from 'react-hook-form'
+import { useEffect } from 'react'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { useCreateAccount, useUpdateAccount } from '@/api/queries/accounts'
@@ -36,6 +37,16 @@ type AccountFormDialogProps = {
   account?: Account
 }
 
+function defaultsFor(account?: Account): FormValues {
+  return {
+    name: account?.name ?? '',
+    type: account?.type ?? 'checking',
+    opening_balance: account?.opening_balance ?? 0,
+    color: account?.color ?? DEFAULT_COLOR,
+    icon: account?.icon ?? 'landmark',
+  }
+}
+
 export function AccountFormDialog({ open, onOpenChange, account }: AccountFormDialogProps) {
   const create = useCreateAccount()
   const update = useUpdateAccount()
@@ -43,14 +54,14 @@ export function AccountFormDialog({ open, onOpenChange, account }: AccountFormDi
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    values: {
-      name: account?.name ?? '',
-      type: account?.type ?? 'checking',
-      opening_balance: account?.opening_balance ?? 0,
-      color: account?.color ?? DEFAULT_COLOR,
-      icon: account?.icon ?? 'landmark',
-    },
+    defaultValues: defaultsFor(account),
   })
+
+  // `values` do RHF não reabre o formulário quando o objeto computado é igual ao anterior
+  // (ex.: criar, fechar, criar de novo): reseta explicitamente toda vez que o diálogo abre.
+  useEffect(() => {
+    if (open) form.reset(defaultsFor(account))
+  }, [open, account, form])
 
   const onSubmit = form.handleSubmit(async (values) => {
     const body = { ...values, name: values.name.trim(), opening_balance: values.opening_balance ?? 0 }
@@ -68,7 +79,7 @@ export function AccountFormDialog({ open, onOpenChange, account }: AccountFormDi
   })
 
   const { errors } = form.formState
-  const color = form.watch('color')
+  const color = useWatch({ control: form.control, name: 'color' })
 
   return (
     <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
