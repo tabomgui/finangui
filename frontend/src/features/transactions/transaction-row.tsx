@@ -16,6 +16,9 @@ type TransactionRowProps = {
 
 export function TransactionRow({ transaction, selectable = false, selected = false, onToggle }: TransactionRowProps) {
   const isTransfer = transaction.transfer_id !== null
+  // Categoria "efetivamente transferência" (ex.: ajuste entre contas feito via categoria, não via
+  // o fluxo de transferência) recebe a mesma cor neutra, mas mantém o próprio nome na legenda.
+  const isTransferEffective = transaction.category?.is_transfer_effective ?? false
   const subtitle = [isTransfer ? 'Transferência' : (transaction.category?.name ?? 'Sem categoria'), transaction.account?.name]
     .filter(Boolean)
     .join(' · ')
@@ -49,7 +52,7 @@ export function TransactionRow({ transaction, selectable = false, selected = fal
         cents={transaction.amount}
         currency={transaction.currency}
         direction={transaction.direction}
-        colored={!isTransfer && !transaction.is_ignored}
+        colored={!isTransfer && !isTransferEffective && !transaction.is_ignored}
         className={cn('shrink-0 font-semibold', transaction.is_ignored && 'text-muted-foreground')}
       />
     </>
