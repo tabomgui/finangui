@@ -10,6 +10,7 @@ final class GoogleCredentials
     public static function configured(): bool
     {
         return filled(config('services.google.client_id'))
-            && filled(config('services.google.client_secret'));
+            && filled(config('services.google.client_secret'))
+            && filled(config('services.google.redirect'));
     }
 }

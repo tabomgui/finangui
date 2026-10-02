@@ -8,7 +8,8 @@ it('toda rota da API exige auth:sanctum, exceto as públicas', function () {
         'GET api/v1/auth/status',
         'POST api/v1/auth/login',
         'POST api/v1/auth/register',
-        // Rotas web do OAuth Google (Task 9): públicas por natureza, ainda não existem.
+        // Rotas web do OAuth Google (routes/web.php): públicas por natureza, ficam fora do
+        // grupo api/v1 e não passam por auth:sanctum de propósito.
         'GET api/auth/google/redirect',
         'GET api/auth/google/callback',
     ];

@@ -1,6 +1,6 @@
 # finangui — convenções do projeto
 
-Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`; frontend React/Vite/TS em `frontend/`. Tudo em Docker.
+Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`; frontend React/Vite/TS vai morar em `frontend/` (fase 1B, ainda não implementado). Tudo em Docker.
 
 ## Backend
 

@@ -4,6 +4,7 @@ use App\Domain\Shared\DomainError;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -14,6 +15,23 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->statefulApi();
+
+        // Produção roda atrás de um proxy que termina TLS (Caddy, Cloudflare
+        // Tunnel) na mesma rede Docker. Sem isto, request()->isSecure() e as
+        // URLs geradas por url()/route() ficam http mesmo em produção, porque
+        // a conexão entre o proxy e este container é HTTP puro.
+        //
+        // Só os headers abaixo (sem X-Forwarded-Prefix/AWS-ELB, que não se
+        // aplicam aqui). A lista de proxies confiáveis não é passada aqui de
+        // propósito: env()/config() ainda não funcionam neste closure (ver
+        // config/trustedproxy.php), então ela vem de lá, lida em tempo de
+        // requisição pela própria TrustProxies.
+        $middleware->trustProxies(
+            headers: Request::HEADER_X_FORWARDED_FOR
+                | Request::HEADER_X_FORWARDED_HOST
+                | Request::HEADER_X_FORWARDED_PORT
+                | Request::HEADER_X_FORWARDED_PROTO,
+        );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->dontReport(DomainError::class);

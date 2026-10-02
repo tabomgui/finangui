@@ -113,6 +113,7 @@ it('informa o status de auth da instância', function () {
     config([
         'services.google.client_id' => null,
         'services.google.client_secret' => null,
+        'services.google.redirect' => null,
         'finangui.registration_enabled' => false,
     ]);
 
@@ -120,7 +121,21 @@ it('informa o status de auth da instância', function () {
         ->assertOk()
         ->assertExactJson(['data' => ['google_login_enabled' => false, 'registration_enabled' => false]]);
 
-    config(['services.google.client_id' => 'id', 'services.google.client_secret' => 'secret']);
+    config([
+        'services.google.client_id' => 'id',
+        'services.google.client_secret' => 'secret',
+        'services.google.redirect' => 'https://finangui.test/api/auth/google/callback',
+    ]);
 
     $this->getJson('/api/v1/auth/status')->assertJsonPath('data.google_login_enabled', true);
+});
+
+it('considera o Google desconfigurado sem redirect, mesmo com client id e secret', function () {
+    config([
+        'services.google.client_id' => 'id',
+        'services.google.client_secret' => 'secret',
+        'services.google.redirect' => null,
+    ]);
+
+    $this->getJson('/api/v1/auth/status')->assertJsonPath('data.google_login_enabled', false);
 });

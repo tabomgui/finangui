@@ -78,6 +78,50 @@ Copie o arquivo para `backend/storage/app/categories.tsv` e rode:
 make art c="legacy:import-categories storage/app/categories.tsv voce@exemplo.com"
 ```
 
+## Produção
+
+O compose de produção (com o container nginx que serve o SPA e faz proxy de `/api` e
+`/sanctum` para o backend) é entregue na fase 1B, junto com o frontend. Esta seção cobre só o
+backend, hoje.
+
+**Same origin é obrigatório**: SPA e API precisam ficar sob o mesmo domínio em produção
+(`https://seu-dominio` servindo tanto o frontend quanto `/api`). O projeto antigo
+(finangui-js) teve problemas recorrentes de HTTPS/cookie em produção justamente por não
+garantir isso; `SESSION_DOMAIN`, `SANCTUM_STATEFUL_DOMAINS` e `GOOGLE_REDIRECT_URI` abaixo só
+funcionam corretamente nesse cenário.
+
+```bash
+cp backend/.env.production.example backend/.env
+make art c="key:generate"
+make art c="migrate --force"
+```
+
+Nunca rode `db:seed` em produção — o `DatabaseSeeder` cria o usuário de desenvolvimento
+(`dev@finangui.test` / `password`). Ele já se protege sozinho (`app()->isProduction()` faz o
+`run()` virar no-op), mas não dependa só disso: não rode o comando.
+
+Primeiro usuário (cadastro público fica sempre desligado):
+
+```bash
+make art c="user:create voce@exemplo.com --name=Você"
+```
+
+Pontos de atenção específicos de produção:
+
+- **Proxy confiável**: produção roda atrás de um proxy que termina TLS (Caddy, Cloudflare
+  Tunnel). `TRUSTED_PROXIES` (ver `backend/.env.production.example` e
+  `backend/config/trustedproxy.php`) precisa cobrir o IP/rede desse proxy, senão
+  `request()->isSecure()` e as URLs geradas ficam `http` mesmo atrás de HTTPS.
+- **Google OAuth**: o Redirect URI cadastrado no Google Cloud Console precisa ser exatamente
+  `https://seu-dominio/api/auth/google/callback` (mesma origem do SPA).
+- **`SESSION_SAME_SITE=lax`**: precisa continuar `lax` também em produção. `strict` quebra o
+  callback do login com Google (o cookie de sessão não volta na navegação de retorno do
+  `accounts.google.com`, e o `state` se perde).
+- **Worker**: em produção o worker roda `queue:work` (processo único, reinicia só em deploy),
+  nunca `queue:listen` (que existe só pro Compose de dev, pra refletir mudança de código sem
+  reiniciar o container).
+- **Scheduler**: `schedule:work`, igual ao Compose de dev — não precisa de cron do sistema.
+
 ## Dados bancários
 
 Este repositório é público. Nunca commite extratos, faturas ou fixtures com dados reais.
