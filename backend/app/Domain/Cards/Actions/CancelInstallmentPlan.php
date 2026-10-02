@@ -15,9 +15,15 @@ final class CancelInstallmentPlan
     public function handle(InstallmentPlan $plan): void
     {
         DB::transaction(function () use ($plan) {
-            $plan->transactions()->where('status', TransactionStatus::Projected->value)->each(fn ($parcel) => $parcel->delete());
-            $plan->cancelled_at ??= now()->toImmutable();
-            $plan->save();
+            // Trava a linha do plano: dois cancelamentos simultâneos não
+            // passam juntos (o segundo acha cancelled_at já preenchido).
+            $locked = InstallmentPlan::query()->whereKey($plan->id)->lockForUpdate()->firstOrFail();
+
+            // Uma query só: o pivot de tags vai pela FK cascade do banco.
+            $locked->transactions()->where('status', TransactionStatus::Projected->value)->delete();
+
+            $locked->cancelled_at ??= now()->toImmutable();
+            $locked->save();
         });
     }
 }

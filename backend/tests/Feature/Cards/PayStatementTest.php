@@ -64,3 +64,36 @@ it('valida conta de origem do usuário, valor e data', function () {
     pay(['from_account_id' => $other->id, 'amount' => 0, 'date' => 'x'])
         ->assertUnprocessable()->assertJsonValidationErrors(['from_account_id', 'amount', 'date']);
 });
+
+it('recusa pagar com conta de moeda diferente', function () {
+    $usd = Account::factory()->create(['user_id' => $this->user->id, 'currency' => 'USD']);
+
+    pay(['from_account_id' => $usd->id])->assertStatus(409)->assertJsonPath('code', 'transfer_currency_mismatch');
+});
+
+it('fatura aberta pode ser paga mesmo com total zero', function () {
+    $open = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-04-10', 'due_date' => '2026-04-20']);
+
+    $this->postJson("/api/v1/card-statements/{$open->id}/payments", ['from_account_id' => $this->checking->id, 'amount' => 1000, 'date' => '2026-03-15'])
+        ->assertCreated()->assertJsonPath('data.to.statement_id', $open->id);
+
+    $this->getJson("/api/v1/card-statements/{$open->id}")
+        ->assertJsonPath('data.status', 'open')->assertJsonPath('data.paid', 1000);
+});
+
+it('pagamento maior que o restante deixa saldo credor sem bloquear', function () {
+    pay(['amount' => 15000])->assertCreated();
+
+    $this->getJson("/api/v1/card-statements/{$this->statement->id}")
+        ->assertJsonPath('data.status', 'paid')
+        ->assertJsonPath('data.paid', 15000)
+        ->assertJsonPath('data.remaining', 0);
+});
+
+it('aceita pagar a fatura com outro cartão como origem', function () {
+    $otherCard = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+
+    pay(['from_account_id' => $otherCard->id])->assertCreated()
+        ->assertJsonPath('data.from.account_id', $otherCard->id)
+        ->assertJsonPath('data.to.statement_id', $this->statement->id);
+});
