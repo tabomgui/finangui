@@ -2,3 +2,6 @@
 .idea/
 .vscode/
 *.log
+
+# Specs, planos e roadmap ficam só locais
+/docs/

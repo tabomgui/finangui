@@ -2,8 +2,6 @@
 
 Gerenciador financeiro pessoal, self-hosted. Backend Laravel 13 + Postgres; frontend React (em `frontend/`, ainda não implementado).
 
-Design: `docs/superpowers/specs/2026-10-01-finangui-design.md` · Roadmap: `docs/ROADMAP.md`
-
 ## Desenvolvimento
 
 Requisitos: Docker e Make.
@@ -81,7 +79,7 @@ make art c="legacy:import-categories storage/app/categories.tsv voce@exemplo.com
 ## Produção
 
 O compose de produção (com o container nginx que serve o SPA e faz proxy de `/api` e
-`/sanctum` para o backend) é entregue na fase 1B, junto com o frontend. Esta seção cobre só o
+`/sanctum` para o backend) chega junto com o frontend. Esta seção cobre só o
 backend, hoje.
 
 **Same origin é obrigatório**: SPA e API precisam ficar sob o mesmo domínio em produção

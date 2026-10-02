@@ -1,6 +1,6 @@
 # finangui — convenções do projeto
 
-Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`; frontend React/Vite/TS vai morar em `frontend/` (fase 1B, ainda não implementado). Tudo em Docker.
+Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`; frontend React/Vite/TS vai morar em `frontend/` (ainda não implementado). Tudo em Docker.
 
 ## Backend
 
@@ -25,6 +25,6 @@ Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`;
 ## Fluxo de trabalho
 
 - TDD com Pest. `make test` e `make lint` antes de cada commit.
-- Specs e planos em `docs/superpowers/`.
+- Specs e planos ficam em `docs/` (ignorado pelo git, local).
 - O Securo (AGPL) serve de inspiração de ideias; não copie código dele.
 - Repositório público: nunca commite dados bancários reais.

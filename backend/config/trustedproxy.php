@@ -18,8 +18,8 @@ return [
     | sem depender de env).
     |
     | Default cobre as faixas privadas RFC1918: cobre o proxy TLS (Caddy ou
-    | Cloudflare Tunnel) que entra pela mesma rede Docker em produção (fase
-    | 1B, compose do frontend), sem confiar em '*' (qualquer IP), caso a
+    | Cloudflare Tunnel) que entra pela mesma rede Docker em produção, sem
+    | confiar em '*' (qualquer IP), caso a
     | porta do backend seja exposta por engano.
     */
     'proxies' => env('TRUSTED_PROXIES', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'),
