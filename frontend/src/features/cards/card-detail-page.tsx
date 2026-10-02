@@ -11,6 +11,8 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { FullPageSpinner } from '@/components/shared/full-page-spinner'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { InstallmentPlansTab } from './installment-plans-tab'
+import { PayStatementDialog } from './pay-statement-dialog'
 import { pickStatementId } from './pick-statement'
 import { StatementDatesDialog } from './statement-dates-dialog'
 import { StatementNav } from './statement-nav'
@@ -150,14 +152,13 @@ function CardDetailContent({ cardId }: { cardId: number }) {
             )}
           </TabsContent>
           <TabsContent value="parcelamentos">
-            <EmptyState icon={CreditCard} title="Parcelamentos" description="Em breve." />
+            <InstallmentPlansTab cardId={card.id} currency={card.currency} />
           </TabsContent>
         </Tabs>
       </PageBody>
 
       {selected && <StatementDatesDialog open={editingDates} onOpenChange={setEditingDates} statement={selected} />}
-      {/* Pagamento de fatura ainda não tem diálogo: o estado fica pronto para quando ele existir. */}
-      {paying && <span className="sr-only">Pagamento de fatura ainda não está disponível.</span>}
+      {selected && <PayStatementDialog open={paying} onOpenChange={setPaying} statement={selected} currency={card.currency} />}
     </>
   )
 }

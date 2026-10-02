@@ -25,6 +25,14 @@ vi.mock('@/api/queries/cards', () => ({
     refetch: refetchStatements,
   }),
   useUpdateStatement: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  usePayStatement: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useInstallmentPlans: () => ({ data: [], isPending: false, isError: false, refetch: vi.fn() }),
+  useCancelInstallmentPlan: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateInstallmentPlan: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}))
+
+vi.mock('@/api/queries/accounts', () => ({
+  useAccounts: () => ({ data: [] }),
 }))
 
 vi.mock('@/api/queries/transactions', () => ({

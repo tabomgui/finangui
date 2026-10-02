@@ -54,7 +54,7 @@ export function StatementSummary({ statement, currency, onPay, onEditDates }: St
       )}
 
       <div className="flex flex-wrap gap-2">
-        <Button disabled={statement.remaining === 0} onClick={onPay}>
+        <Button disabled={statement.status !== 'open' && statement.remaining === 0} onClick={onPay}>
           Pagar fatura
         </Button>
         <Button variant="outline" onClick={onEditDates}>
