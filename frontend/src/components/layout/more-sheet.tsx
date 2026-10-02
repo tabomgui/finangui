@@ -5,13 +5,16 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { cn } from '@/lib/utils'
 import { moreNav } from './nav-items'
 import { ThemeToggle } from './theme-toggle'
-import { UserSummary, useSignOut } from './user-menu-actions'
+import { useSignOut } from './use-sign-out'
+import { UserSummary } from './user-menu-actions'
 
 export function MoreSheet() {
   const [open, setOpen] = useState(false)
   const location = useLocation()
   const { signOut, pending } = useSignOut()
-  const active = moreNav.some((item) => location.pathname.startsWith(item.to))
+  const active = moreNav.some(
+    (item) => location.pathname === item.to || location.pathname.startsWith(item.to + '/'),
+  )
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -60,7 +63,10 @@ export function MoreSheet() {
           <button
             type="button"
             disabled={pending}
-            onClick={signOut}
+            onClick={() => {
+              setOpen(false)
+              void signOut()
+            }}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-destructive hover:bg-muted"
           >
             <LogOut className="h-5 w-5" />

@@ -15,17 +15,27 @@ type PageHeaderProps = {
 export function PageHeader({ title, subtitle, back, actions, children }: PageHeaderProps) {
   const navigate = useNavigate()
 
+  const goBack = () => {
+    if (typeof back === 'string') {
+      navigate(back)
+      return
+    }
+    // react-router grava `idx` no estado do histórico; sem uma entrada anterior dentro do app
+    // (ex.: chegou por link direto), `navigate(-1)` sairia do app — ir para o início em vez disso.
+    const idx = (window.history.state as { idx?: number } | null)?.idx
+    if (typeof idx === 'number' && idx > 0) {
+      navigate(-1)
+    } else {
+      navigate('/')
+    }
+  }
+
   return (
     <header className="bg-linear-to-r from-emerald-500 to-emerald-600 text-white dark:from-emerald-600 dark:to-emerald-700">
       <div className="mx-auto max-w-5xl px-4 pb-10 pt-[calc(env(safe-area-inset-top)+1.25rem)] sm:px-6 md:pt-8">
         <div className="flex items-center gap-3">
           {back && (
-            <button
-              type="button"
-              aria-label="Voltar"
-              className={headerIconButton}
-              onClick={() => (typeof back === 'string' ? navigate(back) : navigate(-1))}
-            >
+            <button type="button" aria-label="Voltar" className={headerIconButton} onClick={goBack}>
               <ArrowLeft className="h-5 w-5" />
             </button>
           )}
