@@ -1,0 +1,75 @@
+# Produção: SPA e API no mesmo domínio. O TLS termina num proxy externo (Caddy,
+# Cloudflare Tunnel) apontando para a porta do serviço `web`.
+#
+# Uso: docker compose -f docker-compose.prod.yml --env-file backend/.env up -d --build
+# (o --env-file preenche as credenciais do Postgres a partir do mesmo .env do backend)
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: docker/php/Dockerfile
+    target: prod
+  env_file: ${BACKEND_ENV_FILE:-backend/.env}
+  volumes:
+    - storage:/var/www/html/storage
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-finangui}
+      POSTGRES_USER: ${DB_USERNAME:-finangui}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Defina DB_PASSWORD no .env do backend}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-finangui} -d ${DB_DATABASE:-finangui}"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  backend:
+    <<: *backend
+    command: sh -c "php artisan config:cache && php artisan route:cache && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8000/up') === false ? 1 : 0);"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  worker:
+    <<: *backend
+    command: php artisan queue:work --tries=3 --sleep=3
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  scheduler:
+    <<: *backend
+    command: php artisan schedule:work
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    ports:
+      - "${FINANGUI_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  storage:

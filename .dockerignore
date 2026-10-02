@@ -1,0 +1,14 @@
+.git
+docs
+backend/vendor
+backend/.env
+backend/.env.*
+!backend/.env.example
+!backend/.env.production.example
+backend/storage/logs/*
+backend/storage/framework/cache/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+backend/storage/app/openapi.json
+frontend/node_modules
+frontend/dist

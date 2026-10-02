@@ -4,6 +4,7 @@ x-backend: &backend
   build:
     context: .
     dockerfile: docker/php/Dockerfile
+    target: dev
   volumes:
     - ./backend:/var/www/html
   depends_on:
