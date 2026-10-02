@@ -1,7 +1,7 @@
 DC = docker compose
 EXEC = $(DC) exec backend
 
-.PHONY: up down logs sh art test lint fix fresh
+.PHONY: up down logs sh art test lint fix fresh openapi
 
 up: ; $(DC) up -d --build
 down: ; $(DC) down
@@ -12,3 +12,4 @@ test: ; $(EXEC) ./vendor/bin/pest $(f)
 lint: ; $(EXEC) ./vendor/bin/pint --test && $(EXEC) ./vendor/bin/phpstan analyse --memory-limit=1G
 fix: ; $(EXEC) ./vendor/bin/pint
 fresh: ; $(EXEC) php artisan migrate:fresh --seed
+openapi: ; $(EXEC) php artisan scramble:export --path=storage/app/openapi.json

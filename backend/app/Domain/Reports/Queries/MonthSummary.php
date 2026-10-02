@@ -12,7 +12,16 @@ final class MonthSummary
     private const TOP_CATEGORIES = 5;
 
     /**
-     * @return array<string, mixed>
+     * @return array{
+     *     month: string,
+     *     currency: string,
+     *     total_balance: int,
+     *     accounts: list<array{id: int, name: string, type: string, currency: string, color: string|null, icon: string|null, balance: int}>,
+     *     income: int,
+     *     expense: int,
+     *     net: int,
+     *     top_categories: list<array{category_id: int|null, name: string, icon: string|null, color: string|null, amount: int}>,
+     * }
      */
     public function for(CarbonImmutable $month): array
     {
@@ -39,7 +48,7 @@ final class MonthSummary
         return [
             'month' => $month->format('Y-m'),
             'currency' => $primaryCurrency,
-            'total_balance' => $accounts->where('currency', $primaryCurrency)
+            'total_balance' => (int) $accounts->where('currency', $primaryCurrency)
                 ->sum(fn (Account $a) => $a->balance()->cents),
             'accounts' => $accounts->map(fn (Account $a) => [
                 'id' => $a->id,
