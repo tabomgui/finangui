@@ -9,10 +9,13 @@ export const authStatusKey = ['auth-status'] as const
 /**
  * Encerra a sessão no cliente: descarta todo cache que dependia do usuário logado, mas preserva
  * a própria query `me` (só zera seu valor) para quem a observa — ex. `ProtectedRoute` — ver a
- * mudança em vez de perder a assinatura.
+ * mudança em vez de perder a assinatura. `auth-status` também sobrevive: não depende do usuário
+ * logado (ex.: se o cadastro está habilitado), então não precisa ser refeita a cada login/logout.
  */
 export function resetSession(queryClient: QueryClient): void {
-  queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== meKey[0] })
+  queryClient.removeQueries({
+    predicate: (query) => query.queryKey[0] !== meKey[0] && query.queryKey[0] !== authStatusKey[0],
+  })
   queryClient.setQueryData(meKey, null)
 }
 

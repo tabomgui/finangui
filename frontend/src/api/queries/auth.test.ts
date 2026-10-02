@@ -1,6 +1,6 @@
 import { QueryClient, QueryObserver } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
-import { meKey, resetSession } from './auth'
+import { authStatusKey, meKey, resetSession } from './auth'
 
 describe('resetSession', () => {
   it('remove as demais queries em cache e zera o usuário atual, sem perder quem observa a sessão', () => {
@@ -16,6 +16,7 @@ describe('resetSession', () => {
       google_linked: false,
     })
     queryClient.setQueryData(otherKey, [{ id: 1 }])
+    queryClient.setQueryData(authStatusKey, { registration_enabled: true })
 
     const observer = new QueryObserver(queryClient, { queryKey: meKey })
     const seen: unknown[] = []
@@ -25,6 +26,8 @@ describe('resetSession', () => {
 
     expect(queryClient.getQueryData(otherKey)).toBeUndefined()
     expect(queryClient.getQueryData(meKey)).toBeNull()
+    // auth-status não depende do usuário logado (ex.: se o cadastro está habilitado); sobrevive ao reset.
+    expect(queryClient.getQueryData(authStatusKey)).toEqual({ registration_enabled: true })
     expect(seen.at(-1)).toBeNull()
 
     unsubscribe()
