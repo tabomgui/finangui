@@ -15,6 +15,7 @@ import { BalanceHero } from './balance-hero'
 import { MonthNav } from './month-nav'
 import { RecentTransactionsCard } from './recent-transactions-card'
 import { monthFromParam } from './shares'
+import { StatementsCard } from './statements-card'
 import { SummaryCards } from './summary-cards'
 import { TopCategoriesCard } from './top-categories-card'
 
@@ -80,6 +81,7 @@ export function DashboardPage() {
         ) : (
           <div className={cn('space-y-4 transition-opacity', isPlaceholderData && 'opacity-60')} aria-busy={isPlaceholderData}>
             <SummaryCards income={data.income} expense={data.expense} net={data.net} currency={data.currency} />
+            <StatementsCard />
             <div className="grid gap-4 lg:grid-cols-2">
               <TopCategoriesCard categories={data.top_categories} expense={data.expense} currency={data.currency} month={month} />
               <AccountsCard accounts={data.accounts} />
