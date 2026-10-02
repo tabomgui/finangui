@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { LoaderCircle } from 'lucide-react'
 import { useEffect } from 'react'
-import { Controller, useForm } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { useAccounts } from '@/api/queries/accounts'
@@ -34,11 +34,19 @@ type PayStatementDialogProps = {
 
 export function PayStatementDialog({ open, onOpenChange, statement, currency }: PayStatementDialogProps) {
   const pay = usePayStatement()
-  const { data: accounts = [] } = useAccounts(false)
-  const defaultAccountId = accounts.find((account) => account.type !== 'credit_card')?.id ?? null
+  // Mesma chamada (`useAccounts(true)`) que o `AccountSelect` usa por baixo: reaproveita o cache
+  // do React Query em vez de disparar um segundo fetch com uma chave diferente.
+  const { data: accounts = [] } = useAccounts(true)
+  const payableAccounts = accounts.filter((account) => !account.is_archived && account.type !== 'credit_card')
+  const defaultAccountId = payableAccounts[0]?.id ?? null
+  const hasPayableAccount = defaultAccountId !== null
 
   function defaultsFor(): PayStatementFormValues {
-    return { from_account_id: defaultAccountId, amount: statement.remaining, date: today() }
+    return {
+      from_account_id: defaultAccountId,
+      amount: statement.remaining > 0 ? statement.remaining : null,
+      date: today(),
+    }
   }
 
   const form = useForm<PayStatementFormValues>({
@@ -52,6 +60,16 @@ export function PayStatementDialog({ open, onOpenChange, statement, currency }: 
     if (open) form.reset(defaultsFor())
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ver comentário acima: só reage a open/statement.id
   }, [open, statement.id])
+
+  // As contas podem não ter chegado ainda quando o diálogo abre (primeira abertura, sem cache):
+  // se o campo ainda está vazio e uma conta padrão passa a existir, preenche sem sobrescrever
+  // uma escolha que o usuário já tenha feito.
+  const fromAccountId = useWatch({ control: form.control, name: 'from_account_id' })
+  useEffect(() => {
+    if (open && fromAccountId === null && defaultAccountId !== null) {
+      form.setValue('from_account_id', defaultAccountId)
+    }
+  }, [open, fromAccountId, defaultAccountId, form])
 
   const onSubmit = form.handleSubmit(async (values) => {
     try {
@@ -76,7 +94,12 @@ export function PayStatementDialog({ open, onOpenChange, statement, currency }: 
           <DialogDescription>O pagamento entra como transferência da conta escolhida para o cartão.</DialogDescription>
         </DialogHeader>
         <form id="pay-statement-form" className="space-y-4" onSubmit={onSubmit} noValidate>
-          <Field label="Pagar com" htmlFor="pay-statement-account" error={errors.from_account_id?.message}>
+          <Field
+            label="Pagar com"
+            htmlFor="pay-statement-account"
+            error={errors.from_account_id?.message}
+            hint={hasPayableAccount ? undefined : 'Cadastre uma conta (corrente, poupança ou dinheiro) para pagar a fatura.'}
+          >
             {(control) => (
               <Controller
                 control={form.control}
@@ -118,7 +141,7 @@ export function PayStatementDialog({ open, onOpenChange, statement, currency }: 
           <Button type="button" variant="outline" disabled={pay.isPending} onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button type="submit" form="pay-statement-form" disabled={pay.isPending}>
+          <Button type="submit" form="pay-statement-form" disabled={pay.isPending || !hasPayableAccount}>
             {pay.isPending && <LoaderCircle className="h-4 w-4 animate-spin" />}
             Pagar
           </Button>

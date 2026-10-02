@@ -13,8 +13,8 @@ vi.mock('@/api/queries/cards', () => ({
   usePayStatement: () => ({ mutateAsync, isPending: false }),
 }))
 
-const accounts: Account[] = [
-  {
+function account(overrides: Partial<Account> = {}): Account {
+  return {
     id: 1,
     name: 'Nubank',
     type: 'credit_card',
@@ -28,54 +28,49 @@ const accounts: Account[] = [
     color: null,
     icon: null,
     is_archived: false,
-  },
-  {
-    id: 2,
-    name: 'Carteira',
-    type: 'cash',
-    currency: 'BRL',
-    opening_balance: 200000,
-    balance: 200000,
-    credit_limit: null,
-    closing_day: null,
-    due_day: null,
-    last_four: null,
-    color: null,
-    icon: null,
-    is_archived: false,
-  },
-]
+    ...overrides,
+  }
+}
+
+const cardAccount = account()
+const walletAccount = account({ id: 2, name: 'Carteira', type: 'cash', credit_limit: null, closing_day: null, due_day: null, last_four: null })
+
+let mockAccounts: Account[] = [cardAccount, walletAccount]
 
 vi.mock('@/api/queries/accounts', () => ({
-  useAccounts: () => ({ data: accounts }),
+  useAccounts: () => ({ data: mockAccounts }),
 }))
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
-const statement: CardStatement = {
-  id: 10,
-  account_id: 1,
-  closing_date: '2026-10-10',
-  due_date: '2026-10-17',
-  reported_total: null,
-  total: 120000,
-  paid: 0,
-  remaining: 120000,
-  status: 'open',
-  days_until_due: 14,
-  has_divergence: false,
+function statement(overrides: Partial<CardStatement> = {}): CardStatement {
+  return {
+    id: 10,
+    account_id: 1,
+    closing_date: '2026-10-10',
+    due_date: '2026-10-17',
+    reported_total: null,
+    total: 120000,
+    paid: 0,
+    remaining: 120000,
+    status: 'open',
+    days_until_due: 14,
+    has_divergence: false,
+    ...overrides,
+  }
 }
 
-function renderDialog(onOpenChange: (open: boolean) => void = () => {}) {
+function renderDialog(target: CardStatement = statement(), onOpenChange: (open: boolean) => void = () => {}) {
   const client = new QueryClient()
   return render(
     <QueryClientProvider client={client}>
-      <PayStatementDialog open statement={statement} currency="BRL" onOpenChange={onOpenChange} />
+      <PayStatementDialog open statement={target} currency="BRL" onOpenChange={onOpenChange} />
     </QueryClientProvider>,
   )
 }
 
 beforeEach(() => {
+  mockAccounts = [cardAccount, walletAccount]
   mutateAsync.mockReset().mockResolvedValue(undefined)
   vi.mocked(toast.error).mockReset()
   vi.mocked(toast.success).mockReset()
@@ -89,6 +84,12 @@ describe('PayStatementDialog', () => {
     expect(screen.getByLabelText('Data')).toHaveValue(today())
   })
 
+  it('restante zero: o campo valor abre vazio', () => {
+    renderDialog(statement({ remaining: 0 }))
+
+    expect(screen.getByLabelText('Valor')).toHaveValue('')
+  })
+
   it('a lista de contas de origem não mostra o cartão', () => {
     renderDialog()
 
@@ -100,7 +101,7 @@ describe('PayStatementDialog', () => {
 
   it('salvar chama usePayStatement().mutateAsync e mostra toast de sucesso', async () => {
     const onOpenChange = vi.fn()
-    renderDialog(onOpenChange)
+    renderDialog(statement(), onOpenChange)
 
     fireEvent.click(screen.getByRole('button', { name: 'Pagar' }))
 
@@ -114,12 +115,23 @@ describe('PayStatementDialog', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
-  it('409 statement_already_paid mostra a mensagem do backend em toast', async () => {
+  it('409 statement_already_paid mostra a mensagem do backend em toast e mantém o diálogo aberto', async () => {
     mutateAsync.mockRejectedValue(new ApiError(409, 'Esta fatura já foi paga.', 'statement_already_paid'))
-    renderDialog()
+    const onOpenChange = vi.fn()
+    renderDialog(statement(), onOpenChange)
 
     fireEvent.click(screen.getByRole('button', { name: 'Pagar' }))
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Esta fatura já foi paga.'))
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+    expect(screen.getByRole('button', { name: 'Pagar' })).toBeInTheDocument()
+  })
+
+  it('sem conta ativa para pagar (só o cartão): avisa e desabilita "Pagar"', () => {
+    mockAccounts = [cardAccount]
+    renderDialog()
+
+    expect(screen.getByText('Cadastre uma conta (corrente, poupança ou dinheiro) para pagar a fatura.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pagar' })).toBeDisabled()
   })
 })

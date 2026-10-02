@@ -19,14 +19,16 @@ import { formatDate } from '@/lib/date'
 import { formatMoney } from '@/lib/money'
 import { InstallmentPlanDialog } from './installment-plan-dialog'
 
-function ProgressBar({ postedCount, installments }: { postedCount: number; installments: number }) {
+function ProgressBar({ description, postedCount, installments }: { description: string; postedCount: number; installments: number }) {
   const percent = installments > 0 ? Math.min(Math.max(postedCount / installments, 0), 1) * 100 : 0
   return (
     <div
       role="progressbar"
+      aria-label={`Parcelas lançadas de ${description}`}
       aria-valuemin={0}
       aria-valuemax={installments}
       aria-valuenow={postedCount}
+      aria-valuetext={`${postedCount} de ${installments} lançadas`}
       className="h-1.5 overflow-hidden rounded-full bg-muted"
     >
       <span className="block h-full bg-primary" style={{ width: `${percent}%` }} />
@@ -70,7 +72,7 @@ function PlanRow({ plan, currency, onEdit, onCancel }: { plan: InstallmentPlan; 
         </DropdownMenu>
       </div>
 
-      <ProgressBar postedCount={plan.posted_count} installments={plan.installments} />
+      <ProgressBar description={plan.description} postedCount={plan.posted_count} installments={plan.installments} />
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <span>
@@ -86,6 +88,10 @@ function PlanRow({ plan, currency, onEdit, onCancel }: { plan: InstallmentPlan; 
 export function InstallmentPlansTab({ cardId, currency }: { cardId: number; currency: string }) {
   const { data: plans, isPending, isError, refetch } = useInstallmentPlans(cardId)
   const cancel = useCancelInstallmentPlan()
+  // `selectedPlan` nunca volta a null: uma vez que algum parcelamento foi escolhido para editar,
+  // o diálogo continua montado (só `editing` alterna aberto/fechado), para não perder a transição
+  // de saída no meio do fechamento — mesmo padrão de `selected`/`editingDates` em card-detail-page.
+  const [selectedPlan, setSelectedPlan] = useState<InstallmentPlan | null>(null)
   const [editing, setEditing] = useState<InstallmentPlan | null>(null)
   const [cancelling, setCancelling] = useState<InstallmentPlan | null>(null)
 
@@ -115,7 +121,16 @@ export function InstallmentPlansTab({ cardId, currency }: { cardId: number; curr
         ) : plans && plans.length > 0 ? (
           <ul className="divide-y divide-border">
             {plans.map((plan) => (
-              <PlanRow key={plan.id} plan={plan} currency={currency} onEdit={() => setEditing(plan)} onCancel={() => setCancelling(plan)} />
+              <PlanRow
+                key={plan.id}
+                plan={plan}
+                currency={currency}
+                onEdit={() => {
+                  setSelectedPlan(plan)
+                  setEditing(plan)
+                }}
+                onCancel={() => setCancelling(plan)}
+              />
             ))}
           </ul>
         ) : (
@@ -123,16 +138,24 @@ export function InstallmentPlansTab({ cardId, currency }: { cardId: number; curr
         )}
       </Card>
 
-      {editing && <InstallmentPlanDialog open onOpenChange={(open) => !open && setEditing(null)} plan={editing} />}
+      {selectedPlan && (
+        <InstallmentPlanDialog
+          open={editing !== null}
+          onOpenChange={(open) => setEditing(open ? selectedPlan : null)}
+          plan={selectedPlan}
+        />
+      )}
       <ConfirmDialog
         open={cancelling !== null}
         onOpenChange={(open) => !open && setCancelling(null)}
         title="Cancelar parcelamento?"
         description="As parcelas futuras serão excluídas. As já lançadas ficam."
         confirmLabel="Cancelar parcelamento"
+        cancelLabel="Voltar"
         destructive
         onConfirm={async () => {
-          if (cancelling) await cancel.mutateAsync(cancelling.id)
+          if (!cancelling) return
+          await cancel.mutateAsync(cancelling.id)
           toast.success('Parcelamento cancelado.')
         }}
       />

@@ -62,6 +62,10 @@ describe('InstallmentPlansTab', () => {
     expect(screen.getByText('3 de 10 lançadas')).toBeInTheDocument()
     expect(screen.getByText('Faltam R$ 840,00')).toBeInTheDocument()
     expect(screen.getByText('Próxima em 05/04/2026')).toBeInTheDocument()
+    expect(screen.getByRole('progressbar', { name: 'Parcelas lançadas de Notebook' })).toHaveAttribute(
+      'aria-valuetext',
+      '3 de 10 lançadas',
+    )
   })
 
   it('plano cancelado mostra badge "Cancelado" e não oferece "Cancelar parcelamento"', () => {
@@ -71,8 +75,9 @@ describe('InstallmentPlansTab', () => {
 
     expect(screen.getByText('Cancelado')).toBeInTheDocument()
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Ações do parcelamento Notebook' }), { button: 0 })
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Ações do parcelamento Notebook' }), { button: 0, pointerType: 'mouse' })
 
+    expect(screen.getByRole('menuitem', { name: 'Editar' })).toBeInTheDocument()
     expect(screen.queryByText('Cancelar parcelamento')).not.toBeInTheDocument()
   })
 
@@ -81,7 +86,7 @@ describe('InstallmentPlansTab', () => {
 
     renderTab()
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Ações do parcelamento Notebook' }), { button: 0 })
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Ações do parcelamento Notebook' }), { button: 0, pointerType: 'mouse' })
     fireEvent.click(screen.getByText('Cancelar parcelamento'))
 
     expect(screen.getByText('As parcelas futuras serão excluídas. As já lançadas ficam.')).toBeInTheDocument()

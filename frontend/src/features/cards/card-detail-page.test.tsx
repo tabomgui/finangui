@@ -127,6 +127,18 @@ describe('CardDetailPage', () => {
     expect(screen.getByText('R$ 300,00')).toBeInTheDocument()
   })
 
+  it('clicar "Pagar fatura" abre o diálogo de pagamento', () => {
+    const current = statement(3, { due_date: '2026-10-17' })
+    mockCard = { ...nubank, current_statement: current }
+    mockStatements = [current]
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pagar fatura' }))
+
+    expect(screen.getByText('O pagamento entra como transferência da conta escolhida para o cartão.')).toBeInTheDocument()
+  })
+
   it('abrindo com ?fatura=1 na URL mostra a fatura 1, não a atual', () => {
     const first = statement(1, { due_date: '2026-08-17' })
     const current = statement(3, { due_date: '2026-10-17' })

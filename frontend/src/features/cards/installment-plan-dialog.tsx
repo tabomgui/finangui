@@ -47,9 +47,11 @@ export function InstallmentPlanDialog({ open, onOpenChange, plan }: InstallmentP
   }, [open, plan.id])
 
   const onSubmit = form.handleSubmit(async (values) => {
-    const body = categoryEditable
-      ? { description: values.description.trim(), category_id: values.category_id }
-      : { description: values.description.trim() }
+    const categoryChanged = values.category_id !== plan.category_id
+    const body =
+      categoryEditable && categoryChanged
+        ? { description: values.description.trim(), category_id: values.category_id }
+        : { description: values.description.trim() }
     try {
       await update.mutateAsync({ id: plan.id, body })
       toast.success('Parcelamento atualizado.')
