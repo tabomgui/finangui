@@ -1,0 +1,44 @@
+<?php
+
+use App\Models\User;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
+use Tests\Fixtures\ScopedNote;
+
+beforeEach(function () {
+    Schema::create('scoped_notes', function (Blueprint $table) {
+        $table->id();
+        $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+        $table->string('body');
+        $table->timestamps();
+    });
+});
+
+it('preenche user_id com o usuário autenticado', function () {
+    $user = actingAsUser();
+
+    $note = ScopedNote::create(['body' => 'oi']);
+
+    expect($note->user_id)->toBe($user->id);
+});
+
+it('só retorna registros do usuário autenticado', function () {
+    $other = User::factory()->create();
+    ScopedNote::create(['user_id' => $other->id, 'body' => 'do outro']);
+
+    actingAsUser();
+    ScopedNote::create(['body' => 'meu']);
+
+    expect(ScopedNote::pluck('body')->all())->toBe(['meu']);
+});
+
+it('não filtra quando não há usuário autenticado', function () {
+    $a = User::factory()->create();
+    $b = User::factory()->create();
+    ScopedNote::create(['user_id' => $a->id, 'body' => 'a']);
+    ScopedNote::create(['user_id' => $b->id, 'body' => 'b']);
+
+    expect(Auth::hasUser())->toBeFalse()
+        ->and(ScopedNote::count())->toBe(2);
+});
