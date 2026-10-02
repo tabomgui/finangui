@@ -32,8 +32,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function toApiError(status: number, body: unknown): ApiError {
   if (!isRecord(body)) return new ApiError(status, defaultMessage(status))
 
-  const message = typeof body.message === 'string' && body.message !== '' ? body.message : defaultMessage(status)
   const code = typeof body.code === 'string' ? body.code : null
+  // Mensagens do Laravel (403/404/429/...) vêm em inglês; só confiamos no corpo quando é um
+  // erro nosso com `code` (domínio, registration_closed, session_required) ou validação 422
+  // (traduzida pelo backend). Fora isso, usamos o texto padrão em português para o status.
+  const trustsBodyMessage = code !== null || status === 422
+  const message = trustsBodyMessage && typeof body.message === 'string' && body.message !== '' ? body.message : defaultMessage(status)
   const fieldErrors: Record<string, string[]> = {}
 
   if (isRecord(body.errors)) {
