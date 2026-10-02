@@ -1,5 +1,7 @@
 // Dinheiro sempre em centavos inteiros (como a API). Nunca usar float para valores.
 
+import type { Direction } from '@/api/types'
+
 const currencyFormatters = new Map<string, Intl.NumberFormat>()
 
 function currencyFormatter(currency: string): Intl.NumberFormat {
@@ -12,8 +14,6 @@ function currencyFormatter(currency: string): Intl.NumberFormat {
 }
 
 const decimalFormatter = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
-export type Direction = 'in' | 'out'
 
 export function formatMoney(cents: number, currency = 'BRL'): string {
   const normalized = cents === 0 ? 0 : cents
