@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\V1\AccountController;
 use App\Http\Controllers\Api\V1\Auth\AuthStatusController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\SessionController;
+use App\Http\Controllers\Api\V1\CardController;
+use App\Http\Controllers\Api\V1\CardStatementController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\MeController;
@@ -40,5 +42,12 @@ Route::prefix('v1')->group(function () {
         Route::get('transfers/{transfer}', [TransferController::class, 'show'])->whereUuid('transfer');
         Route::patch('transfers/{transfer}', [TransferController::class, 'update'])->whereUuid('transfer');
         Route::delete('transfers/{transfer}', [TransferController::class, 'destroy'])->whereUuid('transfer');
+
+        Route::get('cards', [CardController::class, 'index']);
+        Route::get('cards/{account}', [CardController::class, 'show']);
+        Route::get('cards/{account}/statements', [CardController::class, 'statements']);
+        Route::get('cards/{account}/statement-preview', [CardController::class, 'statementPreview']);
+        Route::get('card-statements/{statement}', [CardStatementController::class, 'show']);
+        Route::patch('card-statements/{statement}', [CardStatementController::class, 'update']);
     });
 });
