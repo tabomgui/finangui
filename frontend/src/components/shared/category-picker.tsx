@@ -19,6 +19,8 @@ type CategoryPickerProps = Partial<FieldControlProps> & {
   placeholder?: string
   /** Permite escolher "Sem categoria". */
   allowNone?: boolean
+  disabled?: boolean
+  'aria-label'?: string
 }
 
 export function CategoryPicker({
@@ -27,6 +29,8 @@ export function CategoryPicker({
   kind,
   placeholder = 'Escolha a categoria',
   allowNone = true,
+  disabled = false,
+  'aria-label': ariaLabel,
   ...control
 }: CategoryPickerProps) {
   const [open, setOpen] = useState(false)
@@ -44,7 +48,16 @@ export function CategoryPicker({
     // do Sheet intercepta a roda do mouse sobre a lista flutuante e o scroll não funciona.
     <Popover modal open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button {...control} type="button" variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-normal">
+        <Button
+          {...control}
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          aria-label={ariaLabel}
+          disabled={disabled}
+          className="w-full justify-between font-normal"
+        >
           {selected ? (
             <span className="flex items-center gap-2 truncate">
               <CategoryIcon icon={selected.icon} color={selected.color} size="sm" className="h-6 w-6" />

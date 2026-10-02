@@ -10,7 +10,7 @@ import type { Transaction } from '@/api/types'
 import { CategoryPicker } from '@/components/shared/category-picker'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { mergeTagIds, runInBatches, transacaoCount } from './bulk'
+import { mergeTagIds, runInBatches, selectionKind, transacaoCount } from './bulk'
 
 type UpdateTransactionRequest = components['schemas']['UpdateTransactionRequest']
 
@@ -23,6 +23,9 @@ export function BulkActionBar({ selected, onDone }: BulkActionBarProps) {
   const queryClient = useQueryClient()
   const { data: tags = [] } = useTags()
   const [pending, setPending] = useState(false)
+  // Entradas e saídas têm árvores de categoria diferentes; conta pernas de transferência pela
+  // própria direction. Seleção mista desabilita a categoria em vez de adivinhar qual árvore mostrar.
+  const kind = selectionKind(selected)
 
   const apply = async (label: string, update: (transaction: Transaction) => UpdateTransactionRequest) => {
     setPending(true)
@@ -61,10 +64,16 @@ export function BulkActionBar({ selected, onDone }: BulkActionBarProps) {
           <CategoryPicker
             value={null}
             allowNone
+            kind={kind ?? undefined}
             placeholder="Definir categoria"
+            aria-label="Definir categoria"
+            disabled={pending || kind === null}
             onChange={(categoryId) => apply('Categoria', () => ({ category_id: categoryId }))}
           />
         </div>
+        {kind === null && (
+          <p className="w-full text-xs text-muted-foreground">Selecione só entradas ou só saídas para definir a categoria</p>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" disabled={pending || tags.length === 0} className="gap-2">
