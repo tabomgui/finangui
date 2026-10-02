@@ -1,7 +1,7 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ensureCsrf, expectOk, unwrap } from '@/api/client'
 import { toApiError } from '@/api/errors'
-import type { User } from '@/api/types'
+import type { LoginRequest, RegisterRequest, UpdateProfileRequest, User } from '@/api/types'
 
 export const meKey = ['me'] as const
 export const authStatusKey = ['auth-status'] as const
@@ -37,12 +37,10 @@ export function useAuthStatus() {
   })
 }
 
-export type LoginInput = { email: string; password: string }
-
 export function useLogin() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (body: LoginInput) => {
+    mutationFn: async (body: LoginRequest) => {
       await ensureCsrf()
       return (await unwrap(api.POST('/auth/login', { body }))).data
     },
@@ -50,12 +48,10 @@ export function useLogin() {
   })
 }
 
-export type RegisterInput = { name: string; email: string; password: string; password_confirmation: string }
-
 export function useRegister() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (body: RegisterInput) => {
+    mutationFn: async (body: RegisterRequest) => {
       await ensureCsrf()
       return (await unwrap(api.POST('/auth/register', { body }))).data
     },
@@ -73,17 +69,10 @@ export function useLogout() {
   })
 }
 
-export type ProfileInput = {
-  name?: string
-  current_password?: string | null
-  password?: string
-  password_confirmation?: string
-}
-
 export function useUpdateProfile() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (body: ProfileInput) => (await unwrap(api.PATCH('/me', { body }))).data,
+    mutationFn: async (body: UpdateProfileRequest) => (await unwrap(api.PATCH('/me', { body }))).data,
     onSuccess: (user) => queryClient.setQueryData(meKey, user),
   })
 }
