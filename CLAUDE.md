@@ -16,6 +16,8 @@ Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`;
 - Projeto novo: altere migrations só enquanto não houver deploy; depois disso, sempre migration nova.
 - `make lint` roda Larastan em nível 6. Quando o apontamento é falso positivo e justificado, use `@phpstan-ignore <id> (motivo)` na linha, nunca um baseline.
 - Worker de dev usa `queue:listen` (reflete mudança de código sem reiniciar o container); não usar `queue:work` no Docker Compose de desenvolvimento.
+- Cartão de crédito é uma conta `credit_card`. A fatura de qualquer transação de cartão é decidida só por `App\Domain\Cards\Actions\AssignStatement` (criar/editar transação e transferência chamam ela); datas nominais vêm de `InvoiceCycle` (puro) e faturas já gravadas têm prioridade (`StatementResolver`). Total, pago, restante, status e limite são derivados (`CardStatement::scopeWithTotals`, `Account::scopeWithCardUsage`), nunca gravados.
+- Pagar fatura é transferência (`PayStatement`), nunca despesa. Parcelas: conta/valor/data/tipo travados; excluir uma parcela exclui o parcelamento; cancelar exclui só as projetadas.
 
 ## Frontend
 
@@ -48,6 +50,8 @@ Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`;
 - `CardHeader` do shadcn é um grid (pensado pra `CardAction`); quando o conteúdo é só título + algo à direita em linha, declare `flex flex-row items-center justify-between` explicitamente na própria instância.
 - jsdom não implementa `ResizeObserver`, `scrollIntoView` nem a Pointer Capture API (`hasPointerCapture`/`setPointerCapture`/`releasePointerCapture`), usados por componentes radix-ui/cmdk (ex.: `Select` precisa da Pointer Capture API no trigger); os stubs ficam em `src/test/setup.ts`, não devem ser duplicados em testes individuais.
 - Antes de commit: `make front-check`.
+- Cartões em `features/cards`. Status e "vence em N dias" vêm prontos da API (`status`, `days_until_due`); `statement-labels.ts` só traduz para texto.
+- Linha de transação: subtítulo montado por `transactionSubtitle`; o tipo de um lançamento em edição sai de `editKind` (entry/transfer/installment).
 
 ## UI
 
