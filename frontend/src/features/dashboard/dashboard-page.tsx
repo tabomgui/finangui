@@ -36,8 +36,12 @@ export function DashboardPage() {
             <div className={cn('transition-opacity', isPlaceholderData && 'opacity-60')}>
               <BalanceHero totalBalance={data.total_balance} currency={data.currency} balanceDate={data.balance_date} />
             </div>
+          ) : isError ? (
+            // Sem saldo para mostrar e o card de erro já aparece no corpo da página: só reserva a altura
+            // para o cabeçalho não "pular" quando o usuário tentar de novo.
+            <div className="h-28" aria-hidden="true" />
           ) : (
-            !isError && <Skeleton className="h-28 w-full rounded-2xl bg-white/20" />
+            <Skeleton className="h-28 w-full rounded-2xl bg-white/20" />
           )}
         </div>
       </PageHeader>
