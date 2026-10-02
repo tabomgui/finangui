@@ -61,13 +61,22 @@ type ApiResult<T> = { data?: T; error?: unknown; response: Response }
 
 /** Devolve o corpo de sucesso ou lança ApiError com status, código e erros de campo. */
 export async function unwrap<T>(request: Promise<ApiResult<T>>): Promise<T> {
-  const { data, error, response } = await request
+  const { data, error, response } = await awaitRequest(request)
   if (!response.ok) throw toApiError(response.status, error)
   return data as T
 }
 
 /** Para respostas sem corpo (204): só valida o status. */
 export async function expectOk(request: Promise<ApiResult<unknown>>): Promise<void> {
-  const { error, response } = await request
+  const { error, response } = await awaitRequest(request)
   if (!response.ok) throw toApiError(response.status, error)
+}
+
+/** A requisição em si pode rejeitar (ex.: `fetch` falha por falta de rede): sem resposta, status 0. */
+async function awaitRequest<T>(request: Promise<ApiResult<T>>): Promise<ApiResult<T>> {
+  try {
+    return await request
+  } catch {
+    throw toApiError(0, undefined)
+  }
 }
