@@ -69,3 +69,41 @@ it('usa o mês atual quando não informado e valida o formato', function () {
     $this->getJson('/api/v1/dashboard')->assertJsonPath('data.month', now()->format('Y-m'));
     $this->getJson('/api/v1/dashboard?month=10-2026')->assertStatus(422)->assertJsonValidationErrors('month');
 });
+
+it('restringe os totais à moeda principal mas lista todas as contas', function () {
+    actingAsUser();
+    Account::factory()->create(['name' => 'A Conta BRL', 'opening_balance' => 1000]);
+    $usd = Account::factory()->create(['name' => 'B Conta USD', 'currency' => 'USD', 'opening_balance' => 5000]);
+    Transaction::factory()->for($usd)->income()->create(['date' => '2026-10-05', 'amount' => 30000, 'currency' => 'USD']);
+
+    $this->getJson('/api/v1/dashboard?month=2026-10')
+        ->assertJsonPath('data.currency', 'BRL')
+        ->assertJsonPath('data.total_balance', 1000)
+        ->assertJsonPath('data.income', 0)
+        ->assertJsonCount(2, 'data.accounts')
+        ->assertJsonPath('data.accounts.1.currency', 'USD');
+});
+
+it('isola o resumo de dados de outro usuário', function () {
+    $user = actingAsUser();
+    $account = Account::factory()->create(['opening_balance' => 1000]);
+    $category = Category::factory()->create(['name' => 'Categoria do usuário']);
+    Transaction::factory()->for($account)->income()->create(['date' => '2026-10-05', 'amount' => 50000]);
+    Transaction::factory()->for($account)->create(['date' => '2026-10-06', 'amount' => 20000, 'category_id' => $category->id]);
+
+    actingAsUser();
+    $otherAccount = Account::factory()->create(['opening_balance' => 999999]);
+    $otherCategory = Category::factory()->create(['name' => 'Categoria de outro usuário']);
+    Transaction::factory()->for($otherAccount)->income()->create(['date' => '2026-10-10', 'amount' => 777777]);
+    Transaction::factory()->for($otherAccount)->create(['date' => '2026-10-11', 'amount' => 888888, 'category_id' => $otherCategory->id]);
+
+    $this->actingAs($user);
+
+    $this->getJson('/api/v1/dashboard?month=2026-10')
+        ->assertJsonPath('data.total_balance', 31000) // opening_balance 1000 + receita 50000 - despesa 20000
+        ->assertJsonCount(1, 'data.accounts')
+        ->assertJsonPath('data.income', 50000)
+        ->assertJsonPath('data.expense', 20000)
+        ->assertJsonCount(1, 'data.top_categories')
+        ->assertJsonPath('data.top_categories.0.name', 'Categoria do usuário');
+});

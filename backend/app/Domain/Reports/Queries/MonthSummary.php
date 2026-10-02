@@ -19,11 +19,15 @@ final class MonthSummary
         $start = $month->startOfMonth()->toDateString();
         $end = $month->endOfMonth()->toDateString();
 
+        /** @var string $primaryCurrency */
+        $primaryCurrency = config('finangui.primary_currency');
+
         $accounts = Account::query()->withBalance()->where('is_archived', false)->orderBy('name')->get();
 
         $totals = Transaction::query()
             ->reportable()
             ->whereBetween('transactions.date', [$start, $end])
+            ->where('transactions.currency', $primaryCurrency)
             ->selectRaw("COALESCE(SUM(amount) FILTER (WHERE direction = 'in'), 0) AS income")
             ->selectRaw("COALESCE(SUM(amount) FILTER (WHERE direction = 'out'), 0) AS expense")
             ->toBase()
@@ -34,11 +38,14 @@ final class MonthSummary
 
         return [
             'month' => $month->format('Y-m'),
-            'total_balance' => $accounts->sum(fn (Account $a) => $a->balance()->cents),
+            'currency' => $primaryCurrency,
+            'total_balance' => $accounts->where('currency', $primaryCurrency)
+                ->sum(fn (Account $a) => $a->balance()->cents),
             'accounts' => $accounts->map(fn (Account $a) => [
                 'id' => $a->id,
                 'name' => $a->name,
                 'type' => $a->type->value,
+                'currency' => $a->currency,
                 'color' => $a->color,
                 'icon' => $a->icon,
                 'balance' => $a->balance()->cents,
@@ -46,19 +53,23 @@ final class MonthSummary
             'income' => $income,
             'expense' => $expense,
             'net' => $income - $expense,
-            'top_categories' => $this->topCategories($start, $end),
+            'top_categories' => $this->topCategories($start, $end, $primaryCurrency),
         ];
     }
 
     /**
      * @return list<array{category_id: int|null, name: string, icon: string|null, color: string|null, amount: int}>
      */
-    private function topCategories(string $start, string $end): array
+    private function topCategories(string $start, string $end, string $primaryCurrency): array
     {
         $rows = Transaction::query()
             ->reportable()
             ->whereBetween('transactions.date', [$start, $end])
             ->where('transactions.direction', 'out')
+            ->where('transactions.currency', $primaryCurrency)
+            // Join bruto: ignora o global scope por usuário de Category, mas é seguro
+            // porque category_id é validado no write para pertencer ao mesmo usuário
+            // da transação, e os nomes exibidos vêm da query escopada abaixo.
             ->leftJoin('categories as c', 'c.id', '=', 'transactions.category_id')
             ->selectRaw('COALESCE(c.parent_id, c.id) AS root_id, SUM(transactions.amount) AS total')
             ->groupByRaw('COALESCE(c.parent_id, c.id)')
