@@ -46,7 +46,7 @@ Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`;
 - Toda página com dados mostra um estado de erro com botão "Tentar de novo" (refetch), não só um alerta.
 - Qualquer superfície no topo do `PageBody` fica sobre a faixa esmeralda do `PageHeader`: precisa ser opaca (ex.: `bg-card` no input), senão a faixa verde aparece atrás.
 - `CardHeader` do shadcn é um grid (pensado pra `CardAction`); quando o conteúdo é só título + algo à direita em linha, declare `flex flex-row items-center justify-between` explicitamente na própria instância.
-- jsdom não implementa `ResizeObserver` nem `scrollIntoView` (usados por componentes radix-ui/cmdk); os stubs ficam em `src/test/setup.ts`, não devem ser duplicados em testes individuais.
+- jsdom não implementa `ResizeObserver`, `scrollIntoView` nem a Pointer Capture API (`hasPointerCapture`/`setPointerCapture`/`releasePointerCapture`), usados por componentes radix-ui/cmdk (ex.: `Select` precisa da Pointer Capture API no trigger); os stubs ficam em `src/test/setup.ts`, não devem ser duplicados em testes individuais.
 - Antes de commit: `make front-check`.
 
 ## UI

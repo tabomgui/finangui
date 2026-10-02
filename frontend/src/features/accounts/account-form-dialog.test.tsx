@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '@/api/errors'
+import type { Account } from '@/api/types'
 import { AccountFormDialog } from './account-form-dialog'
 
 const createMutateAsync = vi.fn()
@@ -11,16 +13,48 @@ vi.mock('@/api/queries/accounts', () => ({
   useUpdateAccount: () => ({ mutateAsync: updateMutateAsync, isPending: false }),
 }))
 
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+
+const { toast } = await import('sonner')
+
 beforeEach(() => {
   createMutateAsync.mockReset().mockResolvedValue(undefined)
   updateMutateAsync.mockReset().mockResolvedValue(undefined)
+  vi.mocked(toast.error).mockReset()
+  vi.mocked(toast.success).mockReset()
 })
 
-function renderDialog(open = true, defaultType?: 'checking' | 'credit_card') {
+const cardAccount: Account = {
+  id: 5,
+  name: 'Nubank',
+  type: 'credit_card',
+  currency: 'BRL',
+  opening_balance: -10000,
+  balance: -10000,
+  credit_limit: 500000,
+  closing_day: 3,
+  due_day: 10,
+  last_four: '1234',
+  color: '#8a2be2',
+  icon: 'credit-card',
+  is_archived: false,
+}
+
+function renderDialog(open = true, defaultType?: 'checking' | 'credit_card', onOpenChange: (open: boolean) => void = () => {}) {
   const client = new QueryClient()
   const utils = render(
     <QueryClientProvider client={client}>
-      <AccountFormDialog open={open} onOpenChange={() => {}} defaultType={defaultType} />
+      <AccountFormDialog open={open} onOpenChange={onOpenChange} defaultType={defaultType} />
+    </QueryClientProvider>,
+  )
+  return { client, ...utils }
+}
+
+function renderDialogForAccount(account: Account, onOpenChange: (open: boolean) => void = () => {}) {
+  const client = new QueryClient()
+  const utils = render(
+    <QueryClientProvider client={client}>
+      <AccountFormDialog open onOpenChange={onOpenChange} account={account} />
     </QueryClientProvider>,
   )
   return { client, ...utils }
@@ -88,7 +122,7 @@ describe('AccountFormDialog', () => {
     fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Nubank' } })
     await selectAccountType('Cartão de crédito')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Criar conta' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Criar cartão' }))
 
     await waitFor(() => expect(screen.getByText('Informe o limite.')).toBeInTheDocument())
     expect(screen.getAllByText('Informe um dia entre 1 e 31.')).toHaveLength(2)
@@ -106,7 +140,7 @@ describe('AccountFormDialog', () => {
     fireEvent.change(screen.getByLabelText('Dia de vencimento'), { target: { value: '10' } })
     fireEvent.change(screen.getByLabelText('Final do cartão'), { target: { value: '1234' } })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Criar conta' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Criar cartão' }))
 
     await waitFor(() => expect(createMutateAsync).toHaveBeenCalled())
     expect(createMutateAsync).toHaveBeenCalledWith(
@@ -139,5 +173,50 @@ describe('AccountFormDialog', () => {
 
     expect(screen.getByText('Novo cartão')).toBeInTheDocument()
     expect(screen.getByLabelText('Limite')).toBeInTheDocument()
+  })
+
+  it('editando um cartão existente preenche os dias e envia números ao salvar', async () => {
+    renderDialogForAccount(cardAccount)
+
+    expect(screen.getByText('Editar cartão')).toBeInTheDocument()
+    expect(screen.getByLabelText('Dia de fechamento')).toHaveValue('3')
+    expect(screen.getByLabelText('Dia de vencimento')).toHaveValue('10')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(updateMutateAsync).toHaveBeenCalled())
+    expect(updateMutateAsync).toHaveBeenCalledWith({
+      id: cardAccount.id,
+      body: expect.objectContaining({ closing_day: 3, due_day: 10, credit_limit: 500000, last_four: '1234' }),
+    })
+  })
+
+  it('editando um cartão e trocando para conta corrente não envia chaves de cartão', async () => {
+    renderDialogForAccount(cardAccount)
+
+    await selectAccountType('Conta corrente')
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(updateMutateAsync).toHaveBeenCalled())
+    const body = updateMutateAsync.mock.calls[0][0].body
+    expect(body).not.toHaveProperty('credit_limit')
+    expect(body).not.toHaveProperty('closing_day')
+    expect(body).not.toHaveProperty('due_day')
+    expect(body).not.toHaveProperty('last_four')
+  })
+
+  it('erro 409 account_type_locked mostra toast e mantém o diálogo aberto', async () => {
+    const onOpenChange = vi.fn()
+    updateMutateAsync.mockRejectedValueOnce(
+      new ApiError(409, 'Não é possível mudar o tipo de uma conta com lançamentos.', 'account_type_locked'),
+    )
+    renderDialogForAccount(cardAccount, onOpenChange)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Não é possível mudar o tipo de uma conta com lançamentos.'),
+    )
+    expect(onOpenChange).not.toHaveBeenCalled()
   })
 })

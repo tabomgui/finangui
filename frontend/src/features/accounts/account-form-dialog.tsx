@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { LoaderCircle } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -67,13 +67,19 @@ type AccountFormDialogProps = {
   defaultType?: AccountType
 }
 
+/** Ícone padrão por tipo: usado tanto no valor inicial quanto para saber se o usuário trocou o ícone manualmente. */
+function defaultIconFor(type: AccountType): string {
+  return type === 'credit_card' ? 'credit-card' : 'landmark'
+}
+
 function defaultsFor(account: Account | undefined, defaultType: AccountType | undefined): AccountFormValues {
+  const type = account?.type ?? defaultType ?? 'checking'
   return {
     name: account?.name ?? '',
-    type: account?.type ?? defaultType ?? 'checking',
+    type,
     opening_balance: account?.opening_balance ?? 0,
     color: account?.color ?? DEFAULT_COLOR,
-    icon: account?.icon ?? (defaultType === 'credit_card' ? 'credit-card' : 'landmark'),
+    icon: account?.icon ?? defaultIconFor(type),
     credit_limit: account?.credit_limit ?? null,
     closing_day: account?.closing_day ? String(account.closing_day) : '',
     due_day: account?.due_day ? String(account.due_day) : '',
@@ -91,10 +97,17 @@ export function AccountFormDialog({ open, onOpenChange, account, defaultType }: 
     defaultValues: defaultsFor(account, defaultType),
   })
 
+  // Guarda o tipo anterior para saber se o ícone ainda é o padrão dele (e pode trocar sozinho)
+  // ou se o usuário escolheu outro de propósito (e deve ser respeitado).
+  const previousTypeRef = useRef<AccountType>(defaultsFor(account, defaultType).type)
+
   // `values` do RHF não reabre o formulário quando o objeto computado é igual ao anterior
   // (ex.: criar, fechar, criar de novo): reseta explicitamente toda vez que o diálogo abre.
   useEffect(() => {
-    if (open) form.reset(defaultsFor(account, defaultType))
+    if (!open) return
+    const defaults = defaultsFor(account, defaultType)
+    form.reset(defaults)
+    previousTypeRef.current = defaults.type
   }, [open, account, defaultType, form])
 
   const onSubmit = form.handleSubmit(async (values) => {
@@ -109,7 +122,8 @@ export function AccountFormDialog({ open, onOpenChange, account, defaultType }: 
       values.type === 'credit_card'
         ? {
             ...base,
-            credit_limit: values.credit_limit ?? 0,
+            // `superRefine` garante credit_limit != null quando type === 'credit_card'; validação já passou aqui.
+            credit_limit: values.credit_limit as number,
             closing_day: Number(values.closing_day),
             due_day: Number(values.due_day),
             last_four: values.last_four.trim() === '' ? null : values.last_four.trim(),
@@ -145,11 +159,29 @@ export function AccountFormDialog({ open, onOpenChange, account, defaultType }: 
   const color = useWatch({ control: form.control, name: 'color' })
   const type = useWatch({ control: form.control, name: 'type' })
 
+  // Troca o ícone sozinho só quando ele ainda é o padrão do tipo anterior; se o usuário já
+  // escolheu outro de propósito, a troca de tipo não deve sobrescrevê-lo.
+  useEffect(() => {
+    const previousType = previousTypeRef.current
+    if (previousType !== type) {
+      if (form.getValues('icon') === defaultIconFor(previousType)) form.setValue('icon', defaultIconFor(type))
+      previousTypeRef.current = type
+    }
+  }, [type, form])
+
   return (
     <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{account ? 'Editar conta' : type === 'credit_card' ? 'Novo cartão' : 'Nova conta'}</DialogTitle>
+          <DialogTitle>
+            {account
+              ? type === 'credit_card'
+                ? 'Editar cartão'
+                : 'Editar conta'
+              : type === 'credit_card'
+                ? 'Novo cartão'
+                : 'Nova conta'}
+          </DialogTitle>
           <DialogDescription>O saldo da conta é o saldo inicial mais os lançamentos.</DialogDescription>
         </DialogHeader>
         <form id="account-form" className="space-y-4" onSubmit={onSubmit} noValidate>
@@ -226,7 +258,7 @@ export function AccountFormDialog({ open, onOpenChange, account, defaultType }: 
           </Button>
           <Button type="submit" form="account-form" disabled={pending}>
             {pending && <LoaderCircle className="h-4 w-4 animate-spin" />}
-            {account ? 'Salvar' : 'Criar conta'}
+            {account ? 'Salvar' : type === 'credit_card' ? 'Criar cartão' : 'Criar conta'}
           </Button>
         </DialogFooter>
       </DialogContent>

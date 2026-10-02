@@ -44,7 +44,6 @@ export function useStatementPreview(cardId: number | null, date: string | null) 
           }),
         )
       ).data,
-    placeholderData: keepPreviousData,
   })
 }
 
