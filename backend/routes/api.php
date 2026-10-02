@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AccountController;
 use App\Http\Controllers\Api\V1\Auth\AuthStatusController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\SessionController;
@@ -18,6 +19,7 @@ Route::prefix('v1')->group(function () {
         Route::post('auth/logout', [SessionController::class, 'destroy']);
         Route::get('me', [MeController::class, 'show']);
         Route::patch('me', [MeController::class, 'update']);
+        Route::apiResource('accounts', AccountController::class);
         Route::apiResource('categories', CategoryController::class);
     });
 });
