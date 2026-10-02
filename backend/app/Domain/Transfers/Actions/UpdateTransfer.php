@@ -18,6 +18,7 @@ final class UpdateTransfer
      * @return array{out: Transaction, in: Transaction}
      *
      * @throws ModelNotFoundException<Transaction>
+     * @throws ModelNotFoundException<Account>
      * @throws TransferSameAccount
      * @throws TransferCurrencyMismatch
      */

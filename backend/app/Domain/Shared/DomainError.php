@@ -10,5 +10,10 @@ use RuntimeException;
  */
 abstract class DomainError extends RuntimeException
 {
+    /**
+     * Precisa ser uma constante por classe (não pode depender de estado de
+     * instância/construtor): a doc de OpenAPI (DomainErrorToResponseExtension)
+     * lê esse valor via `(new ReflectionClass($class))->newInstanceWithoutConstructor()`.
+     */
     abstract public function errorCode(): string;
 }
