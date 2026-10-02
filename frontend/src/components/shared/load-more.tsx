@@ -11,6 +11,11 @@ type LoadMoreProps = {
 /** Carrega a próxima página ao chegar perto do fim da lista; o botão fica como alternativa acessível. */
 export function LoadMore({ hasMore, loading, onLoadMore }: LoadMoreProps) {
   const ref = useRef<HTMLDivElement>(null)
+  // Mantém a versão mais recente de onLoadMore sem forçar o efeito a recriar o observer.
+  const callback = useRef(onLoadMore)
+  useEffect(() => {
+    callback.current = onLoadMore
+  }, [onLoadMore])
 
   useEffect(() => {
     const node = ref.current
@@ -18,13 +23,13 @@ export function LoadMore({ hasMore, loading, onLoadMore }: LoadMoreProps) {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) onLoadMore()
+        if (entries.some((entry) => entry.isIntersecting)) callback.current()
       },
       { rootMargin: '300px' },
     )
     observer.observe(node)
     return () => observer.disconnect()
-  }, [hasMore, loading, onLoadMore])
+  }, [hasMore, loading])
 
   if (!hasMore) return null
 
