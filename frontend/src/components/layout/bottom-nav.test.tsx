@@ -17,7 +17,7 @@ describe('BottomNav', () => {
   it('mostra os destinos principais com rótulo', () => {
     renderAt('/')
 
-    for (const label of ['Início', 'Transações', 'Contas', 'Mais']) {
+    for (const label of ['Início', 'Transações', 'Cartões', 'Mais']) {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
     expect(screen.getByRole('link', { name: 'Nova transação' })).toHaveAttribute('href', '/transacoes/nova')

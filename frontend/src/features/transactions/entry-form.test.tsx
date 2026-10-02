@@ -40,6 +40,8 @@ const transaction = {
   categorized_by: 'manual',
   is_ignored: false,
   transfer_id: null,
+  statement_id: null,
+  installment: null,
 } as Transaction
 
 describe('EntryForm', () => {

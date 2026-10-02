@@ -24,6 +24,8 @@ const transaction = (overrides: Partial<Transaction>): Transaction => ({
   categorized_by: null,
   is_ignored: false,
   transfer_id: null,
+  statement_id: null,
+  installment: null,
   ...overrides,
 })
 

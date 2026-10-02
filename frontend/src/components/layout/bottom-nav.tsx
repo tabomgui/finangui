@@ -23,7 +23,7 @@ function BottomNavLink({ item }: { item: NavItem }) {
 }
 
 export function BottomNav() {
-  const [home, transactions, accounts] = primaryNav
+  const [home, transactions, cards] = primaryNav
   const NewIcon = newTransactionItem.icon
 
   return (
@@ -39,7 +39,7 @@ export function BottomNav() {
             <NewIcon className="h-6 w-6" />
           </span>
         </NavLink>
-        <BottomNavLink item={accounts} />
+        <BottomNavLink item={cards} />
         <MoreSheet />
       </div>
     </nav>

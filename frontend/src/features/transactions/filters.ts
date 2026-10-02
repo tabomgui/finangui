@@ -10,6 +10,7 @@ const PARAM_NAMES: Record<keyof TransactionFilters, string> = {
   to: 'ate',
   direction: 'tipo',
   search: 'busca',
+  statement_id: 'fatura',
 }
 
 const DATE_ONLY = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/

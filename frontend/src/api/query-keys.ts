@@ -9,6 +9,7 @@ export type TransactionFilters = {
   to?: string
   direction?: Direction
   search?: string
+  statement_id?: number
 }
 
 /** Remove chaves vazias para que filtros equivalentes gerem a mesma chave de cache. */
@@ -28,15 +29,28 @@ export const queryKeys = {
   transfersRoot: () => ['transfers'] as const,
   transfer: (id: string) => ['transfers', id] as const,
   dashboard: (month: string) => ['dashboard', month] as const,
+  cards: (includeArchived: boolean) => ['cards', 'list', { includeArchived }] as const,
+  card: (id: number) => ['cards', 'detail', id] as const,
+  cardStatements: (cardId: number) => ['card-statements', 'list', cardId] as const,
+  statementPreview: (cardId: number, date: string) => ['card-statements', 'preview', cardId, date] as const,
+  installmentPlans: (cardId: number) => ['installment-plans', cardId] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {
   return Promise.all(roots.map((root) => queryClient.invalidateQueries({ queryKey: [root] })))
 }
 
-/** Transações, transferências e contas mexem em saldos, listas e no resumo do mês. */
+/** Transações, transferências, contas e limites/faturas de cartão mexem em saldos, listas e no resumo do mês. */
 export function invalidateLedger(queryClient: QueryClient) {
-  return invalidate(queryClient, ['transactions', 'transfers', 'accounts', 'dashboard'])
+  return invalidate(queryClient, [
+    'transactions',
+    'transfers',
+    'accounts',
+    'dashboard',
+    'cards',
+    'card-statements',
+    'installment-plans',
+  ])
 }
 
 /** Nome, ícone e flag de transferência aparecem nas transações e nas top categorias do mês. */

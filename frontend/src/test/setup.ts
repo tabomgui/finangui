@@ -19,3 +19,9 @@ globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObse
 // jsdom não implementa `scrollIntoView`; o cmdk (usado pelo Command/CategoryPicker/TagPicker)
 // chama isso ao destacar o item ativo. Stub vazio, só para não quebrar em teste.
 Element.prototype.scrollIntoView ??= () => {}
+
+// jsdom não implementa a Pointer Capture API; o radix-ui (ex.: Select) a usa no trigger
+// para capturar o ponteiro durante a interação. Stubs mínimos para montar/interagir em teste.
+Element.prototype.hasPointerCapture ??= () => false
+Element.prototype.setPointerCapture ??= () => {}
+Element.prototype.releasePointerCapture ??= () => {}
