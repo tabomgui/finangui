@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\User;
 use Closure;
+use Illuminate\Auth\RequestGuard;
 use Illuminate\Auth\SessionGuard;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Auth;
@@ -24,7 +25,7 @@ final class UserContext
      */
     public static function run(User $user, Closure $callback): mixed
     {
-        /** @var SessionGuard $guard */
+        /** @var SessionGuard|RequestGuard $guard */
         $guard = Auth::guard();
         /** @var Authenticatable|null $previous */
         $previous = $guard->hasUser() ? $guard->user() : null;

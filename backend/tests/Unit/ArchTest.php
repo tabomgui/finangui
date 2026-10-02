@@ -28,7 +28,11 @@ it('todo model de domínio usa BelongsToUser', function () {
 });
 
 it('todo job de domínio roda dentro de UserContext', function () {
-    foreach (glob(app_path('Domain/*/Jobs/*.php')) as $file) {
+    $files = glob(app_path('Domain/*/Jobs/*.php'));
+
+    expect($files)->toBeArray();
+
+    foreach ($files as $file) {
         expect(file_get_contents($file))->toContain('UserContext::run(', basename($file).' precisa usar UserContext::run()');
     }
 });
