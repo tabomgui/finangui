@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Transactions\Models\Transaction;
 
 it('cria um cartão com limite, dias e final', function () {
@@ -74,6 +75,17 @@ it('deixar de ser cartão limpa os campos de cartão', function () {
     $this->patchJson("/api/v1/accounts/{$card->id}", ['type' => 'checking'])
         ->assertOk()->assertJsonPath('data.credit_limit', null)->assertJsonPath('data.closing_day', null)
         ->assertJsonPath('data.due_day', null)->assertJsonPath('data.last_four', null);
+});
+
+it('deixar de ser cartão exclui as faturas vazias', function () {
+    $user = actingAsUser();
+    $card = Account::factory()->creditCard()->create(['user_id' => $user->id]);
+    CardStatement::factory()->create(['account_id' => $card->id]);
+    CardStatement::factory()->create(['account_id' => $card->id, 'closing_date' => '2026-04-03', 'due_date' => '2026-04-10']);
+
+    $this->patchJson("/api/v1/accounts/{$card->id}", ['type' => 'checking'])->assertOk();
+
+    expect(CardStatement::where('account_id', $card->id)->count())->toBe(0);
 });
 
 it('não troca o tipo de/para cartão quando a conta já tem lançamentos', function () {

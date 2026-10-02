@@ -27,26 +27,40 @@ final class InvoiceCycle
             $closing = self::onDay($date->startOfMonth()->addMonthNoOverflow(), $closingDay);
         }
 
-        return new StatementDates($closing, self::dueAfter($closing, $dueDay));
+        return new StatementDates($closing, self::dueAfter($closing, $closingDay, $dueDay));
     }
 
     public static function next(StatementDates $dates, int $closingDay, int $dueDay): StatementDates
     {
         $closing = self::onDay($dates->closingDate->startOfMonth()->addMonthNoOverflow(), $closingDay);
 
-        return new StatementDates($closing, self::dueAfter($closing, $dueDay));
+        return new StatementDates($closing, self::dueAfter($closing, $closingDay, $dueDay));
     }
 
     public static function previous(StatementDates $dates, int $closingDay, int $dueDay): StatementDates
     {
         $closing = self::onDay($dates->closingDate->startOfMonth()->subMonthNoOverflow(), $closingDay);
 
-        return new StatementDates($closing, self::dueAfter($closing, $dueDay));
+        return new StatementDates($closing, self::dueAfter($closing, $closingDay, $dueDay));
     }
 
-    private static function dueAfter(CarbonImmutable $closing, int $dueDay): CarbonImmutable
+    /**
+     * Vencimento nominal depois do fechamento. Quando o vencimento é pensado
+     * para o mesmo mês do fechamento ($dueDay > $closingDay) mas o fim de mês
+     * curto limita os dois ao mesmo dia (ex.: fechamento 28, vencimento 30:
+     * fevereiro fecha em 28 e "venceria" em 28 também, colidindo com o
+     * vencimento de março que cai em 30), o vencimento passa a ser o dia
+     * seguinte ao fechamento. Fora desse caso, vale a regra antiga: o dia
+     * nominal no mês do fechamento se ainda cair depois dele, senão no mês
+     * seguinte.
+     */
+    private static function dueAfter(CarbonImmutable $closing, int $closingDay, int $dueDay): CarbonImmutable
     {
         $due = self::onDay($closing->startOfMonth(), $dueDay);
+
+        if ($dueDay > $closingDay && $due->lessThanOrEqualTo($closing)) {
+            return $closing->addDay();
+        }
 
         return $due->greaterThan($closing) ? $due : self::onDay($closing->startOfMonth()->addMonthNoOverflow(), $dueDay);
     }

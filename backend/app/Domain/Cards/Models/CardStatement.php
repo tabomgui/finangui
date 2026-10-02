@@ -84,12 +84,12 @@ class CardStatement extends Model
 
         $query->select('card_statements.*')->addSelect([
             'charges_net' => $linked()->selectRaw(
-                "COALESCE(SUM(CASE WHEN direction = 'out' THEN amount WHEN transfer_id IS NULL THEN -amount ELSE 0 END), 0)"
+                "COALESCE(SUM(CASE WHEN transactions.direction = 'out' THEN transactions.amount WHEN transactions.transfer_id IS NULL THEN -transactions.amount ELSE 0 END), 0)"
             ),
             'payments_sum' => $linked()
                 ->where('transactions.direction', Direction::In->value)
                 ->whereNotNull('transactions.transfer_id')
-                ->selectRaw('COALESCE(SUM(amount), 0)'),
+                ->selectRaw('COALESCE(SUM(transactions.amount), 0)'),
         ]);
     }
 

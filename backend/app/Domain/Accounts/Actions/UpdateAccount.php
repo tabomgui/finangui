@@ -23,10 +23,11 @@ final class UpdateAccount
             // criada entre o "existe lançamento?" e o update poderia deixar a conta
             // com histórico de um tipo e cartão/comum do outro.
             $account = $account->newQuery()->whereKey($account->getKey())->lockForUpdate()->firstOrFail();
+            $wasCard = $account->isCreditCard();
 
             if (array_key_exists('type', $input)) {
                 $newType = $input['type'] instanceof AccountType ? $input['type'] : AccountType::from($input['type']);
-                $cardChange = ($newType === AccountType::CreditCard) !== $account->isCreditCard();
+                $cardChange = ($newType === AccountType::CreditCard) !== $wasCard;
 
                 // Faturas e parcelas dependem do tipo: trocar com histórico deixaria
                 // lançamentos de cartão numa conta comum (ou o contrário).
@@ -40,6 +41,12 @@ final class UpdateAccount
             if ($newType !== AccountType::CreditCard) {
                 foreach (self::CARD_FIELDS as $field) {
                     $input[$field] = null;
+                }
+
+                // A troca só é permitida sem lançamentos: qualquer fatura do
+                // cartão está necessariamente vazia e vai junto.
+                if ($wasCard) {
+                    $account->statements()->delete();
                 }
             }
 

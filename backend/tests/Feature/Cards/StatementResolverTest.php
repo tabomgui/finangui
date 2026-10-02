@@ -5,6 +5,7 @@ use App\Domain\Cards\Errors\NotACreditCard;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Support\StatementResolver;
 use Carbon\CarbonImmutable;
+use LogicException;
 
 beforeEach(function () {
     $this->user = actingAsUser();
@@ -82,4 +83,72 @@ it('recusa conta que não é cartão', function () {
     $checking = Account::factory()->create(['user_id' => $this->user->id]);
 
     expect(fn () => $this->resolver->forDate($checking, CarbonImmutable::parse('2026-03-05')))->toThrow(NotACreditCard::class);
+});
+
+it('revalida depois que os dias de fechamento/vencimento do cartão mudam', function () {
+    CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-02-10', 'due_date' => '2026-02-20']);
+    $this->card->update(['closing_day' => 25, 'due_day' => 5]);
+
+    $located = $this->resolver->locate($this->card, CarbonImmutable::parse('2026-02-15'));
+    expect(dates($located))->toBe(['2026-02-25', '2026-03-05']);
+
+    $existing = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-02-25', 'due_date' => '2026-03-05']);
+    $found = $this->resolver->forDate($this->card, CarbonImmutable::parse('2026-02-15'));
+
+    expect($found->id)->toBe($existing->id)->and(CardStatement::count())->toBe(2);
+});
+
+it('fechamento adiado mais de 13 dias ainda é encontrado pela fatura seguinte', function () {
+    $jan = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-01-25', 'due_date' => '2026-02-04']);
+
+    expect($this->resolver->forDate($this->card, CarbonImmutable::parse('2026-01-20'))->id)->toBe($jan->id);
+});
+
+it('fatura distante no futuro não interfere num ciclo anterior com buraco', function () {
+    $may = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-05-10', 'due_date' => '2026-05-20']);
+
+    $mar = $this->resolver->forDate($this->card, CarbonImmutable::parse('2026-03-05'));
+    expect(dates($mar))->toBe(['2026-03-10', '2026-03-20']);
+
+    expect($this->resolver->forDate($this->card, CarbonImmutable::parse('2026-04-12'))->id)->toBe($may->id);
+});
+
+it('colisão de vencimento com fatura editada bem antes da janela não quebra o único', function () {
+    CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2025-12-25', 'due_date' => '2026-01-20']);
+
+    $statement = $this->resolver->forDate($this->card, CarbonImmutable::parse('2026-01-09'));
+
+    expect($statement)->not->toBeNull()->and(CardStatement::count())->toBe(2);
+});
+
+it('pagamento no próprio dia do fechamento fica ligado a essa fatura', function () {
+    $statement = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-03-10', 'due_date' => '2026-03-20']);
+
+    expect($this->resolver->forPayment($this->card, CarbonImmutable::parse('2026-03-10'))->id)->toBe($statement->id);
+});
+
+it('próxima fatura depois de uma fatura com fechamento editado', function () {
+    $edited = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-01-08', 'due_date' => '2026-01-18']);
+
+    expect(dates($this->resolver->next($this->card, $edited)))->toBe(['2026-02-10', '2026-02-20']);
+});
+
+it('next() recusa fatura de outro cartão', function () {
+    $otherCard = Account::factory()->creditCard(closingDay: 10, dueDay: 20)->create(['user_id' => $this->user->id]);
+    $foreignStatement = CardStatement::factory()->create(['account_id' => $otherCard->id, 'closing_date' => '2026-01-08', 'due_date' => '2026-01-18']);
+
+    expect(fn () => $this->resolver->next($this->card, $foreignStatement))->toThrow(LogicException::class);
+});
+
+it('isola faturas por usuário mesmo com cartões e datas coincidentes', function () {
+    actingAsUser();
+    $otherCard = Account::factory()->creditCard(closingDay: 10, dueDay: 20)->create();
+    CardStatement::factory()->create(['account_id' => $otherCard->id, 'closing_date' => '2026-03-10', 'due_date' => '2026-03-20']);
+
+    $this->actingAs($this->user);
+
+    $statement = $this->resolver->forDate($this->card, CarbonImmutable::parse('2026-03-05'));
+
+    expect($statement->account_id)->toBe($this->card->id)
+        ->and(dates($statement))->toBe(['2026-03-10', '2026-03-20']);
 });

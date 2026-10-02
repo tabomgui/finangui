@@ -61,6 +61,12 @@ it('próxima e anterior seguem o dia nominal, sem acumular o limite de fim de m�
         ->and(InvoiceCycle::previous($mar, 31, 10)->closingDate->toDateString())->toBe('2026-02-28');
 });
 
+it('evita colisão de vencimento quando o dia clampado cai no próprio fechamento', function () {
+    expect(cycle('2026-02-27', 28, 30))->toBe(['2026-02-28', '2026-03-01']);
+    expect(cycle('2026-03-05', 28, 30))->toBe(['2026-03-28', '2026-03-30']);
+    expect(cycle('2026-04-29', 30, 31))->toBe(['2026-04-30', '2026-05-01']);
+});
+
 it('ignora a hora da data da compra', function () {
     $dates = InvoiceCycle::forPurchase(CarbonImmutable::parse('2026-03-10 23:59:00'), 10, 20);
 
