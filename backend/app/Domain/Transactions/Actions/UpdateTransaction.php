@@ -3,6 +3,7 @@
 namespace App\Domain\Transactions\Actions;
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Actions\AssignStatement;
 use App\Domain\Transactions\Errors\TransactionCurrencyMismatch;
 use App\Domain\Transactions\Models\Transaction;
 use App\Domain\Transfers\Errors\TransferLegLocked;
@@ -13,6 +14,8 @@ final class UpdateTransaction
 {
     /** Campos que, numa perna de transferência, só mudam pelo endpoint de transferência. */
     private const TRANSFER_LOCKED = ['account_id', 'date', 'amount', 'direction', 'is_ignored'];
+
+    public function __construct(private readonly AssignStatement $assignStatement) {}
 
     /**
      * @param  array<string, mixed>  $input  dados já validados (parciais)
@@ -30,6 +33,7 @@ final class UpdateTransaction
 
         return DB::transaction(function () use ($transaction, $input) {
             $tagIds = Arr::pull($input, 'tag_ids');
+            $statementId = Arr::pull($input, 'statement_id');
 
             if (array_key_exists('account_id', $input) && $input['account_id'] !== $transaction->account_id) {
                 $destination = Account::query()->findOrFail($input['account_id']);
@@ -46,6 +50,12 @@ final class UpdateTransaction
             }
             if ($transaction->isDirty('category_id')) {
                 $transaction->categorized_by = $transaction->category_id !== null ? 'manual' : null;
+            }
+
+            if ($statementId !== null) {
+                $this->assignStatement->handle($transaction, (int) $statementId);
+            } elseif ($transaction->isDirty(['account_id', 'date'])) {
+                $this->assignStatement->handle($transaction);
             }
 
             $transaction->save();
@@ -78,6 +88,9 @@ final class UpdateTransaction
         }
         if (array_key_exists('is_ignored', $input)) {
             $input['is_ignored'] = filter_var($input['is_ignored'], FILTER_VALIDATE_BOOLEAN);
+        }
+        if (array_key_exists('statement_id', $input)) {
+            $input['statement_id'] = (int) $input['statement_id'];
         }
 
         return $input;

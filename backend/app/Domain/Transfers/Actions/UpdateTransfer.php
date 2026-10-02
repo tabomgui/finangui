@@ -3,6 +3,7 @@
 namespace App\Domain\Transfers\Actions;
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Actions\AssignStatement;
 use App\Domain\Transactions\Models\Transaction;
 use App\Domain\Transfers\Errors\TransferCurrencyMismatch;
 use App\Domain\Transfers\Errors\TransferSameAccount;
@@ -13,6 +14,8 @@ use Illuminate\Support\Facades\DB;
 
 final class UpdateTransfer
 {
+    public function __construct(private readonly AssignStatement $assignStatement) {}
+
     /**
      * @param  array<string, mixed>  $input  dados já validados (parciais)
      * @return array{out: Transaction, in: Transaction}
@@ -58,6 +61,11 @@ final class UpdateTransfer
                 if (array_key_exists('notes', $input)) {
                     $leg->notes = $input['notes'];
                 }
+
+                if ($leg->isDirty(['account_id', 'date'])) {
+                    $this->assignStatement->handle($leg);
+                }
+
                 $leg->save();
             }
 

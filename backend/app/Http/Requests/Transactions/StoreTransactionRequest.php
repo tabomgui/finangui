@@ -25,6 +25,7 @@ final class StoreTransactionRequest extends ApiRequest
             'is_ignored' => ['sometimes', 'boolean'],
             'tag_ids' => ['sometimes', 'array'],
             'tag_ids.*' => ['integer', 'distinct', Rule::exists('tags', 'id')->where('user_id', $this->userId())],
+            'statement_id' => ['sometimes', 'integer', Rule::exists('card_statements', 'id')->where('user_id', $this->userId())],
         ];
     }
 }

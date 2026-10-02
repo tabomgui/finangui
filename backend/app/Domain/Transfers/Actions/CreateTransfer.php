@@ -3,6 +3,7 @@
 namespace App\Domain\Transfers\Actions;
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Actions\AssignStatement;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Enums\TransactionStatus;
@@ -15,6 +16,8 @@ use Illuminate\Support\Str;
 
 final class CreateTransfer
 {
+    public function __construct(private readonly AssignStatement $assignStatement) {}
+
     /**
      * @return array{out: Transaction, in: Transaction}
      *
@@ -44,7 +47,7 @@ final class CreateTransfer
 
     private function leg(Account $account, Direction $direction, TransferData $data, string $transferId): Transaction
     {
-        return Transaction::create([
+        $leg = new Transaction([
             'account_id' => $account->id,
             'date' => $data->date,
             'amount' => $data->amount,
@@ -56,6 +59,11 @@ final class CreateTransfer
             'status' => TransactionStatus::Posted,
             'source' => TransactionSource::Manual,
             'transfer_id' => $transferId,
-        ])->load('account');
+        ]);
+
+        $this->assignStatement->handle($leg, $direction === Direction::In ? $data->toStatementId : null);
+        $leg->save();
+
+        return $leg->load('account');
     }
 }

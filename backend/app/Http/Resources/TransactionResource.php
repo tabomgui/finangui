@@ -52,6 +52,7 @@ final class TransactionResource extends JsonResource
             'categorized_by' => $this->categorized_by,
             'is_ignored' => $this->is_ignored,
             'transfer_id' => $this->transfer_id,
+            'statement_id' => $this->statement_id,
         ];
     }
 }
