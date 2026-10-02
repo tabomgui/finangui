@@ -5,6 +5,7 @@ import { ProtectedRoute } from '@/features/auth/protected-route'
 import { RegisterPage } from '@/features/auth/register-page'
 import { ComingSoonPage } from '@/features/misc/coming-soon-page'
 import { NotFoundPage } from '@/features/misc/not-found-page'
+import { SettingsPage } from '@/features/settings/settings-page'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -21,7 +22,7 @@ export const router = createBrowserRouter([
           { path: 'contas', element: <ComingSoonPage title="Contas" /> },
           { path: 'categorias', element: <ComingSoonPage title="Categorias" /> },
           { path: 'tags', element: <ComingSoonPage title="Tags" /> },
-          { path: 'configuracoes', element: <ComingSoonPage title="Configurações" /> },
+          { path: 'configuracoes', element: <SettingsPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },
