@@ -19,13 +19,12 @@ export function AppearanceCard() {
         <CardDescription>Tema da interface neste dispositivo.</CardDescription>
       </CardHeader>
       <CardContent>
-        <div role="radiogroup" aria-label="Tema" className="grid grid-cols-3 gap-2">
+        <div role="group" aria-label="Tema" className="grid grid-cols-3 gap-2">
           {OPTIONS.map(({ value, label, icon: Icon }) => (
             <button
               key={value}
               type="button"
-              role="radio"
-              aria-checked={theme === value}
+              aria-pressed={theme === value}
               onClick={() => setTheme(value)}
               className={cn(
                 'flex flex-col items-center gap-2 rounded-xl border-2 p-3 text-sm font-medium transition-colors',
