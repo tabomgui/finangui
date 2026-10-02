@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { flattenCategoryOptions } from '@/features/categories/category-tree'
+import { accentInsensitiveFilter } from '@/lib/search'
 import { cn } from '@/lib/utils'
 import { CategoryIcon } from './category-icon'
 
@@ -54,13 +55,13 @@ export function CategoryPicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-(--radix-popover-trigger-width) p-0" align="start">
-        <Command>
+        <Command filter={accentInsensitiveFilter}>
           <CommandInput placeholder="Buscar categoria" />
           <CommandList>
             <CommandEmpty>Nenhuma categoria encontrada.</CommandEmpty>
             <CommandGroup>
               {allowNone && (
-                <CommandItem value="Sem categoria" onSelect={() => choose(null)}>
+                <CommandItem value="none" keywords={['Sem categoria']} onSelect={() => choose(null)}>
                   <Check className={cn('h-4 w-4', value === null ? 'opacity-100' : 'opacity-0')} />
                   Sem categoria
                 </CommandItem>
@@ -68,7 +69,8 @@ export function CategoryPicker({
               {options.map(({ category, depth }) => (
                 <CommandItem
                   key={category.id}
-                  value={`${category.name} ${category.id}`}
+                  value={String(category.id)}
+                  keywords={[category.name]}
                   onSelect={() => choose(category.id)}
                   className={cn(depth === 1 && 'pl-8')}
                 >

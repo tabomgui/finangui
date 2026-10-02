@@ -42,4 +42,24 @@ describe('CategoryPicker', () => {
 
     expect(onChange).toHaveBeenCalledWith(1)
   })
+
+  it('busca ignorando acentuação', () => {
+    const client = new QueryClient()
+    client.setQueryData(queryKeys.categories(true), [
+      category({ id: 1, name: 'Alimentação', kind: 'expense' }),
+      category({ id: 2, name: 'Transporte', kind: 'expense' }),
+    ])
+
+    render(
+      <QueryClientProvider client={client}>
+        <CategoryPicker value={null} onChange={vi.fn()} kind="expense" />
+      </QueryClientProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('combobox'))
+    fireEvent.change(screen.getByPlaceholderText('Buscar categoria'), { target: { value: 'alimentacao' } })
+
+    expect(screen.getByText('Alimentação')).toBeInTheDocument()
+    expect(screen.queryByText('Transporte')).not.toBeInTheDocument()
+  })
 })
