@@ -66,7 +66,7 @@ export function useDeleteTransaction() {
       // A transação (e, se era perna de uma transferência, a transferência) deixou de existir:
       // tira do cache em vez de só invalidar, para não reaparecer com dado velho antes do refetch.
       queryClient.removeQueries({ queryKey: queryKeys.transaction(id) })
-      queryClient.removeQueries({ queryKey: ['transfers'] })
+      queryClient.removeQueries({ queryKey: queryKeys.transfersRoot() })
       return invalidateLedger(queryClient)
     },
   })

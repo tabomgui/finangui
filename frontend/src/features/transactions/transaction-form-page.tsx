@@ -1,5 +1,5 @@
 import { Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAccounts } from '@/api/queries/accounts'
@@ -83,7 +83,18 @@ function EditTransactionPage({ id }: { id: number }) {
   const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  if (isError || (transferId !== null && transferError)) return <Navigate to="/transacoes" replace />
+  const notFound = isError || (transferId !== null && transferError)
+  // O toast dispara num efeito, guardado por ref, para não duplicar sob StrictMode
+  // (que roda o efeito duas vezes na mesma montagem) nem a cada nova renderização.
+  const toastShown = useRef(false)
+  useEffect(() => {
+    if (notFound && !toastShown.current) {
+      toastShown.current = true
+      toast.error('Lançamento não encontrado.')
+    }
+  }, [notFound])
+
+  if (notFound) return <Navigate to="/transacoes" replace />
   if (isPending || (transferId !== null && transferPending)) return <FullPageSpinner />
 
   const isTransfer = transferId !== null && transfer !== undefined

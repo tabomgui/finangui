@@ -5,7 +5,7 @@ import { Controller, useForm, useWatch } from 'react-hook-form'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { useCreateAccount, useUpdateAccount } from '@/api/queries/accounts'
-import type { Account } from '@/api/types'
+import type { Account, AccountType } from '@/api/types'
 import { Field } from '@/components/form/field'
 import { ColorPicker } from '@/components/shared/color-picker'
 import { IconPicker } from '@/components/shared/icon-picker'
@@ -20,7 +20,7 @@ import { ACCOUNT_TYPE_LABELS, ACCOUNT_TYPES } from './account-labels'
 
 const schema = z.object({
   name: z.string().trim().min(1, 'Informe o nome da conta.').max(60, 'Use no máximo 60 caracteres.'),
-  type: z.enum(['checking', 'savings', 'cash']),
+  type: z.enum(ACCOUNT_TYPES as [AccountType, ...AccountType[]]),
   opening_balance: z.number().nullable().refine((value) => value !== null, 'Informe um valor válido.'),
   color: z.string().nullable(),
   icon: z.string().nullable(),

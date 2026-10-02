@@ -25,6 +25,7 @@ export const queryKeys = {
   transactions: (filters: TransactionFilters) => ['transactions', 'list', compactFilters(filters)] as const,
   recentTransactions: () => ['transactions', 'recent'] as const,
   transaction: (id: number) => ['transactions', 'detail', id] as const,
+  transfersRoot: () => ['transfers'] as const,
   transfer: (id: string) => ['transfers', id] as const,
   dashboard: (month: string) => ['dashboard', month] as const,
 }
