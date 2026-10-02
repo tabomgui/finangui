@@ -16,7 +16,9 @@ export function TopCategoriesCard({ categories, expense, currency, month }: TopC
   return (
     <Card className="rounded-2xl shadow-card">
       <CardHeader>
-        <CardTitle className="text-base">Maiores despesas</CardTitle>
+        <CardTitle className="text-base">
+          <h2>Maiores despesas</h2>
+        </CardTitle>
       </CardHeader>
       <CardContent>
         {shares.length === 0 ? (

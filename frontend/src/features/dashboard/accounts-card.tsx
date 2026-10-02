@@ -9,7 +9,9 @@ export function AccountsCard({ accounts }: { accounts: DashboardAccount[] }) {
   return (
     <Card className="rounded-2xl shadow-card">
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-base">Contas</CardTitle>
+        <CardTitle className="text-base">
+          <h2>Contas</h2>
+        </CardTitle>
         <Link to="/contas" className="text-sm font-medium text-primary hover:underline">
           Gerenciar
         </Link>

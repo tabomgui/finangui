@@ -13,7 +13,9 @@ export function RecentTransactionsCard() {
   return (
     <Card className="rounded-2xl shadow-card">
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-base">Últimos lançamentos</CardTitle>
+        <CardTitle className="text-base">
+          <h2>Últimos lançamentos</h2>
+        </CardTitle>
         <Link to="/transacoes" className="text-sm font-medium text-primary hover:underline">
           Ver todos
         </Link>
