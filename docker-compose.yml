@@ -60,5 +60,21 @@ services:
       backend:
         condition: service_healthy
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "${FRONTEND_PORT:-5174}:5174"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   db-data:

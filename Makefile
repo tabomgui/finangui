@@ -1,7 +1,7 @@
 DC = docker compose
 EXEC = $(DC) exec backend
 
-.PHONY: up down logs sh art test lint fix fresh openapi
+.PHONY: up down logs sh art test lint fix fresh openapi types front-check
 
 up: ; $(DC) up -d --build
 down: ; $(DC) down
@@ -13,3 +13,5 @@ lint: ; $(EXEC) ./vendor/bin/pint --test && $(EXEC) ./vendor/bin/phpstan analyse
 fix: ; $(EXEC) ./vendor/bin/pint
 fresh: ; $(EXEC) php artisan migrate:fresh --seed
 openapi: ; $(EXEC) php artisan scramble:export --path=storage/app/openapi.json
+types: ; $(MAKE) openapi && cd frontend && npm run types
+front-check: ; cd frontend && npm run lint && npm run typecheck && npm test
