@@ -57,4 +57,16 @@ describe('MoneyInput', () => {
 
     expect(onChange).toHaveBeenLastCalledWith(-1000)
   })
+
+  it('allowNegative=false: "-" rejeitado não é reformatado ao sair do campo', () => {
+    const onChange = vi.fn()
+    render(<MoneyInput aria-label="Valor" value={null} onChange={onChange} allowNegative={false} />)
+    const input = screen.getByLabelText('Valor')
+
+    fireEvent.change(input, { target: { value: '-10,00' } })
+    fireEvent.blur(input)
+
+    expect(input).toHaveValue('-10,00')
+    expect(onChange).toHaveBeenLastCalledWith(null)
+  })
 })
