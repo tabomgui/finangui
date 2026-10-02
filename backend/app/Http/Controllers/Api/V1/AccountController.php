@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Domain\Accounts\Errors\AccountHasTransactions;
 use App\Domain\Accounts\Models\Account;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Accounts\StoreAccountRequest;
@@ -43,6 +44,10 @@ final class AccountController extends Controller
 
     public function destroy(Account $account): Response
     {
+        if ($account->transactions()->exists()) {
+            throw new AccountHasTransactions;
+        }
+
         $account->delete();
 
         return response()->noContent();

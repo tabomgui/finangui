@@ -3,12 +3,14 @@
 namespace App\Domain\Accounts\Models;
 
 use App\Domain\Accounts\Enums\AccountType;
+use App\Domain\Transactions\Models\Transaction;
 use App\Models\Concerns\BelongsToUser;
 use App\Support\Money\Money;
 use App\Support\Money\MoneyCast;
 use Database\Factories\AccountFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property AccountType $type
@@ -50,5 +52,13 @@ class Account extends Model
     protected static function newFactory(): AccountFactory
     {
         return AccountFactory::new();
+    }
+
+    /**
+     * @return HasMany<Transaction, $this>
+     */
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class);
     }
 }

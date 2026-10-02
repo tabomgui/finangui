@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\Auth\SessionController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\TagController;
+use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Middleware\EnsureRegistrationAllowed;
 use Illuminate\Support\Facades\Route;
 
@@ -23,5 +24,6 @@ Route::prefix('v1')->group(function () {
         Route::apiResource('accounts', AccountController::class);
         Route::apiResource('categories', CategoryController::class);
         Route::apiResource('tags', TagController::class)->except('show');
+        Route::apiResource('transactions', TransactionController::class);
     });
 });
