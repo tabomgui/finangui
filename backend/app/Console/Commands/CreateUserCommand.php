@@ -1,0 +1,48 @@
+<?php
+
+namespace App\Console\Commands;
+
+use App\Domain\Users\Actions\CreateUser;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Validator;
+
+final class CreateUserCommand extends Command
+{
+    protected $signature = 'user:create {email} {--name= : Nome exibido (padrão: parte local do email)}';
+
+    protected $description = 'Cria um usuário com as categorias padrão';
+
+    public function handle(CreateUser $createUser): int
+    {
+        $email = mb_strtolower(trim((string) $this->argument('email')));
+        $name = (string) ($this->option('name') ?: strstr($email, '@', true));
+
+        $emailCheck = Validator::make(['email' => $email], ['email' => ['required', 'email', 'unique:users,email']]);
+        if ($emailCheck->fails()) {
+            $this->error($emailCheck->errors()->first('email'));
+
+            return self::FAILURE;
+        }
+
+        $password = (string) $this->secret('Senha');
+        $passwordConfirmation = (string) $this->secret('Confirme a senha');
+
+        if (mb_strlen($password) < 8) {
+            $this->error('A senha precisa ter pelo menos 8 caracteres.');
+
+            return self::FAILURE;
+        }
+
+        if ($password !== $passwordConfirmation) {
+            $this->error('As senhas não coincidem.');
+
+            return self::FAILURE;
+        }
+
+        // Quem roda este comando é o operador da instância: o email já é confiável.
+        $user = $createUser->handle($name, $email, $password, emailVerified: true);
+        $this->info("Usuário #{$user->id} criado: {$user->email}");
+
+        return self::SUCCESS;
+    }
+}

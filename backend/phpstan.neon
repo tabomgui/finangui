@@ -1,0 +1,10 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    paths:
+        - app
+    level: 6
+    # Modelos usam o método casts() (estilo Laravel 11+) em vez da propriedade
+    # $casts; sem isso o Larastan não enxerga os tipos dos casts (ex.: enums).
+    parseModelCastsMethod: true

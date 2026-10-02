@@ -1,0 +1,7 @@
+id	name	type	color	parent_id
+1	Alimentação	expense	#f97316	NULL
+2	Mercado	expense	#f97316	1
+3	Hortifruti	expense	NULL	2
+4	Salário	income	#22c55e	NULL
+5	Tesouro Direto	investment	bg-yellow-500	NULL
+6	Órfã	expense	NULL	99
