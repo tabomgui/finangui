@@ -89,9 +89,6 @@ final class UpdateTransaction
         if (array_key_exists('is_ignored', $input)) {
             $input['is_ignored'] = filter_var($input['is_ignored'], FILTER_VALIDATE_BOOLEAN);
         }
-        if (array_key_exists('statement_id', $input)) {
-            $input['statement_id'] = (int) $input['statement_id'];
-        }
 
         return $input;
     }

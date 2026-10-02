@@ -25,6 +25,8 @@ final class UpdateTransactionRequest extends ApiRequest
             'is_ignored' => ['sometimes', 'boolean'],
             'tag_ids' => ['sometimes', 'array'],
             'tag_ids.*' => ['integer', 'distinct', Rule::exists('tags', 'id')->where('user_id', $this->userId())],
+            // Sem `nullable`: enviar statement_id como null é rejeitado de propósito.
+            // A escolha é automática quando o campo simplesmente não é enviado.
             'statement_id' => ['sometimes', 'integer', Rule::exists('card_statements', 'id')->where('user_id', $this->userId())],
         ];
     }
