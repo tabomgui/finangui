@@ -1,14 +1,19 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Rule } from '@/api/types'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { CategorizationBadge } from './categorization-badge'
 
 let mockRules: Rule[] | undefined = []
+const useRulesSpy = vi.fn(() => ({ data: mockRules }))
 
 vi.mock('@/api/queries/rules', () => ({
-  useRules: () => ({ data: mockRules }),
+  useRules: () => useRulesSpy(),
 }))
+
+beforeEach(() => {
+  useRulesSpy.mockClear()
+})
 
 function rule(overrides: Partial<Rule>): Rule {
   return {
@@ -58,6 +63,13 @@ describe('CategorizationBadge', () => {
     expect(screen.getByLabelText('Categorizada por uma regra excluída')).toBeInTheDocument()
   })
 
+  it('mostra um rótulo neutro enquanto as regras ainda não carregaram', () => {
+    mockRules = undefined
+    renderBadge({ source: 'rule', rule_id: 7 })
+
+    expect(screen.getByLabelText('Categorizada por uma regra')).toBeInTheDocument()
+  })
+
   it('mostra a origem histórico', () => {
     renderBadge({ source: 'history' })
 
@@ -68,5 +80,13 @@ describe('CategorizationBadge', () => {
     renderBadge({ source: 'pluggy' })
 
     expect(screen.getByLabelText('Categoria informada pelo banco')).toBeInTheDocument()
+  })
+
+  it('só consulta as regras quando a origem é "rule"', () => {
+    renderBadge({ source: 'history' })
+    expect(useRulesSpy).not.toHaveBeenCalled()
+
+    renderBadge({ source: 'rule', rule_id: 1 })
+    expect(useRulesSpy).toHaveBeenCalled()
   })
 })
