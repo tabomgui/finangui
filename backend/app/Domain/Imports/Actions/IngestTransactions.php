@@ -3,7 +3,7 @@
 namespace App\Domain\Imports\Actions;
 
 use App\Domain\Accounts\Models\Account;
-use App\Domain\Banking\Support\PluggyCategoryMap;
+use App\Domain\Banking\Support\ProviderCategoryMatcher;
 use App\Domain\Cards\Actions\AssignStatement;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
@@ -89,12 +89,12 @@ final class IngestTransactions
             $historyMemo = $this->history->suggestMany($this->newRowHistoryPairs($decisions));
 
             // Idem para a fatura do banco (meta.bill_id) e para a categoria
-            // do Pluggy (meta.provider_category_id): uma consulta para o
+            // do provedor (meta.provider_category): uma consulta para o
             // lote inteiro, não uma por linha nova.
             $billStatementMemo = $this->preloadBillStatements($account, $decisions);
-            $pluggyCategoryMemo = $this->preloadPluggyCategories($decisions);
+            $usableCategoriesByName = $this->preloadUsableCategoriesByName($decisions);
 
-            [$stats, $undo] = $this->applyDecisions($locked, $account, $decisions, $rules, $historyMemo, $billStatementMemo, $pluggyCategoryMemo);
+            [$stats, $undo] = $this->applyDecisions($locked, $account, $decisions, $rules, $historyMemo, $billStatementMemo, $usableCategoriesByName);
 
             $createdStatementIds = CardStatement::query()
                 ->where('account_id', $account->id)
@@ -126,7 +126,7 @@ final class IngestTransactions
      * @param  list<RuleDefinition>  $rules
      * @param  array<string, int>  $historyMemo
      * @param  array<string, int>  $billStatementMemo  external_id da fatura → id do CardStatement (ver preloadBillStatements())
-     * @param  array<string, int>  $pluggyCategoryMemo  nome da categoria padrão → id da categoria do usuário (ver preloadPluggyCategories())
+     * @param  array<string, list<array{id: int, kind: string, is_transfer: bool, has_parent: bool}>>  $usableCategoriesByName  categorias ativas do usuário por nome normalizado (ver preloadUsableCategoriesByName())
      * @return array{0: array<string, int>, 1: list<array{transaction_id: int, attributes: array<string, mixed>}>}
      */
     private function applyDecisions(
@@ -136,7 +136,7 @@ final class IngestTransactions
         array $rules,
         array $historyMemo,
         array $billStatementMemo,
-        array $pluggyCategoryMemo,
+        array $usableCategoriesByName,
     ): array {
         $stats = [
             'inserted' => 0,
@@ -154,7 +154,7 @@ final class IngestTransactions
 
         foreach ($decisions as $index => $decision) {
             match ($decision->outcome) {
-                RowOutcome::New => $this->insertNew($batch, $account, $decision->row, $rules, $historyMemo, $billStatementMemo, $pluggyCategoryMemo, $stats, $plansBySeedIndex, $index),
+                RowOutcome::New => $this->insertNew($batch, $account, $decision->row, $rules, $historyMemo, $billStatementMemo, $usableCategoriesByName, $stats, $plansBySeedIndex, $index),
                 RowOutcome::Duplicate => $stats['duplicates']++,
                 RowOutcome::Update => $this->matchedOutcomes->update($decision, $undo, $stats),
                 RowOutcome::ReplaceInstallment => $decision->transactionId !== null
@@ -182,7 +182,7 @@ final class IngestTransactions
      * @param  list<RuleDefinition>  $rules
      * @param  array<string, int>  $historyMemo
      * @param  array<string, int>  $billStatementMemo  external_id da fatura → id do CardStatement (ver preloadBillStatements())
-     * @param  array<string, int>  $pluggyCategoryMemo  nome da categoria padrão → id da categoria do usuário (ver preloadPluggyCategories())
+     * @param  array<string, list<array{id: int, kind: string, is_transfer: bool, has_parent: bool}>>  $usableCategoriesByName  ver preloadUsableCategoriesByName()
      * @param  array<string, int>  $stats
      * @param  array<int, InstallmentPlan>  $plansBySeedIndex
      */
@@ -193,7 +193,7 @@ final class IngestTransactions
         array $rules,
         array $historyMemo,
         array $billStatementMemo,
-        array $pluggyCategoryMemo,
+        array $usableCategoriesByName,
         array &$stats,
         array &$plansBySeedIndex,
         int $index,
@@ -232,7 +232,7 @@ final class IngestTransactions
 
         $this->categorize->handleImported($transaction, $rules, $historyMemo);
 
-        $this->applyPluggyCategory($transaction, $row, $pluggyCategoryMemo);
+        $this->applyProviderCategory($transaction, $row, $usableCategoriesByName);
 
         if ($plan !== null) {
             $plansBySeedIndex[$index] = $plan;
@@ -243,25 +243,29 @@ final class IngestTransactions
     }
 
     /**
-     * Terceiro passo da categorização de uma linha nova importada do Pluggy
+     * Terceiro passo da categorização de uma linha nova importada do banco
      * — só depois de regras e histórico (handleImported(), chamado antes
      * disso, já cobre os dois primeiros): se a transação ainda não tem
-     * categoria e a linha carrega a categoria do provedor, usa
-     * PluggyCategoryMap para achar o nome padrão e o memo pré-carregado
-     * (preloadPluggyCategories()) para achar a categoria do usuário com
-     * esse nome. Sem match em qualquer um dos dois passos, não categoriza.
+     * categoria e a linha carrega a categoria do provedor (meta.provider_category,
+     * ver TransactionMapper), usa ProviderCategoryMatcher pra casar pelo
+     * nome com uma categoria ativa do usuário. Sem match, não categoriza.
      *
-     * @param  array<string, int>  $pluggyCategoryMemo
+     * @param  array<string, list<array{id: int, kind: string, is_transfer: bool, has_parent: bool}>>  $usableCategoriesByName
      */
-    private function applyPluggyCategory(Transaction $transaction, ParsedRow $row, array $pluggyCategoryMemo): void
+    private function applyProviderCategory(Transaction $transaction, ParsedRow $row, array $usableCategoriesByName): void
     {
         if ($transaction->category_id !== null) {
             return;
         }
 
-        $providerCategoryId = $row->meta['provider_category_id'] ?? null;
-        $categoryName = is_string($providerCategoryId) ? PluggyCategoryMap::categoryFor($providerCategoryId) : null;
-        $categoryId = $categoryName !== null ? ($pluggyCategoryMemo[$categoryName] ?? null) : null;
+        $providerCategory = $row->meta['provider_category'] ?? null;
+
+        if (! is_array($providerCategory) || ! isset($providerCategory['name'])) {
+            return;
+        }
+
+        /** @var array{name: string, parent: string|null} $providerCategory */
+        $categoryId = ProviderCategoryMatcher::match($providerCategory, $usableCategoriesByName, $transaction->direction);
 
         if ($categoryId === null) {
             return;
@@ -313,35 +317,45 @@ final class IngestTransactions
     }
 
     /**
-     * Uma consulta para toda categoria ativa do usuário cujo nome é sugerido
-     * pela categoria de alguma linha nova deste lote (via PluggyCategoryMap),
-     * em vez de uma consulta por linha.
+     * Uma consulta para toda categoria ativa do usuário, agrupada pelo nome
+     * normalizado (ver TextNormalizer::key()) — em vez de uma consulta por
+     * linha, e sem tentar adivinhar de antemão quais nomes o
+     * ProviderCategoryMatcher vai precisar (ele tenta sinônimo da folha, do
+     * pai, e os nomes exatos — filtrar a consulta por nome arriscaria
+     * perder um match por diferença de acento/caixa entre o nome do
+     * provedor e o nome que o usuário deu à categoria). Só consulta quando
+     * alguma linha nova do lote de fato carrega meta.provider_category.
      *
      * @param  list<RowDecision>  $decisions
-     * @return array<string, int> nome da categoria → id
+     * @return array<string, list<array{id: int, kind: string, is_transfer: bool, has_parent: bool}>>
      */
-    private function preloadPluggyCategories(array $decisions): array
+    private function preloadUsableCategoriesByName(array $decisions): array
     {
-        $names = [];
+        $needsLookup = false;
 
         foreach ($decisions as $decision) {
-            if ($decision->outcome !== RowOutcome::New) {
-                continue;
-            }
-
-            $providerCategoryId = $decision->row->meta['provider_category_id'] ?? null;
-            $name = is_string($providerCategoryId) ? PluggyCategoryMap::categoryFor($providerCategoryId) : null;
-
-            if ($name !== null) {
-                $names[$name] = true;
+            if ($decision->outcome === RowOutcome::New && isset($decision->row->meta['provider_category'])) {
+                $needsLookup = true;
+                break;
             }
         }
 
-        if ($names === []) {
+        if (! $needsLookup) {
             return [];
         }
 
-        return Category::query()->whereIn('name', array_keys($names))->usable()->pluck('id', 'name')->all();
+        $byName = [];
+
+        foreach (Category::query()->usable()->get() as $category) {
+            $byName[TextNormalizer::key($category->name)][] = [
+                'id' => $category->id,
+                'kind' => $category->kind->value,
+                'is_transfer' => $category->is_transfer,
+                'has_parent' => $category->parent_id !== null,
+            ];
+        }
+
+        return $byName;
     }
 
     /**

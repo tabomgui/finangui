@@ -1,0 +1,49 @@
+{
+  "page": 1,
+  "total": 7,
+  "totalPages": 1,
+  "results": [
+    {
+      "id": "0100",
+      "description": "Income",
+      "descriptionTranslated": "Renda",
+      "parentId": null
+    },
+    {
+      "id": "0101",
+      "description": "Salary/pro-labore",
+      "descriptionTranslated": "Salário",
+      "parentId": "0100"
+    },
+    {
+      "id": "1200",
+      "description": "Food and drinks",
+      "descriptionTranslated": "Alimentação e bebidas",
+      "parentId": null
+    },
+    {
+      "id": "1201",
+      "description": "Eating out",
+      "descriptionTranslated": "Restaurantes",
+      "parentId": "1200"
+    },
+    {
+      "id": "1300",
+      "description": "Groceries",
+      "descriptionTranslated": "Supermercado",
+      "parentId": null
+    },
+    {
+      "id": "0500",
+      "description": "Transfers",
+      "descriptionTranslated": "Transferências",
+      "parentId": null
+    },
+    {
+      "id": "0509",
+      "description": "Credit card payment",
+      "descriptionTranslated": "Pagamento de cartão de crédito",
+      "parentId": "0500"
+    }
+  ]
+}

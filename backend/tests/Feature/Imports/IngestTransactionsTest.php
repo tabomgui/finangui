@@ -470,7 +470,7 @@ it('meta.bill_id sem fatura local correspondente cai na resolução por data nor
     expect($transaction->statement_id)->not->toBeNull();
 });
 
-it('categoria do Pluggy só entra depois de regra e histórico, e só se o usuário tiver a categoria ativa', function () {
+it('categoria do provedor só entra depois de regra e histórico, e só se o usuário tiver a categoria ativa', function () {
     $categoryRule = Category::factory()->create(['user_id' => $this->user->id, 'name' => 'Categoria da regra']);
     Rule::factory()->create([
         'user_id' => $this->user->id,
@@ -484,42 +484,44 @@ it('categoria do Pluggy só entra depois de regra e histórico, e só se o usuá
         'description' => 'Padaria Joao', 'direction' => 'out', 'category_id' => $categoryHistory->id,
     ]);
 
-    Category::factory()->create(['user_id' => $this->user->id, 'name' => 'Salário']);
+    Category::factory()->income()->create(['user_id' => $this->user->id, 'name' => 'Salário']);
+
+    $providerCategory = ['provider_category' => ['name' => 'Salário', 'parent' => null]];
 
     $this->action->handle(
         pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
         [
-            // Casa a regra (descrição) e também traria "Salário" pelo
-            // Pluggy: a regra vence.
-            ingestRow(['description' => 'Compra Mercado Exemplo', 'externalId' => 'r1', 'meta' => ['provider_category_id' => '01010000']]),
-            // Casa o histórico (mesma description_key de "Padaria Joao") e
-            // também traria "Salário" pelo Pluggy: o histórico vence.
-            ingestRow(['description' => 'Padaria Joao 99', 'externalId' => 'r2', 'meta' => ['provider_category_id' => '01010000']]),
-            // Nem regra nem histórico: cai no Pluggy, que resolve para "Salário".
-            ingestRow(['description' => 'Pix recebido', 'direction' => Direction::In, 'externalId' => 'r3', 'meta' => ['provider_category_id' => '01010000']]),
+            // Casa a regra (descrição): a regra vence mesmo com
+            // meta.provider_category presente.
+            ingestRow(['description' => 'Compra Mercado Exemplo', 'externalId' => 'r1', 'meta' => $providerCategory]),
+            // Casa o histórico (mesma description_key e direção de "Padaria
+            // Joao", direção out): o histórico vence.
+            ingestRow(['description' => 'Padaria Joao 99', 'externalId' => 'r2', 'meta' => $providerCategory]),
+            // Nem regra nem histórico: cai no provedor, que resolve para "Salário".
+            ingestRow(['description' => 'Pix recebido', 'direction' => Direction::In, 'externalId' => 'r3', 'meta' => $providerCategory]),
         ],
     );
 
     $byRule = Transaction::where('external_id', 'r1')->first();
     $byHistory = Transaction::where('external_id', 'r2')->first();
-    $byPluggy = Transaction::where('external_id', 'r3')->first();
+    $byProvider = Transaction::where('external_id', 'r3')->first();
 
     expect($byRule->category_id)->toBe($categoryRule->id)
         ->and($byRule->categorized_by)->toStartWith('rule:')
         ->and($byHistory->category_id)->toBe($categoryHistory->id)
         ->and($byHistory->categorized_by)->toBe('history')
-        ->and($byPluggy->category_id)->toBe(Category::where('name', 'Salário')->value('id'))
-        ->and($byPluggy->categorized_by)->toBe('pluggy');
+        ->and($byProvider->category_id)->toBe(Category::where('name', 'Salário')->value('id'))
+        ->and($byProvider->categorized_by)->toBe('pluggy');
 });
 
-it('categoria do Pluggy sem id conhecido ou sem categoria ativa correspondente não categoriza', function () {
+it('categoria do provedor sem sinônimo/nome conhecido ou sem categoria ativa correspondente não categoriza', function () {
     $this->action->handle(
         pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
         [
-            // Id desconhecido pelo mapa.
-            ingestRow(['externalId' => 'u1', 'meta' => ['provider_category_id' => '99999999']]),
-            // Id conhecido ("Salário"), mas o usuário não tem essa categoria.
-            ingestRow(['externalId' => 'u2', 'meta' => ['provider_category_id' => '01010000']]),
+            // Nome que não bate com sinônimo nem com nenhuma categoria do usuário.
+            ingestRow(['externalId' => 'u1', 'direction' => Direction::In, 'meta' => ['provider_category' => ['name' => 'Categoria Desconhecida', 'parent' => null]]]),
+            // Nome conhecido ("Salário"), mas o usuário não tem essa categoria.
+            ingestRow(['externalId' => 'u2', 'direction' => Direction::In, 'meta' => ['provider_category' => ['name' => 'Salário', 'parent' => null]]]),
         ],
     );
 
@@ -527,13 +529,50 @@ it('categoria do Pluggy sem id conhecido ou sem categoria ativa correspondente n
         ->and(Transaction::where('external_id', 'u2')->first()->category_id)->toBeNull();
 });
 
-it('categoria do Pluggy ignora categoria arquivada com o mesmo nome', function () {
-    Category::factory()->create(['user_id' => $this->user->id, 'name' => 'Salário', 'is_archived' => true]);
+it('categoria do provedor ignora categoria arquivada com o mesmo nome', function () {
+    Category::factory()->income()->create(['user_id' => $this->user->id, 'name' => 'Salário', 'is_archived' => true]);
 
     $this->action->handle(
         pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
-        [ingestRow(['externalId' => 'arq-1', 'meta' => ['provider_category_id' => '01010000']])],
+        [ingestRow(['externalId' => 'arq-1', 'direction' => Direction::In, 'meta' => ['provider_category' => ['name' => 'Salário', 'parent' => null]]])],
     );
 
     expect(Transaction::where('external_id', 'arq-1')->first()->category_id)->toBeNull();
+});
+
+it('categoria do provedor nunca escolhe uma categoria is_transfer sem um sinônimo explícito', function () {
+    Category::factory()->transfer()->create(['user_id' => $this->user->id, 'name' => 'Transferências']);
+
+    $this->action->handle(
+        pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
+        // Nome exato "Transferências", mas sem vir de um sinônimo de
+        // transferência (ex.: "pagamento de cartão", "mesma titularidade").
+        [ingestRow(['externalId' => 'transf-1', 'meta' => ['provider_category' => ['name' => 'Transferências', 'parent' => null]]])],
+    );
+
+    expect(Transaction::where('external_id', 'transf-1')->first()->category_id)->toBeNull();
+});
+
+it('meta.bill_id de outra fatura/conta com o mesmo external_id nunca é usado (preload escopado por conta)', function () {
+    $this->travelTo('2026-02-15');
+    $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+    $otherCard = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+
+    // Mesmo external_id em duas faturas de cartões diferentes: o preload de
+    // IngestTransactions precisa escopar por account_id, senão a fatura do
+    // cartão errado poderia "roubar" a transação do cartão certo.
+    CardStatement::factory()->create([
+        'account_id' => $otherCard->id, 'closing_date' => '2026-08-03', 'due_date' => '2026-08-10', 'external_id' => 'shared-bill',
+    ]);
+    $ownStatement = CardStatement::factory()->create([
+        'account_id' => $card->id, 'closing_date' => '2026-08-03', 'due_date' => '2026-08-10', 'external_id' => 'shared-bill',
+    ]);
+
+    $this->action->handle(
+        pendingBatch(['account_id' => $card->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
+        [ingestRow(['date' => '2026-03-07', 'externalId' => 'pl-shared', 'meta' => ['bill_id' => 'shared-bill']])],
+    );
+
+    $transaction = Transaction::where('external_id', 'pl-shared')->first();
+    expect($transaction->statement_id)->toBe($ownStatement->id);
 });

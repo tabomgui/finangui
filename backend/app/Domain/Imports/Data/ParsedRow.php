@@ -14,7 +14,7 @@ final readonly class ParsedRow
      * @param  string  $date  "YYYY-MM-DD"
      * @param  int  $amount  centavos, sempre positivo
      * @param  array{number: int, total: int}|null  $installment
-     * @param  array<string, mixed>  $meta  dados que só a sincronização bancária preenche (`bill_id`, `provider_category_id`); vazio para linhas de arquivo
+     * @param  array<string, mixed>  $meta  dados que só a sincronização bancária preenche (`bill_id`, `provider_category` = `{name, parent}`); vazio para linhas de arquivo
      */
     public function __construct(
         public int $line,

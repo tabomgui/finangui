@@ -4,9 +4,11 @@ namespace App\Domain\Banking\Contracts;
 
 use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Data\ProviderBill;
+use App\Domain\Banking\Data\ProviderCategory;
 use App\Domain\Banking\Data\ProviderItem;
 use App\Domain\Banking\Data\ProviderTransaction;
 use Carbon\CarbonImmutable;
+use InvalidArgumentException;
 
 /**
  * Isola o provedor de open finance (Pluggy em produção, fake em teste) do
@@ -33,10 +35,25 @@ interface BankProvider
     /**
      * Transações da conta, já paginadas até o fim.
      *
+     * Exatamente um entre $dateFrom (primeiro sync) e $createdAtFrom (syncs
+     * seguintes) deve ser informado; o outro, null.
+     *
      * @return iterable<ProviderTransaction>
+     *
+     * @throws InvalidArgumentException quando os dois (ou nenhum) são informados
      */
-    public function transactions(string $accountId, ?CarbonImmutable $dateFrom, ?CarbonImmutable $createdAtFrom): iterable;
+    public function transactions(string $accountId, bool $creditCard, ?CarbonImmutable $dateFrom, ?CarbonImmutable $createdAtFrom): iterable;
 
     /** @return list<ProviderBill> */
     public function bills(string $accountId): array;
+
+    /**
+     * Todas as categorias do provedor (cacheadas): base para a
+     * categorização por nome (ver App\Domain\Banking\Support\ProviderCategoryMatcher).
+     * Lista vazia quando a busca falhar — categorização por nome fica
+     * desligada até o cache vencer, mas o resto do sync segue.
+     *
+     * @return list<ProviderCategory>
+     */
+    public function categories(): array;
 }

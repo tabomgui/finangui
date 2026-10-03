@@ -1,10 +1,12 @@
 <?php
 
+use App\Domain\Banking\Errors\ProviderAuthFailed;
 use App\Domain\Banking\Errors\ProviderRequestFailed;
 use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Banking\Providers\Pluggy\PluggyProvider;
 use App\Domain\Transactions\Enums\Direction;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -69,6 +71,33 @@ it('renova a key uma vez quando uma chamada volta 401', function () {
     expect($second->header('X-API-KEY'))->toBe(['key-2']);
 });
 
+it('um segundo 401 mesmo depois de renovar a key vira ProviderAuthFailed', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::sequence()
+            ->push(['apiKey' => 'key-1'])
+            ->push(['apiKey' => 'key-2']),
+        'api.pluggy.ai/items/*' => Http::response(null, 401),
+    ]);
+
+    expect(fn () => $this->provider->item('item-1'))->toThrow(ProviderAuthFailed::class);
+});
+
+it('/auth respondendo 400, 401 ou 403 vira ProviderAuthFailed, não ProviderUnavailable', function (int $status) {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['message' => 'invalid credentials'], $status),
+    ]);
+
+    expect(fn () => $this->provider->item('item-1'))->toThrow(ProviderAuthFailed::class);
+})->with([400, 401, 403]);
+
+it('/auth respondendo 503 continua ProviderUnavailable (transitório, não é credencial errada)', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['message' => 'down'], 503),
+    ]);
+
+    expect(fn () => $this->provider->item('item-1'))->toThrow(ProviderUnavailable::class);
+});
+
 it('mapeia o item com needsReauth/isUpdating', function () {
     Http::fake([
         'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
@@ -122,6 +151,15 @@ it('manda clientUserId dentro de options no connect_token, e itemId só na raiz 
     });
 });
 
+it('connect_token sem accessToken na resposta vira ProviderUnavailable, não TypeError', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/connect_token' => Http::response(['accessToken' => null]),
+    ]);
+
+    expect(fn () => $this->provider->connectToken('user:1'))->toThrow(ProviderUnavailable::class);
+});
+
 it('pede atualização com PATCH {} e deleta o item', function () {
     Http::fake([
         'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
@@ -164,7 +202,7 @@ it('mapeia contas (checking, savings e cartão com creditData)', function () {
     Http::assertSent(fn ($request) => str_contains($request->url(), 'itemId=00000000-0000-0000-0000-000000000001'));
 });
 
-it('ignora conta com subtype desconhecido e registra em log', function () {
+it('subtype e type desconhecidos: conta ignorada e registrada em log', function () {
     Log::spy();
 
     Http::fake([
@@ -172,7 +210,7 @@ it('ignora conta com subtype desconhecido e registra em log', function () {
         'api.pluggy.ai/accounts*' => Http::response([
             'results' => [[
                 'id' => 'acc-unknown',
-                'type' => 'BANK',
+                'type' => 'INVESTMENT',
                 'subtype' => 'INVESTMENT_ACCOUNT',
                 'name' => 'Investimento',
                 'balance' => 100.0,
@@ -185,7 +223,36 @@ it('ignora conta com subtype desconhecido e registra em log', function () {
 
     expect($accounts)->toBe([]);
 
-    Log::shouldHaveReceived('warning')->once();
+    Log::shouldHaveReceived('warning')
+        ->once()
+        ->with('Pluggy: conta ignorada por type/subtype desconhecidos.', Mockery::any());
+});
+
+it('subtype desconhecido mas type reconhecido: cai no fallback por type e registra em log', function () {
+    Log::spy();
+
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/accounts*' => Http::response([
+            'results' => [[
+                'id' => 'acc-fallback',
+                'type' => 'BANK',
+                'subtype' => 'SOME_NEW_SUBTYPE',
+                'name' => 'Conta nova',
+                'balance' => 100.0,
+                'currencyCode' => 'BRL',
+            ]],
+        ]),
+    ]);
+
+    $accounts = $this->provider->accounts('item-1');
+
+    expect($accounts)->toHaveCount(1)
+        ->and($accounts[0]->kind)->toBe('checking');
+
+    Log::shouldHaveReceived('warning')
+        ->once()
+        ->with('Pluggy: subtype desconhecido, conta mapeada pelo type.', Mockery::any());
 });
 
 it('converte transações com direção por type, data em São Paulo, pendência e parcela, e segue a paginação pelo next', function () {
@@ -199,7 +266,7 @@ it('converte transações com direção por type, data em São Paulo, pendência
     $accountId = '00000000-0000-0000-0000-0000000000a1';
     $dateFrom = CarbonImmutable::parse('2025-10-03');
 
-    $transactions = iterator_to_array($this->provider->transactions($accountId, $dateFrom, null));
+    $transactions = iterator_to_array($this->provider->transactions($accountId, true, $dateFrom, null));
 
     expect($transactions)->toHaveCount(3);
 
@@ -232,7 +299,81 @@ it('converte transações com direção por type, data em São Paulo, pendência
 
     $transactionRequests = Http::recorded(fn ($request) => str_contains($request->url(), '/v2/transactions'))->values();
     expect($transactionRequests)->toHaveCount(2);
-    expect($transactionRequests[1][0]->url())->toContain('after=00000000-0000-0000-0000-0000000000b2');
+    expect($transactionRequests[1][0]->url())
+        ->toContain('after=00000000-0000-0000-0000-0000000000b2')
+        ->toContain("accountId={$accountId}")
+        // Sem "?" duplicado — o "next" da página 1 já vem com "?" na frente
+        // (ver fixture), e a chamada seguinte reconstrói a query do zero.
+        ->not->toContain('??');
+});
+
+it('exige exatamente um entre dateFrom e createdAtFrom', function () {
+    expect(fn () => $this->provider->transactions('acc-1', false, null, null))
+        ->toThrow(InvalidArgumentException::class);
+
+    expect(fn () => $this->provider->transactions('acc-1', false, CarbonImmutable::now(), CarbonImmutable::now()))
+        ->toThrow(InvalidArgumentException::class);
+});
+
+it('createdAtFrom vai formatado em UTC com milissegundos', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/v2/transactions*' => Http::response(['results' => [], 'next' => null]),
+    ]);
+
+    $createdAtFrom = CarbonImmutable::parse('2026-03-07 10:00:00', 'America/Sao_Paulo');
+
+    iterator_to_array($this->provider->transactions('acc-1', false, null, $createdAtFrom));
+
+    // 10:00 em São Paulo (UTC-3) é 13:00 UTC.
+    Http::assertSent(fn ($request) => str_contains($request->url(), 'createdAtFrom=2026-03-07T13%3A00%3A00.000Z'));
+});
+
+it('paginação: cursor repetido (next preso em loop) vira ProviderUnavailable', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/v2/transactions*' => Http::response([
+            'results' => [],
+            'next' => '?accountId=acc-1&after=cursor-x',
+        ]),
+    ]);
+
+    expect(function () {
+        iterator_to_array($this->provider->transactions('acc-1', false, CarbonImmutable::parse('2025-01-01'), null));
+    })->toThrow(ProviderUnavailable::class);
+});
+
+it('paginação: next como URL absoluta também funciona (extrai só a query)', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/v2/transactions*' => Http::sequence()
+            ->push(['results' => [], 'next' => 'https://api.pluggy.ai/v2/transactions?accountId=acc-1&after=cursor-abs'])
+            ->push(['results' => [], 'next' => null]),
+    ]);
+
+    iterator_to_array($this->provider->transactions('acc-1', false, CarbonImmutable::parse('2025-01-01'), null));
+
+    $requests = Http::recorded(fn ($request) => str_contains($request->url(), '/v2/transactions'))->values();
+    expect($requests)->toHaveCount(2);
+    expect($requests[1][0]->url())->toContain('after=cursor-abs')->not->toContain('??');
+});
+
+it('paginação: cursor com "+" literal não é decodificado como espaço', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/v2/transactions*' => Http::sequence()
+            ->push(['results' => [], 'next' => '?accountId=acc-1&after=AbC+123%3D'])
+            ->push(['results' => [], 'next' => null]),
+    ]);
+
+    iterator_to_array($this->provider->transactions('acc-1', false, CarbonImmutable::parse('2025-01-01'), null));
+
+    $requests = Http::recorded(fn ($request) => str_contains($request->url(), '/v2/transactions'))->values();
+    // A query do segundo request é recodificada pelo client HTTP ao montar
+    // a URL: o "+" original (preservado por rawurldecode) vira "%2B" de
+    // novo nessa saída, nunca um espaço ("%20"/" ") — o que provaria que
+    // ele teria sido decodificado incorretamente antes de ser reenviado.
+    expect($requests[1][0]->url())->toContain('after=AbC%2B123%3D');
 });
 
 it('não conta parcela quando totalInstallments é menor que 2', function () {
@@ -262,9 +403,128 @@ it('não conta parcela quando totalInstallments é menor que 2', function () {
         ]),
     ]);
 
-    $transactions = iterator_to_array($this->provider->transactions('acc-1', null, null));
+    $transactions = iterator_to_array($this->provider->transactions('acc-1', true, null, CarbonImmutable::now()));
 
     expect($transactions[0]->installment)->toBeNull();
+});
+
+it('parcela com número fora do total (dado corrompido) é tratada como sem parcela', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/v2/transactions*' => Http::response([
+            'results' => [[
+                'id' => 'tx-corrupt',
+                'date' => '2026-09-20T12:00:00.000Z',
+                'description' => 'Compra',
+                'amount' => -50.0,
+                'currencyCode' => 'BRL',
+                'status' => 'POSTED',
+                'type' => 'DEBIT',
+                'creditCardMetadata' => [
+                    'installmentNumber' => 11,
+                    'totalInstallments' => 10,
+                    'totalAmount' => 500.0,
+                    'purchaseDate' => '2026-08-20',
+                    'billId' => 'bill-1',
+                ],
+            ]],
+            'next' => null,
+        ]),
+    ]);
+
+    $transactions = iterator_to_array($this->provider->transactions('acc-1', true, null, CarbonImmutable::now()));
+
+    expect($transactions[0]->installment)->toBeNull();
+});
+
+it('prefere amountInAccountCurrency quando presente (compra em moeda estrangeira)', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/v2/transactions*' => Http::response([
+            'results' => [[
+                'id' => 'tx-foreign',
+                'date' => '2026-09-20T12:00:00.000Z',
+                'description' => 'Compra no exterior',
+                'amount' => -10.0,
+                'amountInAccountCurrency' => -52.37,
+                'currencyCode' => 'USD',
+                'status' => 'POSTED',
+                'type' => 'DEBIT',
+            ]],
+            'next' => null,
+        ]),
+    ]);
+
+    $transactions = iterator_to_array($this->provider->transactions('acc-1', false, null, CarbonImmutable::now()));
+
+    expect($transactions[0]->amountCents)->toBe(5237);
+});
+
+it('sem amountInAccountCurrency, usa amount', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/v2/transactions*' => Http::response([
+            'results' => [[
+                'id' => 'tx-local',
+                'date' => '2026-09-20T12:00:00.000Z',
+                'description' => 'Compra local',
+                'amount' => -19.99,
+                'currencyCode' => 'BRL',
+                'status' => 'POSTED',
+                'type' => 'DEBIT',
+            ]],
+            'next' => null,
+        ]),
+    ]);
+
+    $transactions = iterator_to_array($this->provider->transactions('acc-1', false, null, CarbonImmutable::now()));
+
+    expect($transactions[0]->amountCents)->toBe(1999);
+});
+
+it('converte valores decimais para centavos sem erro de arredondamento nos casos de borda', function (float $value, int $expectedCents) {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/v2/transactions*' => Http::response([
+            'results' => [[
+                'id' => 'tx-edge',
+                'date' => '2026-09-20T12:00:00.000Z',
+                'description' => 'Valor',
+                'amount' => $value,
+                'currencyCode' => 'BRL',
+                'status' => 'POSTED',
+                'type' => $value < 0 ? 'DEBIT' : 'CREDIT',
+            ]],
+            'next' => null,
+        ]),
+    ]);
+
+    $transactions = iterator_to_array($this->provider->transactions('acc-1', false, null, CarbonImmutable::now()));
+
+    expect($transactions[0]->amountCents)->toBe($expectedCents);
+})->with([
+    [19.99, 1999],
+    [1234.5, 123450],
+    [-0.01, 1],
+]);
+
+it('type ausente: usa o sinal do valor, invertido em cartão', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/v2/transactions*' => Http::response([
+            'results' => [
+                ['id' => 'tx-neg-nocard', 'date' => '2026-09-20T12:00:00.000Z', 'description' => 'x', 'amount' => -50.0, 'currencyCode' => 'BRL', 'status' => 'POSTED'],
+                ['id' => 'tx-neg-card', 'date' => '2026-09-20T12:00:00.000Z', 'description' => 'x', 'amount' => -50.0, 'currencyCode' => 'BRL', 'status' => 'POSTED'],
+            ],
+            'next' => null,
+        ]),
+    ]);
+
+    $notCard = iterator_to_array($this->provider->transactions('acc-1', false, null, CarbonImmutable::now()));
+    $card = iterator_to_array($this->provider->transactions('acc-1', true, null, CarbonImmutable::now()));
+
+    expect($notCard[1]->direction)->toBe(Direction::Out)
+        ->and($card[1]->direction)->toBe(Direction::In);
 });
 
 it('mapeia faturas com closingDate opcional', function () {
@@ -287,27 +547,176 @@ it('mapeia faturas com closingDate opcional', function () {
         ->and($withoutClosing->totalCents)->toBe(98765);
 });
 
-it('converte 503 e 429 em ProviderUnavailable', function () {
+it('calendarDate: hora UTC exatamente meia-noite usa a mesma data, sem converter de fuso', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/v2/transactions*' => Http::response([
+            'results' => [[
+                'id' => 'tx-midnight',
+                'date' => '2026-09-20T00:00:00.000Z',
+                'description' => 'x',
+                'amount' => 10.0,
+                'currencyCode' => 'BRL',
+                'status' => 'POSTED',
+                'type' => 'CREDIT',
+            ]],
+            'next' => null,
+        ]),
+    ]);
+
+    $transactions = iterator_to_array($this->provider->transactions('acc-1', false, null, CarbonImmutable::now()));
+
+    expect($transactions[0]->date)->toBe('2026-09-20');
+});
+
+it('calendarDate: hora UTC real (não meia-noite) converte para o fuso do app e pode virar o dia anterior', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/v2/transactions*' => Http::response([
+            'results' => [[
+                'id' => 'tx-early',
+                'date' => '2026-09-20T02:00:00.000Z',
+                'description' => 'x',
+                'amount' => 10.0,
+                'currencyCode' => 'BRL',
+                'status' => 'POSTED',
+                'type' => 'CREDIT',
+            ]],
+            'next' => null,
+        ]),
+    ]);
+
+    $transactions = iterator_to_array($this->provider->transactions('acc-1', false, null, CarbonImmutable::now()));
+
+    // 2026-09-20T02:00:00Z em America/Sao_Paulo (UTC-3) é 2026-09-19 23:00.
+    expect($transactions[0]->date)->toBe('2026-09-19');
+});
+
+it('calendarDate também normaliza purchaseDate (meia-noite UTC não volta um dia)', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/v2/transactions*' => Http::response([
+            'results' => [[
+                'id' => 'tx-purchase',
+                'date' => '2026-09-20T12:00:00.000Z',
+                'description' => 'x',
+                'amount' => -50.0,
+                'currencyCode' => 'BRL',
+                'status' => 'POSTED',
+                'type' => 'DEBIT',
+                'creditCardMetadata' => [
+                    'installmentNumber' => 1,
+                    'totalInstallments' => 3,
+                    'totalAmount' => 150.0,
+                    'purchaseDate' => '2026-08-22T00:00:00.000Z',
+                    'billId' => 'bill-1',
+                ],
+            ]],
+            'next' => null,
+        ]),
+    ]);
+
+    $transactions = iterator_to_array($this->provider->transactions('acc-1', true, null, CarbonImmutable::now()));
+
+    expect($transactions[0]->purchaseDate)->toBe('2026-08-22');
+});
+
+it('busca e mapeia categorias (uma página)', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/categories*' => Http::response(pluggyFixture('categories.json')),
+    ]);
+
+    $categories = $this->provider->categories();
+
+    expect($categories)->toHaveCount(7);
+
+    $salary = collect($categories)->firstWhere('id', '0101');
+    expect($salary->name)->toBe('Salário')
+        ->and($salary->parentId)->toBe('0100');
+
+    $income = collect($categories)->firstWhere('id', '0100');
+    expect($income->parentId)->toBeNull();
+});
+
+it('busca categorias paginadas e as cacheia por 1 dia', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/categories*' => Http::sequence()
+            ->push(pluggyFixture('categories-page-1.json'))
+            ->push(pluggyFixture('categories-page-2.json')),
+    ]);
+
+    $categories = $this->provider->categories();
+
+    expect($categories)->toHaveCount(2);
+
+    // Segunda chamada não bate na rede: veio do cache.
+    $this->provider->categories();
+
+    $categoryRequests = Http::recorded(fn ($request) => str_contains($request->url(), '/categories'));
+    expect($categoryRequests)->toHaveCount(2);
+});
+
+it('categorias: falha na busca devolve lista vazia e registra em log, sem propagar a exceção', function () {
+    Log::spy();
+
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/categories*' => Http::response(['message' => 'down'], 503),
+    ]);
+
+    $categories = $this->provider->categories();
+
+    expect($categories)->toBe([]);
+
+    Log::shouldHaveReceived('warning')
+        ->once()
+        ->with('Pluggy: falha ao buscar categorias; categorização por nome fica desligada por ora.', Mockery::any());
+});
+
+it('erro de conexão (timeout/DNS) vira ProviderUnavailable', function () {
+    Http::fake(function () {
+        throw new ConnectionException('Connection timed out');
+    });
+
+    expect(fn () => $this->provider->item('item-1'))->toThrow(ProviderUnavailable::class);
+});
+
+it('converte 503 em ProviderUnavailable', function () {
     Http::fake([
         'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
         'api.pluggy.ai/items/*' => Http::response(['message' => 'down'], 503),
     ]);
 
     expect(fn () => $this->provider->item('item-1'))->toThrow(ProviderUnavailable::class);
-
-    Http::fake([
-        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
-        'api.pluggy.ai/items/*' => Http::response(['message' => 'slow down'], 429),
-    ]);
-
-    expect(fn () => $this->provider->item('item-1'))->toThrow(ProviderUnavailable::class);
 });
 
-it('converte um 400 inesperado em ProviderRequestFailed', function () {
+it('converte 429 em ProviderUnavailable e carrega o Retry-After', function () {
     Http::fake([
         'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
-        'api.pluggy.ai/items/*' => Http::response(['message' => 'bad request'], 400),
+        'api.pluggy.ai/items/*' => Http::response(['message' => 'slow down'], 429, ['Retry-After' => '30']),
     ]);
 
-    expect(fn () => $this->provider->item('item-1'))->toThrow(ProviderRequestFailed::class);
+    try {
+        $this->provider->item('item-1');
+        $this->fail('deveria ter lançado ProviderUnavailable');
+    } catch (ProviderUnavailable $e) {
+        expect($e->retryAfter)->toBe(30);
+    }
+});
+
+it('converte um 400 inesperado em ProviderRequestFailed, com status e providerCode', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/items/*' => Http::response(['code' => 'INVALID_ITEM', 'message' => 'bad request'], 400),
+    ]);
+
+    try {
+        $this->provider->item('item-1');
+        $this->fail('deveria ter lançado ProviderRequestFailed');
+    } catch (ProviderRequestFailed $e) {
+        expect($e->status)->toBe(400)
+            ->and($e->providerCode)->toBe('INVALID_ITEM');
+    }
 });

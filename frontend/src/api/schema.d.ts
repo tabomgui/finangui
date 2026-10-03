@@ -572,6 +572,9 @@ export interface components {
             color: string | null;
             icon: string | null;
             is_archived: boolean;
+            connection_id: number | null;
+            provider_balance: number | null;
+            provider_synced_at: string | null;
         };
         /**
          * AccountType
@@ -653,7 +656,7 @@ export interface components {
             };
             format: components["schemas"]["ImportFormat"];
             /** @enum {string} */
-            format_label: "Inter (conta)" | "Nubank (conta)" | "Nubank (cartão)" | "C6 (conta)" | "OFX";
+            format_label: "Inter (conta)" | "Nubank (conta)" | "Nubank (cartão)" | "C6 (conta)" | "OFX" | "Sincronização bancária";
             filename: string;
             status: components["schemas"]["ImportBatchStatus"];
             stats: {
@@ -692,7 +695,7 @@ export interface components {
          * ImportFormat
          * @enum {string}
          */
-        ImportFormat: "inter" | "nubank" | "nubank_card" | "c6" | "ofx";
+        ImportFormat: "inter" | "nubank" | "nubank_card" | "c6" | "ofx" | "pluggy";
         /** ImportPreviewResource */
         ImportPreviewResource: {
             batch: {
@@ -704,7 +707,7 @@ export interface components {
                 };
                 format: components["schemas"]["ImportFormat"];
                 /** @enum {string} */
-                format_label: "Inter (conta)" | "Nubank (conta)" | "Nubank (cartão)" | "C6 (conta)" | "OFX";
+                format_label: "Inter (conta)" | "Nubank (conta)" | "Nubank (cartão)" | "C6 (conta)" | "OFX" | "Sincronização bancária";
                 filename: string;
                 status: components["schemas"]["ImportBatchStatus"];
                 stats: {
@@ -929,7 +932,12 @@ export interface components {
              * @description Maximum file size: 2048 kilobytes.
              */
             file: string;
-            format?: components["schemas"]["ImportFormat"];
+            /**
+             * @description 'pluggy' não tem parser de arquivo (linhas vêm do
+             *     SyncConnection, nunca de upload) — fora das opções aceitas aqui.
+             * @enum {string}
+             */
+            format?: "inter" | "nubank" | "nubank_card" | "c6" | "ofx";
         };
         /** StoreRuleRequest */
         StoreRuleRequest: {
@@ -1192,6 +1200,11 @@ export interface components {
              *     frontend não fixar 'BRL' ao decidir quando mostrar a moeda de uma conta.
              */
             primary_currency: string;
+            /**
+             * @description Sem credenciais da Pluggy configuradas (PLUGGY_CLIENT_ID/SECRET), o
+             *     frontend esconde o fluxo de conexão bancária inteiro.
+             */
+            banking_enabled: boolean;
         };
     };
     responses: {

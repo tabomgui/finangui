@@ -50,6 +50,9 @@ function account(overrides: Partial<Account>): Account {
     due_day: null,
     last_four: null,
     is_archived: false,
+    connection_id: null,
+    provider_balance: null,
+    provider_synced_at: null,
     ...overrides,
   }
 }

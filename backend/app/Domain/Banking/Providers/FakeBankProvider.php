@@ -5,10 +5,14 @@ namespace App\Domain\Banking\Providers;
 use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Data\ProviderBill;
+use App\Domain\Banking\Data\ProviderCategory;
 use App\Domain\Banking\Data\ProviderItem;
 use App\Domain\Banking\Data\ProviderTransaction;
+use App\Domain\Banking\Errors\ProviderRequestFailed;
+use App\Domain\Banking\Errors\ProviderUnavailable;
 use Carbon\CarbonImmutable;
-use RuntimeException;
+use Generator;
+use InvalidArgumentException;
 use Throwable;
 
 /**
@@ -27,8 +31,21 @@ final class FakeBankProvider implements BankProvider
     /** @var array<string, list<ProviderTransaction>> */
     public array $transactionsByAccount = [];
 
+    /**
+     * Entrega transactionsByAccount[$accountId] em páginas (do tamanho de
+     * "pageSize") e, opcionalmente, lança "error" depois de entregar a
+     * página "failAfterPage" — simula uma falha no meio da paginação, para
+     * testar quem consome transactions() (ex.: retry do job de sync).
+     *
+     * @var array<string, array{pageSize: int, failAfterPage?: int, error?: Throwable}>
+     */
+    public array $paginationByAccount = [];
+
     /** @var array<string, list<ProviderBill>> */
     public array $billsByAccount = [];
+
+    /** @var list<ProviderCategory> */
+    public array $categories = [];
 
     /** @var list<array{method: string, args: array<string, mixed>}> */
     public array $calls = [];
@@ -64,8 +81,10 @@ final class FakeBankProvider implements BankProvider
     {
         $this->record('item', ['itemId' => $itemId]);
 
-        return $this->items[$itemId]
-            ?? throw new RuntimeException("FakeBankProvider: item [{$itemId}] não configurado em \$fake->items.");
+        // Mesmo formato de erro do provedor de verdade (item inexistente é
+        // um 404 na Pluggy), para quem consome não precisar de dois
+        // caminhos de erro diferentes entre fake e real.
+        return $this->items[$itemId] ?? throw new ProviderRequestFailed(404);
     }
 
     public function refreshItem(string $itemId): void
@@ -85,15 +104,51 @@ final class FakeBankProvider implements BankProvider
         return $this->accountsByItem[$itemId] ?? [];
     }
 
-    public function transactions(string $accountId, ?CarbonImmutable $dateFrom, ?CarbonImmutable $createdAtFrom): iterable
+    /**
+     * @throws InvalidArgumentException
+     */
+    public function transactions(string $accountId, bool $creditCard, ?CarbonImmutable $dateFrom, ?CarbonImmutable $createdAtFrom): iterable
     {
+        if (($dateFrom === null) === ($createdAtFrom === null)) {
+            throw new InvalidArgumentException(
+                'Informe exatamente um entre $dateFrom (primeiro sync) e $createdAtFrom (syncs seguintes).'
+            );
+        }
+
         $this->record('transactions', [
             'accountId' => $accountId,
+            'creditCard' => $creditCard,
             'dateFrom' => $dateFrom?->toDateString(),
             'createdAtFrom' => $createdAtFrom?->toDateString(),
         ]);
 
-        return $this->transactionsByAccount[$accountId] ?? [];
+        return $this->transactionsGenerator($accountId);
+    }
+
+    /**
+     * @return Generator<int, ProviderTransaction>
+     */
+    private function transactionsGenerator(string $accountId): Generator
+    {
+        $all = $this->transactionsByAccount[$accountId] ?? [];
+        $pagination = $this->paginationByAccount[$accountId] ?? null;
+
+        if ($pagination === null) {
+            yield from $all;
+
+            return;
+        }
+
+        $pages = array_chunk($all, max(1, $pagination['pageSize']));
+        $failAfterPage = $pagination['failAfterPage'] ?? null;
+
+        foreach ($pages as $index => $page) {
+            yield from $page;
+
+            if ($failAfterPage !== null && $index + 1 === $failAfterPage) {
+                throw $pagination['error'] ?? new ProviderUnavailable('FakeBankProvider: falha injetada na paginação.');
+            }
+        }
     }
 
     public function bills(string $accountId): array
@@ -101,6 +156,13 @@ final class FakeBankProvider implements BankProvider
         $this->record('bills', ['accountId' => $accountId]);
 
         return $this->billsByAccount[$accountId] ?? [];
+    }
+
+    public function categories(): array
+    {
+        $this->record('categories', []);
+
+        return $this->categories;
     }
 
     /**

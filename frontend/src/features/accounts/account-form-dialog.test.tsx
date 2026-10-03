@@ -38,6 +38,9 @@ const cardAccount: Account = {
   color: '#8a2be2',
   icon: 'credit-card',
   is_archived: false,
+  connection_id: null,
+  provider_balance: null,
+  provider_synced_at: null,
 }
 
 function renderDialog(open = true, defaultType?: 'checking' | 'credit_card', onOpenChange: (open: boolean) => void = () => {}) {

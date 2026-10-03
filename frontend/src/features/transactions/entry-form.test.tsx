@@ -36,6 +36,9 @@ function account(overrides: Partial<Account> = {}): Account {
     color: null,
     icon: null,
     is_archived: false,
+    connection_id: null,
+    provider_balance: null,
+    provider_synced_at: null,
     ...overrides,
   }
 }
