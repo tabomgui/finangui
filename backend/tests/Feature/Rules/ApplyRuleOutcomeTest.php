@@ -51,6 +51,18 @@ it('categoria excluída depois de a regra ser salva é ignorada em silêncio', f
     expect($this->action->handle($transaction, $outcome))->toBeFalse();
 });
 
+it('categoria arquivada depois de a regra ser salva é ignorada em silêncio', function () {
+    $archived = Category::factory()->create(['is_archived' => true]);
+    $transaction = Transaction::factory()->create(['category_id' => null])->load('tags');
+
+    $outcome = new RuleOutcome;
+    $outcome->categoryId = $archived->id;
+    $outcome->categoryRuleId = 1;
+
+    expect($this->action->changes($transaction, $outcome))->toBe([]);
+    expect($this->action->handle($transaction, $outcome))->toBeFalse();
+});
+
 it('aplica descrição sem travar nem mexer na original', function () {
     $transaction = Transaction::factory()->create([
         'description' => 'PAG*IFOOD', 'original_description' => 'PAG*IFOOD', 'description_locked' => false,
@@ -93,6 +105,17 @@ it('acrescenta tags que ainda não estão na transação', function () {
 
     $transaction->refresh();
     expect($transaction->tags->pluck('id')->all())->toBe([$tag->id]);
+});
+
+it('aplicar o mesmo outcome duas vezes só muda na primeira', function () {
+    $tag = Tag::factory()->create();
+    $transaction = Transaction::factory()->create()->load('tags');
+
+    $outcome = new RuleOutcome;
+    $outcome->tagIds = [$tag->id];
+
+    expect($this->action->handle($transaction, $outcome))->toBeTrue();
+    expect($this->action->handle($transaction, $outcome))->toBeFalse();
 });
 
 it('tag já presente não conta como mudança', function () {

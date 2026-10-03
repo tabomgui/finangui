@@ -224,12 +224,26 @@ it('422 ao reordenar com id faltando, repetido ou de outro usuário', function (
         ->assertStatus(422)->assertJsonValidationErrors('ids');
 
     $this->putJson('/api/v1/rules/order', ['ids' => [$a->id, $a->id]])
-        ->assertStatus(422)->assertJsonValidationErrors('ids.1');
+        ->assertStatus(422)->assertJsonValidationErrors('ids');
 
     $this->putJson('/api/v1/rules/order', ['ids' => [$a->id, $otherRule->id]])
         ->assertStatus(422)->assertJsonValidationErrors('ids');
 
     expect($b->refresh()->priority)->not->toBeNull();
+});
+
+it('422 (não 500) ao reordenar com ids num objeto em vez de lista', function () {
+    actingAsUser();
+    $a = Rule::factory()->create();
+    $b = Rule::factory()->create();
+
+    $this->putJson('/api/v1/rules/order', ['ids' => ['a' => $a->id, 'b' => $b->id]])
+        ->assertStatus(422)->assertJsonValidationErrors('ids');
+
+    $this->putJson('/api/v1/rules/order', ['ids' => [$a->id, ['foo' => 'bar']]])
+        ->assertStatus(422)->assertJsonValidationErrors('ids.1');
+
+    expect($a->refresh()->priority)->not->toBeNull();
 });
 
 it('404 para regra de outro usuário em GET/PATCH/DELETE e para id não numérico', function () {

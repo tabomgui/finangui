@@ -41,7 +41,7 @@ final class CategorizeTransaction
 
         $outcome = RuleEngine::evaluate(RuleSubject::fromTransaction($transaction), $rules, $context);
 
-        if ($outcome->categoryId !== null && Category::query()->whereKey($outcome->categoryId)->exists()) {
+        if ($outcome->categoryId !== null && Category::query()->whereKey($outcome->categoryId)->where('is_archived', false)->exists()) {
             return ['category_id' => $outcome->categoryId, 'categorized_by' => "rule:{$outcome->categoryRuleId}"];
         }
 

@@ -17,22 +17,30 @@ final class ReorderRulesRequest extends ApiRequest
     public function rules(): array
     {
         return [
-            'ids' => ['required', 'array'],
-            'ids.*' => ['integer', 'distinct'],
+            'ids' => ['required', 'array', 'list'],
+            'ids.*' => ['required', 'integer', 'distinct'],
         ];
     }
 
     /**
+     * Confere o conjunto de ids mesmo quando "ids.*" já falhou (ex.: id
+     * repetido): assim duplicado/faltante/de outro usuário sempre aparece em
+     * "ids", e não só no índice que a regra "distinct" aponta. Só não roda
+     * se "ids" em si não for array (lista com objeto em vez de inteiro,
+     * por exemplo) — nesse caso intval() em cada item não ajudaria.
+     *
      * @return array<int, callable(Validator): void>
      */
     public function after(): array
     {
         return [function (Validator $validator): void {
-            if ($validator->errors()->isNotEmpty()) {
+            $input = $this->input('ids');
+
+            if (! is_array($input)) {
                 return;
             }
 
-            $ids = array_map(intval(...), $this->input('ids', []));
+            $ids = array_map(intval(...), array_values($input));
             $existing = Rule::query()->pluck('id')->map(intval(...))->all();
 
             if (self::sameSet($ids, $existing)) {

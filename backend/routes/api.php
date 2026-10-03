@@ -56,10 +56,8 @@ Route::prefix('v1')->group(function () {
         Route::patch('installment-plans/{plan}', [InstallmentPlanController::class, 'update'])->whereNumber('plan');
         Route::post('installment-plans/{plan}/cancel', [InstallmentPlanController::class, 'cancel'])->whereNumber('plan');
 
-        // rules/order precisa vir antes de rules/{rule}: senão "order" seria
-        // capturado como o parâmetro {rule} (que só aceita número por causa do
-        // whereNumber, então aqui a ordem não é estritamente necessária, mas
-        // evita depender disso).
+        // rules/order antes de rules/{rule}, por clareza (o whereNumber já
+        // evita a colisão com "order").
         Route::put('rules/order', [RuleController::class, 'reorder']);
         Route::get('rules', [RuleController::class, 'index']);
         Route::post('rules', [RuleController::class, 'store']);

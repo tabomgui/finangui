@@ -1,8 +1,10 @@
 <?php
 
+use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Rules\Support\HistoryCategorizer;
 use App\Domain\Transactions\Enums\Direction;
+use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use Illuminate\Support\Str;
 
@@ -60,6 +62,33 @@ it('pernas de transferência e transações ignoradas ficam fora', function () {
     Transaction::factory()->create(['description' => 'Uber', 'direction' => Direction::Out, 'category_id' => $category->id, 'is_ignored' => true]);
 
     expect($this->history->suggest('UBER', Direction::Out))->toBeNull();
+});
+
+it('conta um parcelamento como um único uso, não uma parcela por uso', function () {
+    $planCategory = Category::factory()->create();
+    $singleCategory = Category::factory()->create();
+
+    $plan = InstallmentPlan::factory()->create(['installments' => 12]);
+    Transaction::factory()->count(12)->create([
+        'account_id' => $plan->account_id,
+        'description' => 'Notebook', 'direction' => Direction::Out, 'category_id' => $planCategory->id,
+        'installment_plan_id' => $plan->id, 'status' => TransactionStatus::Posted,
+    ]);
+
+    Transaction::factory()->count(5)->create([
+        'description' => 'Notebook', 'direction' => Direction::Out, 'category_id' => $singleCategory->id,
+        'status' => TransactionStatus::Posted,
+    ]);
+
+    expect($this->history->suggest('NOTEBOOK', Direction::Out))->toBe($singleCategory->id);
+});
+
+it('ignora parcelas projetadas (status diferente de posted)', function () {
+    $category = Category::factory()->create();
+
+    Transaction::factory()->create(['description' => 'Notebook', 'direction' => Direction::Out, 'category_id' => $category->id, 'status' => TransactionStatus::Projected]);
+
+    expect($this->history->suggest('NOTEBOOK', Direction::Out))->toBeNull();
 });
 
 it('isola o histórico entre usuários', function () {

@@ -16,6 +16,9 @@ final class CreateRule
             'name' => $input['name'],
             // Primeira regra do usuário = prioridade 0; senão, uma a mais que a
             // maior prioridade existente (sempre roda por último, por padrão).
+            // Duas criações concorrentes podem calcular o mesmo max()+1 e
+            // empatar a prioridade; o desempate por id em scopeOrdered
+            // mantém a ordem determinística mesmo assim.
             'priority' => ((int) (Rule::query()->max('priority') ?? -1)) + 1,
             'is_active' => $input['is_active'] ?? true,
             'match' => $input['match'],

@@ -6,6 +6,7 @@ use App\Domain\Categories\Models\Category;
 use App\Domain\Rules\Data\RuleOutcome;
 use App\Domain\Tags\Models\Tag;
 use App\Domain\Transactions\Models\Transaction;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Grava numa transação o que uma avaliação de regras (RuleOutcome) decidiu.
@@ -15,7 +16,8 @@ final class ApplyRuleOutcome
 {
     /**
      * Só o que de fato mudaria: categoria/tag que não existem mais (regra
-     * salva antes de excluí-las) são ignoradas em silêncio.
+     * salva antes de excluí-las) ou categoria arquivada são ignoradas em
+     * silêncio.
      *
      * @return array{category_id?: int, description?: string, payee?: string, tag_ids?: list<int>, is_ignored?: true}
      */
@@ -29,7 +31,7 @@ final class ApplyRuleOutcome
 
         if ($outcome->categoryId !== null
             && $outcome->categoryId !== $transaction->category_id
-            && Category::query()->whereKey($outcome->categoryId)->exists()) {
+            && Category::query()->whereKey($outcome->categoryId)->where('is_archived', false)->exists()) {
             $changes['category_id'] = $outcome->categoryId;
         }
 
@@ -61,28 +63,35 @@ final class ApplyRuleOutcome
             return false;
         }
 
-        if (array_key_exists('category_id', $changes)) {
-            $transaction->category_id = $changes['category_id'];
-            $transaction->categorized_by = "rule:{$outcome->categoryRuleId}";
-        }
+        DB::transaction(function () use ($transaction, $outcome, $changes): void {
+            if (array_key_exists('category_id', $changes)) {
+                $transaction->category_id = $changes['category_id'];
+                $transaction->categorized_by = "rule:{$outcome->categoryRuleId}";
+            }
 
-        if (array_key_exists('description', $changes)) {
-            $transaction->description = $changes['description'];
-        }
+            if (array_key_exists('description', $changes)) {
+                $transaction->description = $changes['description'];
+            }
 
-        if (array_key_exists('payee', $changes)) {
-            $transaction->payee = $changes['payee'];
-        }
+            if (array_key_exists('payee', $changes)) {
+                $transaction->payee = $changes['payee'];
+            }
 
-        if (array_key_exists('is_ignored', $changes)) {
-            $transaction->is_ignored = true;
-        }
+            if (array_key_exists('is_ignored', $changes)) {
+                $transaction->is_ignored = true;
+            }
 
-        $transaction->save();
+            $transaction->save();
 
-        if (array_key_exists('tag_ids', $changes)) {
-            $transaction->tags()->syncWithoutDetaching($changes['tag_ids']);
-        }
+            if (array_key_exists('tag_ids', $changes)) {
+                $transaction->tags()->syncWithoutDetaching($changes['tag_ids']);
+                // A coleção carregada ficou desatualizada (sem as tags recém
+                // sincronizadas): descarta para a próxima leitura recarregar,
+                // senão uma segunda chamada com o mesmo outcome acharia que
+                // as tags ainda são novas e reportaria mudança de novo.
+                $transaction->unsetRelation('tags');
+            }
+        });
 
         return true;
     }

@@ -213,3 +213,22 @@ it('não exclui conta com transações', function () {
         ->assertStatus(409)
         ->assertJsonPath('code', 'account_has_transactions');
 });
+
+it('decompõe categorized_by em categorization (source e rule_id)', function (?string $categorizedBy, bool $withCategory, ?array $expected) {
+    actingAsUser();
+    $category = $withCategory ? Category::factory()->create() : null;
+    $tx = Transaction::factory()->create(['category_id' => $category?->id, 'categorized_by' => $categorizedBy]);
+
+    $this->getJson("/api/v1/transactions/{$tx->id}")
+        ->assertOk()
+        ->assertJsonPath('data.categorization', $expected);
+})->with([
+    'manual' => ['manual', true, ['source' => 'manual', 'rule_id' => null]],
+    'history' => ['history', true, ['source' => 'history', 'rule_id' => null]],
+    'pluggy' => ['pluggy', true, ['source' => 'pluggy', 'rule_id' => null]],
+    'rule:N' => ['rule:42', true, ['source' => 'rule', 'rule_id' => 42]],
+    'rule malformada (zero à esquerda)' => ['rule:007', true, null],
+    'lixo' => ['qualquer-coisa', true, null],
+    'sem categoria, mesmo com categorized_by preenchido' => ['manual', false, null],
+    'sem categoria e sem categorized_by' => [null, false, null],
+]);

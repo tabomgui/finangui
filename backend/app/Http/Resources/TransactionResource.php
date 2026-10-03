@@ -65,15 +65,22 @@ final class TransactionResource extends JsonResource
     /**
      * Decompõe categorized_by ("manual", "history", "pluggy" ou
      * "rule:{id}") para o frontend não precisar fazer parsing de string.
-     * Sem categoria ou valor desconhecido: nulo.
+     * Sem categoria (category_id nulo — ex.: a categoria foi excluída
+     * depois, o que zera category_id mas não categorized_by) ou valor
+     * desconhecido: nulo. O id da regra é validado por um padrão estrito
+     * (sem zero à esquerda, até 19 dígitos) para nunca estourar um int.
      *
      * @return array{source: 'manual'|'rule'|'history'|'pluggy', rule_id: int|null}|null
      */
     private function categorization(): ?array
     {
+        if ($this->category_id === null) {
+            return null;
+        }
+
         $categorizedBy = $this->categorized_by;
-        $ruleId = is_string($categorizedBy) && str_starts_with($categorizedBy, 'rule:')
-            ? (int) substr($categorizedBy, 5)
+        $ruleId = is_string($categorizedBy) && preg_match('/^rule:([1-9]\d{0,18})$/', $categorizedBy, $matches) === 1
+            ? (int) $matches[1]
             : 0;
 
         return match (true) {
