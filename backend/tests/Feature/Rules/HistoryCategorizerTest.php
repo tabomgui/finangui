@@ -99,3 +99,57 @@ it('isola o histórico entre usuários', function () {
     actingAsUser();
     expect($this->history->suggest('UBER', Direction::Out))->toBeNull();
 });
+
+it('suggestMany resolve vários pares numa só consulta, igual ao suggest() por linha', function () {
+    $uber = Category::factory()->create();
+    $uberOld = Category::factory()->create();
+    $pix = Category::factory()->create();
+
+    Transaction::factory()->create(['description' => 'Uber', 'direction' => Direction::Out, 'category_id' => $uber->id, 'date' => '2026-02-01']);
+    Transaction::factory()->create(['description' => 'Uber', 'direction' => Direction::Out, 'category_id' => $uberOld->id, 'date' => '2026-01-01']);
+    Transaction::factory()->create(['description' => 'Pix recebido', 'direction' => Direction::In, 'category_id' => $pix->id]);
+
+    $pairs = [
+        ['description_key' => 'UBER', 'direction' => 'out'],
+        ['description_key' => 'PIX RECEBIDO', 'direction' => 'in'],
+        ['description_key' => 'NADA AQUI', 'direction' => 'out'],
+    ];
+
+    $many = $this->history->suggestMany($pairs);
+
+    expect($many)->toHaveCount(2)
+        ->and($many['UBER|out'])->toBe($uber->id)
+        ->and($many['PIX RECEBIDO|in'])->toBe($pix->id);
+});
+
+it('suggestMany ignora chaves vazias e dedupe pares repetidos sem duplicar a consulta', function () {
+    $category = Category::factory()->create();
+    Transaction::factory()->create(['description' => 'Uber', 'direction' => Direction::Out, 'category_id' => $category->id]);
+
+    $many = $this->history->suggestMany([
+        ['description_key' => '', 'direction' => 'out'],
+        ['description_key' => 'UBER', 'direction' => 'out'],
+        ['description_key' => 'UBER', 'direction' => 'out'],
+    ]);
+
+    expect($many)->toBe(['UBER|out' => $category->id]);
+});
+
+it('suggestMany devolve vazio sem consultar quando não há pares', function () {
+    expect($this->history->suggestMany([]))->toBe([]);
+});
+
+it('suggestMany processa mais de 1000 pares em mais de uma consulta (chunk)', function () {
+    $category = Category::factory()->create();
+    Transaction::factory()->create(['description' => 'Uber', 'direction' => Direction::Out, 'category_id' => $category->id]);
+
+    $pairs = [];
+    for ($i = 0; $i < 1200; $i++) {
+        $pairs[] = ['description_key' => "CHAVE {$i}", 'direction' => 'out'];
+    }
+    $pairs[] = ['description_key' => 'UBER', 'direction' => 'out'];
+
+    $many = $this->history->suggestMany($pairs);
+
+    expect($many)->toBe(['UBER|out' => $category->id]);
+});

@@ -52,7 +52,17 @@ final class OfxParser implements Parser
         $matched = preg_match_all(self::BLOCK_PATTERN, $content, $matches, PREG_OFFSET_CAPTURE);
 
         if ($matched === false) {
-            return new ParseResult([], [['line' => 1, 'reason' => 'Não foi possível ler o arquivo OFX.']]);
+            return new ParseResult([], [['line' => 1, 'reason' => 'Não foi possível ler o arquivo OFX.']], unrecognized: true);
+        }
+
+        // Nenhum bloco de transação: ou o arquivo realmente não é OFX (ex.:
+        // formato forçado por engano sobre um CSV), ou é um extrato OFX
+        // estruturalmente válido só que vazio no período — indistinguíveis
+        // aqui, então trata como "não reconhecido" (o caso comum e o único
+        // em que isto importa: um extrato vazio de verdade não teria sido
+        // enviado).
+        if ($matched === 0) {
+            return new ParseResult([], [], unrecognized: true);
         }
 
         $line = 1;

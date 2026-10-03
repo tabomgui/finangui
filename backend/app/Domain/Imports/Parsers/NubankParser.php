@@ -119,6 +119,8 @@ final class NubankParser implements Parser
 
         if (! $headerFound) {
             $failed[] = ['line' => 1, 'reason' => 'Cabeçalho não encontrado.'];
+
+            return new ParseResult($rows, $failed, unrecognized: true);
         }
 
         return new ParseResult($rows, $failed);

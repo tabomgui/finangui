@@ -202,6 +202,7 @@ return [
         'duration' => 'duração',
         'email' => 'e-mail',
         'excerpt' => 'resumo',
+        'file' => 'arquivo',
         'filter' => 'filtro',
         'finished_at' => 'terminou em',
         'first_name' => 'primeiro nome',

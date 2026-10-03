@@ -5,37 +5,31 @@ namespace App\Domain\Imports\Actions;
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Imports\Data\ParsedRow;
 use App\Domain\Imports\Data\ParseResult;
-use App\Domain\Imports\Data\RowDecision;
 use App\Domain\Imports\Enums\ImportBatchStatus;
 use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Models\ImportBatch;
 use App\Domain\Imports\Support\FormatDetector;
-use App\Domain\Imports\Support\IngestionPlanner;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\ValidationException;
 
 /**
  * Lê e normaliza o arquivo enviado, detecta (ou usa) o formato, parseia e
- * grava um lote pendente — sem tocar em transações: a decisão de cada linha
- * (IngestionPlanner::plan) é só para a prévia, a mesma cascata que
- * ConfirmImportBatch/IngestTransactions vão rodar de novo (sob trava) na
- * confirmação.
+ * grava um lote pendente — sem tocar em transações e sem decidir nada sobre
+ * as linhas: a prévia (ImportPreview) roda o IngestionPlanner por conta
+ * própria, tanto aqui (lote recém-criado) quanto num GET de um lote
+ * pendente mais tarde, pelo mesmo caminho.
  */
 final class CreateImportBatch
 {
     private const MAX_LINES = 5000;
 
-    public function __construct(
-        private readonly IngestionPlanner $planner,
-    ) {}
+    private const MAX_FILENAME_LENGTH = 255;
 
     /**
-     * @return array{batch: ImportBatch, decisions: list<RowDecision>}
-     *
      * @throws ValidationException
      */
-    public function handle(Account $account, UploadedFile $file, ?ImportFormat $format): array
+    public function handle(Account $account, UploadedFile $file, ?ImportFormat $format): ImportBatch
     {
         // Lotes pendentes antigos nunca são confirmáveis de volta pelo
         // usuário (a tela de upload sempre parte de um lote novo), então não
@@ -67,32 +61,30 @@ final class CreateImportBatch
             ]);
         }
 
-        $batch = ImportBatch::create([
+        return ImportBatch::create([
             'account_id' => $account->id,
             'format' => $resolvedFormat,
             'source' => $resolvedFormat->source()->value,
-            'filename' => $file->getClientOriginalName(),
+            'filename' => mb_substr($file->getClientOriginalName(), 0, self::MAX_FILENAME_LENGTH),
             'status' => ImportBatchStatus::Pending,
             'rows' => array_map(fn (ParsedRow $row) => $row->toArray(), $result->rows),
             'stats' => ['failed' => $result->failed],
         ]);
-
-        $decisions = $this->planner->plan($account, $result->rows);
-
-        return ['batch' => $batch, 'decisions' => $decisions];
     }
 
     /**
      * Um formato forçado que não bate com o conteúdo não falha por parser
-     * (que só sabe fazer uma coisa: tentar achar o próprio cabeçalho) — vira
-     * exatamente a mesma falha que "cabeçalho não encontrado" de qualquer
-     * outro arquivo ilegível: nenhuma linha válida, uma única falha.
+     * (que só sabe fazer uma coisa: tentar achar o próprio cabeçalho) —
+     * `unrecognized` cobre isso de forma explícita (ver ParseResult); a
+     * segunda condição é só uma rede de segurança para um parser que, por
+     * algum motivo, não marque a flag mas também não ache nada.
      */
     private function isUnrecognized(?ParseResult $result): bool
     {
-        return $result !== null
-            && $result->rows === []
-            && count($result->failed) === 1
-            && $result->failed[0]['reason'] === 'Cabeçalho não encontrado.';
+        if ($result === null) {
+            return true;
+        }
+
+        return $result->unrecognized || ($result->rows === [] && $result->failed === []);
     }
 }

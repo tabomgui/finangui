@@ -12,8 +12,8 @@ final class ConfirmImportBatchRequest extends ApiRequest
     public function rules(): array
     {
         return [
-            'skip_lines' => ['sometimes', 'array'],
-            'skip_lines.*' => ['integer', 'min:1'],
+            'skip_lines' => ['sometimes', 'array', 'max:5000'],
+            'skip_lines.*' => ['integer', 'min:1', 'distinct'],
         ];
     }
 }

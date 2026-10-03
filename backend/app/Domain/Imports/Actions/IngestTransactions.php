@@ -17,6 +17,7 @@ use App\Domain\Imports\Support\IngestionPlanner;
 use App\Domain\Rules\Actions\CategorizeTransaction;
 use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Models\Rule;
+use App\Domain\Rules\Support\HistoryCategorizer;
 use App\Domain\Rules\Support\TextNormalizer;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Enums\TransactionSource;
@@ -25,6 +26,7 @@ use App\Domain\Transactions\Models\Transaction;
 use App\Support\Money\Money;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 /**
  * Lote completo de importação: trava a conta e o próprio lote, roda o
@@ -40,6 +42,7 @@ final class IngestTransactions
         private readonly StatementResolver $statementResolver,
         private readonly CategorizeTransaction $categorize,
         private readonly IngestionPlanner $planner,
+        private readonly HistoryCategorizer $history,
     ) {}
 
     /**
@@ -80,6 +83,11 @@ final class IngestTransactions
                 ->map(RuleDefinition::fromRule(...))
                 ->all();
 
+            // Uma consulta (ou poucas, em lotes de até 1000 chaves) para todo
+            // o histórico das linhas novas deste lote, em vez de uma consulta
+            // por transação inserida (ver HistoryCategorizer::suggestMany()).
+            $historyMemo = $this->history->suggestMany($this->newRowHistoryPairs($decisions));
+
             $stats = [
                 'inserted' => 0,
                 'duplicates' => 0,
@@ -98,10 +106,18 @@ final class IngestTransactions
 
             foreach ($decisions as $decision) {
                 match ($decision->outcome) {
-                    RowOutcome::New => $this->insertNew($locked, $account, $decision->row, $rules, $stats, $undo, $plansThisBatch),
+                    RowOutcome::New => $this->insertNew($locked, $account, $decision->row, $rules, $historyMemo, $stats, $plansThisBatch),
                     RowOutcome::Duplicate => $stats['duplicates']++,
                     RowOutcome::Update => $this->update($decision, $undo, $stats),
-                    RowOutcome::ReplaceInstallment => $this->replaceInstallmentOutcome($decision, $locked, $undo, $stats),
+                    // transactionId null: o IngestionPlanner já identificou que
+                    // isto bate com a primeira parcela da mesma compra vista
+                    // mais cedo neste mesmo arquivo (ver
+                    // IngestionPlanner::matchesPlanSeedInBatch) — a prévia
+                    // mostra "replace_installment" sem casamento no banco, e a
+                    // execução usa o plano que o próprio lote acabou de criar.
+                    RowOutcome::ReplaceInstallment => $decision->transactionId !== null
+                        ? $this->replaceInstallmentOutcome($decision, $locked, $undo, $stats)
+                        : $this->replaceInstallmentCreatedThisBatch($decision, $locked, $plansThisBatch, $undo, $stats),
                     RowOutcome::Adopt => $this->adopt($decision, $locked, $undo, $stats),
                     RowOutcome::SwapPending => $this->swapPending($decision, $undo, $stats),
                 };
@@ -126,9 +142,15 @@ final class IngestTransactions
     }
 
     /**
+     * Linha nova "de verdade": o IngestionPlanner só devolve New para uma
+     * parcela quando nem o banco (ReplaceInstallment com transactionId) nem
+     * nenhuma linha anterior deste mesmo arquivo (ReplaceInstallment sem
+     * transactionId, ver replaceInstallmentCreatedThisBatch()) já cobrem
+     * esta compra — então aqui sempre cria o plano quando é parcela.
+     *
      * @param  list<RuleDefinition>  $rules
+     * @param  array<string, int>  $historyMemo
      * @param  array<string, int>  $stats
-     * @param  list<array{transaction_id: int, attributes: array<string, mixed>}>  $undo
      * @param  list<array{plan: InstallmentPlan, descriptionKey: string, total: int, amount: int}>  $plansThisBatch
      */
     private function insertNew(
@@ -136,32 +158,13 @@ final class IngestTransactions
         Account $account,
         ParsedRow $row,
         array $rules,
+        array $historyMemo,
         array &$stats,
-        array &$undo,
         array &$plansThisBatch,
     ): void {
         // Só conta credit_card e só saída: a mesma condição que o planner usa
         // para tentar casar com uma parcela existente (ver IngestionPlanner).
         $isInstallment = $row->installment !== null && $account->isCreditCard() && $row->direction === Direction::Out;
-
-        if ($isInstallment) {
-            $matchedPlan = $this->matchPlanCreatedThisBatch($plansThisBatch, $row);
-
-            if ($matchedPlan !== null) {
-                /** @var array{number: int, total: int} $installment */
-                $installment = $row->installment;
-                $parcel = Transaction::query()
-                    ->where('installment_plan_id', $matchedPlan['plan']->id)
-                    ->where('installment_number', $installment['number'])
-                    ->firstOrFail();
-
-                $this->replaceParcel($parcel, $row, $batch, $undo);
-                $stats['replaced']++;
-
-                return;
-            }
-        }
-
         $plan = $isInstallment ? $this->createInstallmentPlan($batch, $account, $row) : null;
 
         $transaction = new Transaction([
@@ -187,7 +190,7 @@ final class IngestTransactions
         $this->assignStatement->handle($transaction);
         $transaction->save();
 
-        $this->categorize->handleImported($transaction, $rules);
+        $this->categorize->handleImported($transaction, $rules, $historyMemo);
 
         if ($plan !== null) {
             /** @var array{number: int, total: int} $installment */
@@ -202,6 +205,61 @@ final class IngestTransactions
         }
 
         $stats['inserted']++;
+    }
+
+    /**
+     * Parcela de uma compra nova cuja primeira ocorrência, neste mesmo
+     * arquivo, já criou o plano (o IngestionPlanner casou pela mesma regra
+     * em matchesPlanSeedInBatch — total, chave de descrição e valor com
+     * tolerância menor que o total de parcelas): substitui a parcela
+     * projetada que insertNew() já deixou pronta para este número.
+     *
+     * @param  list<array{plan: InstallmentPlan, descriptionKey: string, total: int, amount: int}>  $plansThisBatch
+     * @param  list<array{transaction_id: int, attributes: array<string, mixed>}>  $undo
+     * @param  array<string, int>  $stats
+     */
+    private function replaceInstallmentCreatedThisBatch(RowDecision $decision, ImportBatch $batch, array $plansThisBatch, array &$undo, array &$stats): void
+    {
+        $matchedPlan = $this->matchPlanCreatedThisBatch($plansThisBatch, $decision->row);
+
+        if ($matchedPlan === null) {
+            // Não deveria acontecer: o planner usa a mesma regra de
+            // casamento antes de decidir isto. Falha alto em vez de inserir
+            // uma parcela "nova" por engano, que duplicaria o plano.
+            throw new RuntimeException("Linha {$decision->row->line}: parcela esperada no lote não foi encontrada.");
+        }
+
+        /** @var array{number: int, total: int} $installment */
+        $installment = $decision->row->installment;
+        $parcel = Transaction::query()
+            ->where('installment_plan_id', $matchedPlan['plan']->id)
+            ->where('installment_number', $installment['number'])
+            ->firstOrFail();
+
+        $this->replaceParcel($parcel, $decision->row, $batch, $undo);
+        $stats['replaced']++;
+    }
+
+    /**
+     * @param  list<RowDecision>  $decisions
+     * @return list<array{description_key: string, direction: string}>
+     */
+    private function newRowHistoryPairs(array $decisions): array
+    {
+        $pairs = [];
+
+        foreach ($decisions as $decision) {
+            if ($decision->outcome !== RowOutcome::New) {
+                continue;
+            }
+
+            $pairs[] = [
+                'description_key' => TextNormalizer::key($decision->row->description),
+                'direction' => $decision->row->direction->value,
+            ];
+        }
+
+        return $pairs;
     }
 
     /**
