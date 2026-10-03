@@ -139,11 +139,12 @@ final class IngestionPlanner
     /**
      * Parcela de plano do mesmo cartão sem external_id, mesma direção,
      * installments do plano = total, installment_number = N, valor com
-     * diferença menor que N centavos (o resto da divisão pode cair na
-     * primeira ou na última parcela) e descrição do plano parecida; data da
-     * parcela a até 35 dias da linha, ou data da compra do plano a até 5
-     * dias (alguns bancos datam a parcela com a data da compra). Empate:
-     * data mais próxima, depois menor id.
+     * diferença menor que o número de parcelas do plano (o resto da divisão
+     * pode cair na primeira ou na última parcela, e nunca passa do total de
+     * parcelas) e descrição do plano parecida; data da parcela a até 35
+     * dias da linha, ou data da compra do plano a até 5 dias (alguns bancos
+     * datam a parcela com a data da compra). Empate: data mais próxima,
+     * depois menor id.
      *
      * @param  Collection<int, Transaction>  $pool
      * @param  array<int, true>  $usedIds
@@ -171,7 +172,7 @@ final class IngestionPlanner
                 continue;
             }
 
-            if (abs($candidate->amount->cents - $row->amount) >= $installment['number']) {
+            if (abs($candidate->amount->cents - $row->amount) >= $plan->installments) {
                 continue;
             }
 

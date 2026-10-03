@@ -351,7 +351,7 @@ it('substitui parcela intermediária já lançada pelo job diário (status poste
         ->and($decisions[0]->transactionId)->toBe($parcel->id);
 });
 
-it('tolera até N-1 centavos de diferença (5 centavos numa parcela nº7 de 7x)', function () {
+it('tolera até installments-1 centavos de diferença (5 centavos numa parcela nº7 de 7x)', function () {
     $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
     $plan = InstallmentPlan::factory()->create([
         'account_id' => $card->id, 'description' => 'Compra Eletronico', 'installments' => 7, 'purchase_date' => '2025-09-05',
@@ -366,6 +366,28 @@ it('tolera até N-1 centavos de diferença (5 centavos numa parcela nº7 de 7x)'
         importRow([
             'description' => 'COMPRA ELETRONICO LOJA', 'amount' => 10005, 'date' => '2026-03-07',
             'installment' => ['number' => 7, 'total' => 7],
+        ]),
+    ]);
+
+    expect($decisions[0]->outcome)->toBe(RowOutcome::ReplaceInstallment)
+        ->and($decisions[0]->transactionId)->toBe($parcel->id);
+});
+
+it('a tolerância é pelo total de parcelas do plano, não pelo número da parcela (nº1 de 7x com 5 centavos de diferença substitui)', function () {
+    $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+    $plan = InstallmentPlan::factory()->create([
+        'account_id' => $card->id, 'description' => 'Compra Eletronico', 'installments' => 7, 'purchase_date' => '2026-03-05',
+    ]);
+    $parcel = Transaction::factory()->create([
+        'account_id' => $card->id, 'status' => 'posted', 'installment_plan_id' => $plan->id,
+        'installment_number' => 1, 'amount' => 10000, 'direction' => Direction::Out,
+        'description' => 'Compra Eletronico', 'original_description' => 'Compra Eletronico', 'date' => '2026-03-05',
+    ]);
+
+    $decisions = $this->planner->plan($card, [
+        importRow([
+            'description' => 'COMPRA ELETRONICO LOJA', 'amount' => 10005, 'date' => '2026-03-07',
+            'installment' => ['number' => 1, 'total' => 7],
         ]),
     ]);
 
