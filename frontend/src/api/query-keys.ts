@@ -34,13 +34,19 @@ export const queryKeys = {
   cardStatements: (cardId: number) => ['card-statements', 'list', cardId] as const,
   statementPreview: (cardId: number, date: string) => ['card-statements', 'preview', cardId, date] as const,
   installmentPlans: (cardId: number) => ['installment-plans', cardId] as const,
+  rules: () => ['rules'] as const,
+  rule: (id: number) => ['rules', id] as const,
+  rulePreview: (body: unknown) => ['rule-preview', body] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {
   return Promise.all(roots.map((root) => queryClient.invalidateQueries({ queryKey: [root] })))
 }
 
-/** Transações, transferências, contas e limites/faturas de cartão mexem em saldos, listas e no resumo do mês. */
+/**
+ * Transações, transferências, contas e limites/faturas de cartão mexem em saldos, listas e no resumo
+ * do mês; lançamentos novos também mudam o que uma prévia de regra ainda não salva mostraria.
+ */
 export function invalidateLedger(queryClient: QueryClient) {
   return invalidate(queryClient, [
     'transactions',
@@ -50,6 +56,7 @@ export function invalidateLedger(queryClient: QueryClient) {
     'cards',
     'card-statements',
     'installment-plans',
+    'rule-preview',
   ])
 }
 
@@ -60,4 +67,8 @@ export function invalidateCategories(queryClient: QueryClient) {
 
 export function invalidateTags(queryClient: QueryClient) {
   return invalidate(queryClient, ['tags', 'transactions'])
+}
+
+export function invalidateRules(queryClient: QueryClient) {
+  return invalidate(queryClient, ['rules'])
 }

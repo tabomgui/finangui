@@ -281,6 +281,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/rules/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["rule.reorder"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rules/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["rule.preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["rule.index"];
+        put?: never;
+        post: operations["rule.store"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rules/{rule}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["rule.show"];
+        put?: never;
+        post?: never;
+        delete: operations["rule.destroy"];
+        options?: never;
+        head?: never;
+        patch: operations["rule.update"];
+        trace?: never;
+    };
+    "/rules/{rule}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["rule.apply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -434,6 +514,10 @@ export interface components {
          * @enum {string}
          */
         AccountType: "checking" | "savings" | "cash" | "credit_card";
+        /** ApplyRuleRequest */
+        ApplyRuleRequest: {
+            overwrite?: boolean;
+        };
         /** CardResource */
         CardResource: {
             id: number;
@@ -521,6 +605,25 @@ export interface components {
             date: string;
             description?: string | null;
         };
+        /** PreviewRuleRequest */
+        PreviewRuleRequest: {
+            /** @enum {string} */
+            match: "all" | "any";
+            conditions: {
+                field?: string;
+                op?: string;
+                value?: string;
+                match?: string;
+                conditions?: string[][];
+            }[];
+            actions: {
+                type?: string;
+                category_id?: number;
+                tag_id?: number;
+                value?: string;
+            }[];
+            overwrite?: boolean;
+        };
         /** RegisterRequest */
         RegisterRequest: {
             name: string;
@@ -528,6 +631,53 @@ export interface components {
             email: string;
             password: string;
             password_confirmation: string;
+        };
+        /** ReorderRulesRequest */
+        ReorderRulesRequest: {
+            ids: number[];
+        };
+        /** RulePreviewResource */
+        RulePreviewResource: {
+            matched: number;
+            changed: number;
+            sample: {
+                transaction: components["schemas"]["TransactionResource"];
+                changes: {
+                    category_id: number | null;
+                    description: string | null;
+                    payee: string | null;
+                    tag_ids: number[];
+                    is_ignored: boolean;
+                };
+            }[];
+        };
+        /** RuleResource */
+        RuleResource: {
+            id: number;
+            name: string;
+            priority: number;
+            is_active: boolean;
+            match: string;
+            conditions: ({
+                field: string;
+                op: string;
+                value: string | number;
+            } | {
+                match: string;
+                conditions: {
+                    field: string;
+                    op: string;
+                    value: string | number;
+                }[];
+            })[];
+            actions: {
+                type: string;
+                category_id?: number;
+                tag_id?: number;
+                value?: string;
+            }[];
+            last_applied_at: string | null;
+            last_applied_changes: number | null;
         };
         /** SaveTagRequest */
         SaveTagRequest: {
@@ -560,6 +710,26 @@ export interface components {
             icon?: string | null;
             color?: string | null;
             is_transfer?: boolean;
+        };
+        /** StoreRuleRequest */
+        StoreRuleRequest: {
+            name: string;
+            is_active?: boolean;
+            /** @enum {string} */
+            match: "all" | "any";
+            conditions: {
+                field?: string;
+                op?: string;
+                value?: string;
+                match?: string;
+                conditions?: string[][];
+            }[];
+            actions: {
+                type?: string;
+                category_id?: number;
+                tag_id?: number;
+                value?: string;
+            }[];
         };
         /** StoreTransactionRequest */
         StoreTransactionRequest: {
@@ -631,6 +801,23 @@ export interface components {
             status: components["schemas"]["TransactionStatus"];
             source: components["schemas"]["TransactionSource"];
             categorized_by: string | null;
+            categorization: {
+                /** @constant */
+                source: "manual";
+                rule_id: null;
+            } | {
+                /** @constant */
+                source: "history";
+                rule_id: null;
+            } | {
+                /** @constant */
+                source: "pluggy";
+                rule_id: null;
+            } | {
+                /** @constant */
+                source: "rule";
+                rule_id: number;
+            } | null;
             is_ignored: boolean;
             transfer_id: string | null;
             statement_id: number | null;
@@ -697,6 +884,26 @@ export interface components {
             password?: string;
             current_password?: string | null;
             password_confirmation?: string;
+        };
+        /** UpdateRuleRequest */
+        UpdateRuleRequest: {
+            name?: string;
+            is_active?: boolean;
+            /** @enum {string} */
+            match?: "all" | "any";
+            conditions?: {
+                field?: string;
+                op?: string;
+                value?: string;
+                match?: string;
+                conditions?: string[][];
+            }[];
+            actions?: {
+                type?: string;
+                category_id?: number;
+                tag_id?: number;
+                value?: string;
+            }[];
         };
         /** UpdateStatementRequest */
         UpdateStatementRequest: {
@@ -1597,6 +1804,224 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "rule.reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderRulesRequest"];
+            };
+        };
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "rule.preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description `RulePreviewResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RulePreviewResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "rule.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Array of `RuleResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleResource"][];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
+    "rule.store": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoreRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description `RuleResource` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "rule.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The rule ID */
+                rule: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `RuleResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "rule.destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The rule ID */
+                rule: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "rule.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The rule ID */
+                rule: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["UpdateRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description `RuleResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "rule.apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The rule ID */
+                rule: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ApplyRuleRequest"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            queued: boolean;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
             422: components["responses"]["ValidationException"];
         };
     };

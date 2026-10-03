@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
-import { invalidateCategories, invalidateLedger, invalidateTags, queryKeys } from './query-keys'
+import { invalidateCategories, invalidateLedger, invalidateRules, invalidateTags, queryKeys } from './query-keys'
 
 function seed(client: QueryClient) {
   for (const key of [
@@ -15,6 +15,8 @@ function seed(client: QueryClient) {
     queryKeys.cardStatements(1),
     queryKeys.statementPreview(1, '2026-10-10'),
     queryKeys.installmentPlans(1),
+    queryKeys.rules(),
+    queryKeys.rulePreview({ match: 'all' }),
   ]) {
     client.setQueryData(key, 'x')
   }
@@ -34,7 +36,7 @@ describe('query keys', () => {
     expect(queryKeys.transactions({ search: '', account_id: undefined })).toEqual(['transactions', 'list', {}])
   })
 
-  it('invalidateLedger invalida transações, transferências, contas, dashboard e cartões', async () => {
+  it('invalidateLedger invalida transações, transferências, contas, dashboard, cartões e a prévia de regra', async () => {
     const client = new QueryClient()
     seed(client)
     await invalidateLedger(client)
@@ -44,6 +46,7 @@ describe('query keys', () => {
       'cards',
       'dashboard',
       'installment-plans',
+      'rule-preview',
       'transactions',
       'transfers',
     ])
@@ -61,5 +64,12 @@ describe('query keys', () => {
     seed(client)
     await invalidateTags(client)
     expect(invalidated(client)).toEqual(['tags', 'transactions'])
+  })
+
+  it('invalidateRules invalida só as regras', async () => {
+    const client = new QueryClient()
+    seed(client)
+    await invalidateRules(client)
+    expect(invalidated(client)).toEqual(['rules'])
   })
 })
