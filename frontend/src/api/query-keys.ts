@@ -37,6 +37,8 @@ export const queryKeys = {
   rules: () => ['rules'] as const,
   rule: (id: number) => ['rules', id] as const,
   rulePreview: (body: unknown) => ['rule-preview', body] as const,
+  importBatches: (accountId?: number) => ['import-batches', { accountId }] as const,
+  importBatch: (id: number) => ['import-batches', 'detail', id] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {
@@ -77,4 +79,8 @@ export function invalidateTags(queryClient: QueryClient) {
 
 export function invalidateRules(queryClient: QueryClient) {
   return invalidate(queryClient, ['rules'])
+}
+
+export function invalidateImports(queryClient: QueryClient) {
+  return invalidate(queryClient, ['import-batches'])
 }

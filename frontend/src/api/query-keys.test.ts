@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
-import { invalidateCategories, invalidateLedger, invalidateRules, invalidateTags, queryKeys } from './query-keys'
+import { invalidateCategories, invalidateImports, invalidateLedger, invalidateRules, invalidateTags, queryKeys } from './query-keys'
 
 function seed(client: QueryClient) {
   for (const key of [
@@ -17,6 +17,8 @@ function seed(client: QueryClient) {
     queryKeys.installmentPlans(1),
     queryKeys.rules(),
     queryKeys.rulePreview({ match: 'all' }),
+    queryKeys.importBatches(),
+    queryKeys.importBatch(1),
   ]) {
     client.setQueryData(key, 'x')
   }
@@ -71,5 +73,12 @@ describe('query keys', () => {
     seed(client)
     await invalidateRules(client)
     expect(invalidated(client)).toEqual(['rules'])
+  })
+
+  it('invalidateImports invalida só os lotes de importação', async () => {
+    const client = new QueryClient()
+    seed(client)
+    await invalidateImports(client)
+    expect(invalidated(client)).toEqual(['import-batches'])
   })
 })
