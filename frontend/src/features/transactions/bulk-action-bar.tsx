@@ -1,13 +1,15 @@
-import { LoaderCircle, Tags, X } from 'lucide-react'
+import { ArrowLeftRight, LoaderCircle, Tags, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useBulkUpdateTransactions } from '@/api/queries/transactions'
+import { useLinkTransfer } from '@/api/queries/transfer-suggestions'
 import { useTags } from '@/api/queries/tags'
 import type { components } from '@/api/schema'
 import type { Transaction } from '@/api/types'
 import { CategoryPicker } from '@/components/shared/category-picker'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { mergeTagIds, selectionKind, transacaoCount } from './bulk'
+import { notifyError } from '@/lib/form-errors'
+import { canLinkAsTransfer, mergeTagIds, orderForLink, selectionKind, transacaoCount } from './bulk'
 
 type UpdateTransactionRequest = components['schemas']['UpdateTransactionRequest']
 
@@ -19,10 +21,23 @@ type BulkActionBarProps = {
 export function BulkActionBar({ selected, onDone }: BulkActionBarProps) {
   const { data: tags = [] } = useTags()
   const bulkUpdate = useBulkUpdateTransactions()
-  const pending = bulkUpdate.isPending
+  const linkTransfer = useLinkTransfer()
+  const pending = bulkUpdate.isPending || linkTransfer.isPending
   // Entradas e saídas têm árvores de categoria diferentes; conta pernas de transferência pela
   // própria direction. Seleção mista desabilita a categoria em vez de adivinhar qual árvore mostrar.
   const kind = selectionKind(selected)
+  const canLink = canLinkAsTransfer(selected)
+
+  async function handleLink() {
+    const { out, in: inLeg } = orderForLink(selected)
+    try {
+      await linkTransfer.mutateAsync({ out_transaction_id: out.id, in_transaction_id: inLeg.id })
+      toast.success('Transferência criada.')
+      onDone()
+    } catch (error) {
+      notifyError(error)
+    }
+  }
 
   const apply = async (label: string, update: (transaction: Transaction) => UpdateTransactionRequest) => {
     const byId = new Map(selected.map((transaction) => [transaction.id, transaction]))
@@ -86,6 +101,12 @@ export function BulkActionBar({ selected, onDone }: BulkActionBarProps) {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        {canLink && (
+          <Button variant="outline" disabled={pending} className="gap-2" onClick={handleLink}>
+            {linkTransfer.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ArrowLeftRight className="h-4 w-4" />}
+            Juntar como transferência
+          </Button>
+        )}
         <Button variant="ghost" size="icon" aria-label="Cancelar seleção" disabled={pending} onClick={onDone}>
           <X className="h-4 w-4" />
         </Button>

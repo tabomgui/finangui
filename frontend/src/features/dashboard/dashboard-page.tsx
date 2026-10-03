@@ -17,6 +17,7 @@ import { useReconnectFlow } from '../banking/use-reconnect-flow'
 import { AccountsCard } from './accounts-card'
 import { BalanceHero } from './balance-hero'
 import { MonthNav } from './month-nav'
+import { PendingCard } from './pending-card'
 import { RecentTransactionsCard } from './recent-transactions-card'
 import { monthFromParam } from './shares'
 import { StatementsCard } from './statements-card'
@@ -94,6 +95,7 @@ export function DashboardPage() {
         ) : (
           <div className={cn('space-y-4 transition-opacity', isPlaceholderData && 'opacity-60')} aria-busy={isPlaceholderData}>
             <SummaryCards income={data.income} expense={data.expense} net={data.net} currency={data.currency} />
+            <PendingCard />
             <StatementsCard />
             <div className="grid gap-4 lg:grid-cols-2">
               <TopCategoriesCard categories={data.top_categories} expense={data.expense} currency={data.currency} month={month} />

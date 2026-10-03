@@ -28,6 +28,7 @@ export const queryKeys = {
   transaction: (id: number) => ['transactions', 'detail', id] as const,
   transfersRoot: () => ['transfers'] as const,
   transfer: (id: string) => ['transfers', id] as const,
+  transferSuggestions: () => ['transfer-suggestions'] as const,
   dashboard: (month: string) => ['dashboard', month] as const,
   cards: (includeArchived: boolean) => ['cards', 'list', { includeArchived }] as const,
   card: (id: number) => ['cards', 'detail', id] as const,

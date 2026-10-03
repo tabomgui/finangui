@@ -37,8 +37,22 @@ function pluralize(count: number, singular: string, plural: string): string {
 
 type SummaryKey = keyof ImportPreview['summary']
 
-const SUMMARY_ORDER: SummaryKey[] = ['new', 'duplicate', 'update', 'replace_installment', 'adopt', 'swap_pending', 'failed']
+const SUMMARY_ORDER: SummaryKey[] = [
+  'new',
+  'duplicate',
+  'update',
+  'replace_installment',
+  'adopt',
+  'swap_pending',
+  'failed',
+  'transfers_linked',
+  'transfer_suggestions',
+]
 
+// `transfers_linked`/`transfer_suggestions` não seguem o padrão "N <adjetivo> transações" dos
+// outros (são uma contagem de transferências ligadas/sugeridas pelo lote, não de linhas do
+// extrato): a palavra já inclui o substantivo, por isso o `summaryText()` abaixo as monta sem o
+// "lançamentos"/"transações" implícito dos demais itens.
 const SUMMARY_WORDS: Record<SummaryKey, [string, string]> = {
   new: ['nova', 'novas'],
   duplicate: ['já importada', 'já importadas'],
@@ -47,6 +61,8 @@ const SUMMARY_WORDS: Record<SummaryKey, [string, string]> = {
   adopt: ['casada com lançamento manual', 'casadas com lançamento manual'],
   swap_pending: ['pendente confirmada', 'pendentes confirmadas'],
   failed: ['inválida', 'inválidas'],
+  transfers_linked: ['transferência ligada', 'transferências ligadas'],
+  transfer_suggestions: ['sugestão', 'sugestões'],
 }
 
 /** Texto curto do resultado de um lote: só os totais diferentes de zero, concatenados por " · ". */

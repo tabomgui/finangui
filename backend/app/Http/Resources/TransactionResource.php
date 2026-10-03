@@ -49,6 +49,11 @@ final class TransactionResource extends JsonResource
             'tags' => TagResource::collection($this->whenLoaded('tags')),
             'status' => $this->status,
             'source' => $this->source,
+            // Só o frontend decide o texto de confirmação ao excluir uma perna de transferência
+            // (duas pernas sem external_id: exclui as duas; a outra perna tem external_id —
+            // veio do banco: exclui só esta, ver DeleteTransaction::handle()). Omitido, nunca
+            // `null`, quando ausente (mesma razão de `rule_id` em `categorization()`).
+            'external_id' => $this->when($this->external_id !== null, fn () => (string) $this->external_id),
             'categorized_by' => $this->categorized_by,
             'categorization' => $this->categorization(),
             'is_ignored' => $this->is_ignored,

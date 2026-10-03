@@ -1,6 +1,7 @@
-import { List, Plus, TriangleAlert } from 'lucide-react'
+import { ArrowRight, List, Plus, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { useTransferSuggestions } from '@/api/queries/transfer-suggestions'
 import { useTransactions } from '@/api/queries/transactions'
 import { PageBody } from '@/components/layout/page-body'
 import { headerButton, PageHeader } from '@/components/layout/page-header'
@@ -26,6 +27,16 @@ export function TransactionsPage() {
   const query = useTransactions(effectiveTransactionFilters(filters, showFuture))
   const transactions = query.data?.pages.flatMap((page) => page.data) ?? []
   const filtered = activeFilterCount(filters) > 0 || filters.search !== undefined
+
+  // Sem endpoint de contagem: só a primeira página de sugestões (mesma lógica do `PendingCard`
+  // do Início) — "N+" quando há mais que essa página, nunca busca as demais aqui.
+  const suggestionsFirstPage = useTransferSuggestions().data?.pages[0]
+  const pendingSuggestions = suggestionsFirstPage?.data.length ?? 0
+  const hasMoreSuggestions = suggestionsFirstPage?.meta.next_cursor != null
+  const suggestionsLabel =
+    pendingSuggestions === 1 && !hasMoreSuggestions
+      ? '1 sugestão de transferência'
+      : `${pendingSuggestions}${hasMoreSuggestions ? '+' : ''} sugestões de transferência`
 
   const [selecting, setSelecting] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -63,6 +74,15 @@ export function TransactionsPage() {
         }
       />
       <PageBody>
+        {pendingSuggestions > 0 && (
+          <Link
+            to="/transferencias/sugestoes"
+            className="flex items-center justify-between gap-2 rounded-xl bg-muted px-4 py-2 text-sm font-medium hover:bg-muted/70"
+          >
+            <span>{suggestionsLabel}</span>
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        )}
         <TransactionFilters filters={filters} />
         {!query.isError && transactions.length > 0 && (
           <div className="flex justify-end">
