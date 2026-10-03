@@ -45,6 +45,7 @@ function connection(overrides: Partial<BankConnection> = {}): BankConnection {
     last_error: null,
     accounts: [],
     pending_accounts: [],
+    unlinked_accounts: [],
     ...overrides,
   }
 }

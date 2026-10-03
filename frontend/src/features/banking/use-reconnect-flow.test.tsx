@@ -51,6 +51,7 @@ function connection(overrides: Partial<BankConnection> = {}): BankConnection {
     last_error: 'Reconexão necessária.',
     accounts: [],
     pending_accounts: [],
+    unlinked_accounts: [],
     ...overrides,
   }
 }

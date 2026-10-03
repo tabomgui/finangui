@@ -77,6 +77,7 @@ function connection(pendingAccounts: ProviderAccount[]): BankConnection {
     last_error: null,
     accounts: [],
     pending_accounts: pendingAccounts,
+    unlinked_accounts: [],
   }
 }
 

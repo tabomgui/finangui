@@ -702,6 +702,7 @@ export interface components {
                 provider_balance: number | null;
             }[];
             pending_accounts: components["schemas"]["ProviderAccountResource"][];
+            unlinked_accounts: components["schemas"]["ProviderAccountResource"][];
         };
         /**
          * BankProviderName
@@ -915,17 +916,24 @@ export interface components {
         };
         /**
          * LinkAccountsRequest
-         * @description As contas do banco (e seu tipo/moeda) vêm de settings.pending_accounts,
-         *     gravado por App\Domain\Banking\Actions\CreateConnection — aqui só
-         *     validamos o formato do pedido; a gravação em si (criar/vincular conta,
-         *     trocar o status) é App\Domain\Banking\Actions\LinkAccounts, sob lock.
+         * @description As contas do banco (e seu tipo/moeda) vêm de settings.pending_accounts
+         *     (vínculo inicial, gravado por App\Domain\Banking\Actions\CreateConnection)
+         *     ou settings.unlinked_accounts (conexão já `active`, contas que o banco
+         *     passou a reportar depois — gravado por
+         *     App\Domain\Banking\Actions\SyncAccounts); aqui só validamos o formato do
+         *     pedido, a gravação em si (criar/vincular conta, trocar o status) é
+         *     App\Domain\Banking\Actions\LinkAccounts, sob lock.
          *
-         *     Quando a conexão não está `pending_link` (já vinculada antes, ou nem
-         *     existe mais `pending_accounts`), as regras ficam soltas de propósito: a
-         *     checagem de cobertura/tipo/moeda não faz sentido sem as contas do banco
-         *     em mãos, e quem deve rejeitar o pedido é a Action (409
-         *     connection_not_pending_link), não um 422 de validação que mascararia a
-         *     causa real.
+         *     Cobertura total das contas pendentes só é exigida no vínculo inicial
+         *     (`pending_link`): uma conexão já `active` aceita vincular só algumas das
+         *     `unlinked_accounts` por vez (o resto continua pendente para um próximo
+         *     vínculo).
+         *
+         *     Quando a conexão não está em nenhum desses dois estados com contas
+         *     pendentes, as regras ficam soltas de propósito: a checagem de
+         *     cobertura/tipo/moeda não faz sentido sem as contas do banco em mãos, e
+         *     quem deve rejeitar o pedido é a Action (409 connection_not_pending_link),
+         *     não um 422 de validação que mascararia a causa real.
          */
         LinkAccountsRequest: {
             links: {
@@ -987,6 +995,11 @@ export interface components {
              */
             kind: components["schemas"]["AccountType"];
             currency: string;
+            /**
+             * @description Sinal do app, não o do provedor: em cartão, o valor devido já
+             *     sai negativo aqui, como o saldo calculado da conta vai ficar
+             *     depois do vínculo — ver AccountMapper::appBalanceCents().
+             */
             balance: number;
             suggested_account_id: number | null;
         };

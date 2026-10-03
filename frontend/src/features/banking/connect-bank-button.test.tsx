@@ -79,6 +79,7 @@ function connectionResult(): { connection: BankConnection; provider_accounts: Ba
       last_error: null,
       accounts: [],
       pending_accounts: pendingAccounts,
+      unlinked_accounts: [],
     },
     provider_accounts: pendingAccounts,
   }
