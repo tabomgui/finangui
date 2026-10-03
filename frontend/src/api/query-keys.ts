@@ -39,6 +39,7 @@ export const queryKeys = {
   rulePreview: (body: unknown) => ['rule-preview', body] as const,
   importBatches: (accountId?: number) => ['import-batches', 'list', { accountId }] as const,
   importBatch: (id: number) => ['import-batches', 'detail', id] as const,
+  bankConnections: () => ['bank-connections'] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {
@@ -95,4 +96,8 @@ export function invalidateImports(queryClient: QueryClient) {
  */
 export function invalidateImportBatchesList(queryClient: QueryClient) {
   return queryClient.invalidateQueries({ queryKey: ['import-batches', 'list'] })
+}
+
+export function invalidateBankConnections(queryClient: QueryClient) {
+  return invalidate(queryClient, ['bank-connections'])
 }

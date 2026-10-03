@@ -1,6 +1,7 @@
 import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
 import {
+  invalidateBankConnections,
   invalidateCategories,
   invalidateImportBatchesList,
   invalidateImports,
@@ -27,6 +28,7 @@ function seed(client: QueryClient) {
     queryKeys.rulePreview({ match: 'all' }),
     queryKeys.importBatches(),
     queryKeys.importBatch(1),
+    queryKeys.bankConnections(),
   ]) {
     client.setQueryData(key, 'x')
   }
@@ -98,5 +100,12 @@ describe('query keys', () => {
     const cache = client.getQueryCache()
     expect(cache.find({ queryKey: queryKeys.importBatches() })?.state.isInvalidated).toBe(true)
     expect(cache.find({ queryKey: queryKeys.importBatch(1) })?.state.isInvalidated).toBe(false)
+  })
+
+  it('invalidateBankConnections invalida só as conexões bancárias', async () => {
+    const client = new QueryClient()
+    seed(client)
+    await invalidateBankConnections(client)
+    expect(invalidated(client)).toEqual(['bank-connections'])
   })
 })

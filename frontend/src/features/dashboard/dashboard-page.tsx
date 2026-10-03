@@ -1,6 +1,7 @@
 import { Landmark, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { useBankConnections } from '@/api/queries/bank-connections'
 import { useDashboard } from '@/api/queries/dashboard'
 import { PageBody } from '@/components/layout/page-body'
 import { PageHeader } from '@/components/layout/page-header'
@@ -10,6 +11,7 @@ import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { monthKey } from '@/lib/date'
 import { cn } from '@/lib/utils'
+import { ReauthBanner } from '../banking/reauth-banner'
 import { AccountsCard } from './accounts-card'
 import { BalanceHero } from './balance-hero'
 import { MonthNav } from './month-nav'
@@ -25,6 +27,7 @@ export function DashboardPage() {
   const [currentMonth] = useState(() => monthKey(new Date()))
   const month = monthFromParam(params.get('mes'), currentMonth)
   const { data, isPending, isError, isPlaceholderData, refetch } = useDashboard(month)
+  const { data: connections } = useBankConnections()
 
   const setMonth = (next: string) => setParams({ mes: next }, { replace: true })
 
@@ -47,6 +50,7 @@ export function DashboardPage() {
         </div>
       </PageHeader>
       <PageBody>
+        <ReauthBanner connections={connections ?? []} />
         {isError ? (
           <Card className="rounded-2xl p-0 shadow-card">
             <EmptyState

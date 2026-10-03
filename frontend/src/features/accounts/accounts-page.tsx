@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAccounts, useDeleteAccount, useUpdateAccount } from '@/api/queries/accounts'
 import { useMe } from '@/api/queries/auth'
+import { useBankConnections } from '@/api/queries/bank-connections'
 import type { Account } from '@/api/types'
 import { PageBody } from '@/components/layout/page-body'
 import { headerButton, PageHeader } from '@/components/layout/page-header'
@@ -25,6 +26,8 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { notifyError } from '@/lib/form-errors'
+import { ConnectionCard } from '../banking/connection-card'
+import { ReauthBanner } from '../banking/reauth-banner'
 import { AccountFormDialog } from './account-form-dialog'
 import { ACCOUNT_TYPE_LABELS } from './account-labels'
 
@@ -33,6 +36,7 @@ export function AccountsPage() {
   const [showArchived, setShowArchived] = useState(false)
   const { data: accounts, isPending, isError, refetch } = useAccounts(showArchived)
   const { data: me } = useMe()
+  const { data: connections } = useBankConnections()
   const update = useUpdateAccount()
   const remove = useDeleteAccount()
 
@@ -44,6 +48,9 @@ export function AccountsPage() {
     setEditing(undefined)
     setFormOpen(true)
   }
+
+  const manualAccounts = accounts?.filter((account) => account.connection_id === null)
+  const hasConnections = (connections?.length ?? 0) > 0
 
   const toggleArchive = async (account: Account) => {
     try {
@@ -60,13 +67,27 @@ export function AccountsPage() {
         title="Contas"
         subtitle="Bancos, carteira e poupança"
         actions={
-          <Button className={headerButton} onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            Nova conta
-          </Button>
+          <>
+            {me?.banking_enabled && (
+              <Button className={headerButton}>
+                <Landmark className="h-4 w-4" />
+                Conectar banco
+              </Button>
+            )}
+            <Button className={headerButton} onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              Nova conta
+            </Button>
+          </>
         }
       />
       <PageBody>
+        <ReauthBanner connections={connections ?? []} />
+
+        {connections?.map((connection) => <ConnectionCard key={connection.id} connection={connection} />)}
+
+        {hasConnections && <h2 className="px-1 text-sm font-medium text-muted-foreground">Contas manuais</h2>}
+
         <Card className="rounded-2xl p-2 shadow-card">
           {isError ? (
             <EmptyState
@@ -84,9 +105,9 @@ export function AccountsPage() {
                 <Skeleton key={i} className="h-14 w-full rounded-xl" />
               ))}
             </div>
-          ) : accounts && accounts.length > 0 ? (
+          ) : manualAccounts && manualAccounts.length > 0 ? (
             <ul className="divide-y divide-border">
-              {accounts.map((account) => (
+              {manualAccounts.map((account) => (
                 <li key={account.id} className="flex items-center gap-3 px-3 py-3">
                   <CategoryIcon icon={account.icon} color={account.color} />
                   <div className="min-w-0 flex-1">
@@ -136,6 +157,13 @@ export function AccountsPage() {
                 </li>
               ))}
             </ul>
+          ) : hasConnections ? (
+            <EmptyState
+              icon={Landmark}
+              title="Nenhuma conta manual"
+              description="Contas vinculadas a um banco aparecem acima."
+              action={<Button onClick={openCreate}>Criar conta</Button>}
+            />
           ) : (
             <EmptyState
               icon={Landmark}
