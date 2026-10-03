@@ -35,6 +35,7 @@ function ingestRow(array $overrides = []): ParsedRow
         externalId: $overrides['externalId'] ?? ('h:'.Str::random(12)),
         installment: $overrides['installment'] ?? null,
         pending: $overrides['pending'] ?? false,
+        meta: $overrides['meta'] ?? [],
     );
 }
 
@@ -424,4 +425,154 @@ it('em conta de cartão, pagamento de fatura relatado pelo extrato adota a perna
     $after = CardStatement::query()->withTotals()->findOrFail($statement->id);
     expect($after->paid()->cents)->toBe($paidBefore)
         ->and($after->remaining()->cents)->toBe($remainingBefore);
+});
+
+it('meta.bill_id aponta a fatura local pelo external_id, em vez da resolução por data', function () {
+    $this->travelTo('2026-02-15');
+    $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+
+    // Fatura já sincronizada de um ciclo bem mais adiante do que a data da
+    // transação levaria pela resolução padrão (que criaria uma fatura nova
+    // de abril): sem o bill_id, a transação nunca cairia aqui.
+    $farStatement = CardStatement::factory()->create([
+        'account_id' => $card->id,
+        'closing_date' => '2026-08-03',
+        'due_date' => '2026-08-10',
+        'external_id' => 'bill-ext-1',
+    ]);
+
+    $statementCountBefore = CardStatement::where('account_id', $card->id)->count();
+
+    $batch = $this->action->handle(
+        pendingBatch(['account_id' => $card->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
+        [ingestRow(['date' => '2026-03-07', 'externalId' => 'pl-1', 'meta' => ['bill_id' => 'bill-ext-1']])],
+    );
+
+    expect($batch->stats['inserted'])->toBe(1)
+        ->and(CardStatement::where('account_id', $card->id)->count())->toBe($statementCountBefore);
+
+    $transaction = Transaction::where('external_id', 'pl-1')->first();
+    expect($transaction->statement_id)->toBe($farStatement->id);
+});
+
+it('meta.bill_id sem fatura local correspondente cai na resolução por data normal', function () {
+    $this->travelTo('2026-02-15');
+    $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+
+    $batch = $this->action->handle(
+        pendingBatch(['account_id' => $card->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
+        [ingestRow(['date' => '2026-03-07', 'externalId' => 'pl-2', 'meta' => ['bill_id' => 'bill-que-nao-existe']])],
+    );
+
+    expect($batch->stats['inserted'])->toBe(1);
+
+    $transaction = Transaction::where('external_id', 'pl-2')->first();
+    expect($transaction->statement_id)->not->toBeNull();
+});
+
+it('categoria do provedor só entra depois de regra e histórico, e só se o usuário tiver a categoria ativa', function () {
+    $categoryRule = Category::factory()->create(['user_id' => $this->user->id, 'name' => 'Categoria da regra']);
+    Rule::factory()->create([
+        'user_id' => $this->user->id,
+        'conditions' => [['field' => 'description', 'op' => 'contains', 'value' => 'mercado']],
+        'actions' => [['type' => 'set_category', 'category_id' => $categoryRule->id]],
+    ]);
+
+    $categoryHistory = Category::factory()->create(['user_id' => $this->user->id, 'name' => 'Categoria do histórico']);
+    Transaction::factory()->count(2)->create([
+        'account_id' => $this->account->id, 'user_id' => $this->user->id,
+        'description' => 'Padaria Joao', 'direction' => 'out', 'category_id' => $categoryHistory->id,
+    ]);
+
+    Category::factory()->income()->create(['user_id' => $this->user->id, 'name' => 'Salário']);
+
+    $providerCategory = ['provider_category' => ['name' => 'Salário', 'parent' => null]];
+
+    $this->action->handle(
+        pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
+        [
+            // Casa a regra (descrição): a regra vence mesmo com
+            // meta.provider_category presente.
+            ingestRow(['description' => 'Compra Mercado Exemplo', 'externalId' => 'r1', 'meta' => $providerCategory]),
+            // Casa o histórico (mesma description_key e direção de "Padaria
+            // Joao", direção out): o histórico vence.
+            ingestRow(['description' => 'Padaria Joao 99', 'externalId' => 'r2', 'meta' => $providerCategory]),
+            // Nem regra nem histórico: cai no provedor, que resolve para "Salário".
+            ingestRow(['description' => 'Pix recebido', 'direction' => Direction::In, 'externalId' => 'r3', 'meta' => $providerCategory]),
+        ],
+    );
+
+    $byRule = Transaction::where('external_id', 'r1')->first();
+    $byHistory = Transaction::where('external_id', 'r2')->first();
+    $byProvider = Transaction::where('external_id', 'r3')->first();
+
+    expect($byRule->category_id)->toBe($categoryRule->id)
+        ->and($byRule->categorized_by)->toStartWith('rule:')
+        ->and($byHistory->category_id)->toBe($categoryHistory->id)
+        ->and($byHistory->categorized_by)->toBe('history')
+        ->and($byProvider->category_id)->toBe(Category::where('name', 'Salário')->value('id'))
+        ->and($byProvider->categorized_by)->toBe('pluggy');
+});
+
+it('categoria do provedor sem sinônimo/nome conhecido ou sem categoria ativa correspondente não categoriza', function () {
+    $this->action->handle(
+        pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
+        [
+            // Nome que não bate com sinônimo nem com nenhuma categoria do usuário.
+            ingestRow(['externalId' => 'u1', 'direction' => Direction::In, 'meta' => ['provider_category' => ['name' => 'Categoria Desconhecida', 'parent' => null]]]),
+            // Nome conhecido ("Salário"), mas o usuário não tem essa categoria.
+            ingestRow(['externalId' => 'u2', 'direction' => Direction::In, 'meta' => ['provider_category' => ['name' => 'Salário', 'parent' => null]]]),
+        ],
+    );
+
+    expect(Transaction::where('external_id', 'u1')->first()->category_id)->toBeNull()
+        ->and(Transaction::where('external_id', 'u2')->first()->category_id)->toBeNull();
+});
+
+it('categoria do provedor ignora categoria arquivada com o mesmo nome', function () {
+    Category::factory()->income()->create(['user_id' => $this->user->id, 'name' => 'Salário', 'is_archived' => true]);
+
+    $this->action->handle(
+        pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
+        [ingestRow(['externalId' => 'arq-1', 'direction' => Direction::In, 'meta' => ['provider_category' => ['name' => 'Salário', 'parent' => null]]])],
+    );
+
+    expect(Transaction::where('external_id', 'arq-1')->first()->category_id)->toBeNull();
+});
+
+it('categoria do provedor nunca escolhe uma categoria is_transfer sem um sinônimo explícito', function () {
+    Category::factory()->transfer()->create(['user_id' => $this->user->id, 'name' => 'Transferências']);
+
+    $this->action->handle(
+        pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
+        // Nome exato "Transferências", mas sem vir de um sinônimo de
+        // transferência (ex.: "pagamento de cartão", "mesma titularidade").
+        [ingestRow(['externalId' => 'transf-1', 'meta' => ['provider_category' => ['name' => 'Transferências', 'parent' => null]]])],
+    );
+
+    expect(Transaction::where('external_id', 'transf-1')->first()->category_id)->toBeNull();
+});
+
+it('meta.bill_id de outra fatura/conta com o mesmo external_id nunca é usado (preload escopado por conta)', function () {
+    $this->travelTo('2026-02-15');
+    $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+    $otherCard = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+
+    // Mesmo external_id em duas faturas de cartões diferentes: o preload de
+    // IngestTransactions precisa escopar por account_id, senão a fatura do
+    // cartão errado poderia "roubar" a transação do cartão certo.
+    CardStatement::factory()->create([
+        'account_id' => $otherCard->id, 'closing_date' => '2026-08-03', 'due_date' => '2026-08-10', 'external_id' => 'shared-bill',
+    ]);
+    $ownStatement = CardStatement::factory()->create([
+        'account_id' => $card->id, 'closing_date' => '2026-08-03', 'due_date' => '2026-08-10', 'external_id' => 'shared-bill',
+    ]);
+
+    $this->action->handle(
+        pendingBatch(['account_id' => $card->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
+        [ingestRow(['date' => '2026-03-07', 'externalId' => 'pl-shared', 'meta' => ['bill_id' => 'shared-bill']])],
+    );
+
+    $transaction = Transaction::where('external_id', 'pl-shared')->first();
+    expect($transaction->statement_id)->toBe($ownStatement->id);
 });

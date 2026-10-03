@@ -4,6 +4,7 @@ namespace App\Domain\Cards\Actions;
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Models\CardStatement;
+use App\Domain\Cards\Support\StatementOrdering;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -23,8 +24,6 @@ use Illuminate\Validation\ValidationException;
  */
 final class UpdateStatement
 {
-    private const MAX_SPAN_DAYS = 40;
-
     /**
      * @param  array<string, mixed>  $input  dados já validados (parciais)
      */
@@ -55,16 +54,13 @@ final class UpdateStatement
 
     private function ensureOrdered(CardStatement $statement, CarbonImmutable $closing, CarbonImmutable $due): void
     {
-        if (! $due->greaterThan($closing)) {
+        if (! StatementOrdering::dueAfterClosing($closing, $due)) {
             throw ValidationException::withMessages([
                 'due_date' => 'O vencimento precisa ser depois do fechamento.',
             ]);
         }
 
-        $others = CardStatement::query()->where('account_id', $statement->account_id)->where('id', '!=', $statement->id);
-
-        $previous = (clone $others)->where('closing_date', '<', $statement->closing_date)->orderByDesc('closing_date')->first();
-        $next = (clone $others)->where('closing_date', '>', $statement->closing_date)->orderBy('closing_date')->first();
+        ['previous' => $previous, 'next' => $next] = StatementOrdering::neighbors($statement);
 
         if ($previous !== null && $closing->lessThanOrEqualTo($previous->closing_date)) {
             throw ValidationException::withMessages([
@@ -90,7 +86,7 @@ final class UpdateStatement
             ]);
         }
 
-        if ($due->greaterThan($closing->addDays(self::MAX_SPAN_DAYS))) {
+        if (! StatementOrdering::withinMaxSpan($closing, $due)) {
             throw ValidationException::withMessages([
                 'due_date' => 'O vencimento não pode passar de 40 dias depois do fechamento.',
             ]);

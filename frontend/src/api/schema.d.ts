@@ -52,6 +52,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bank-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["bankConnection.index"];
+        put?: never;
+        post: operations["bankConnection.store"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/{connection}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["bankConnection.destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/connect-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["bankConnection.connectToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/{connection}/link-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["bankConnection.linkAccounts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/{connection}/reconnected": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["bankConnection.reconnected"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/{connection}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["bankConnection.sync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cards": {
         parameters: {
             query?: never;
@@ -572,6 +668,9 @@ export interface components {
             color: string | null;
             icon: string | null;
             is_archived: boolean;
+            connection_id: number | null;
+            provider_balance: number | null;
+            provider_synced_at: string | null;
         };
         /**
          * AccountType
@@ -582,6 +681,34 @@ export interface components {
         ApplyRuleRequest: {
             overwrite?: boolean;
         };
+        /** BankConnectionResource */
+        BankConnectionResource: {
+            id: number;
+            provider: components["schemas"]["BankProviderName"];
+            status: components["schemas"]["ConnectionStatus"];
+            institution_name: string | null;
+            institution_logo_url: string | null;
+            last_synced_at: string | null;
+            last_error: string | null;
+            accounts: {
+                id: number;
+                name: string;
+                type: components["schemas"]["AccountType"];
+                currency: string;
+                color: string | null;
+                icon: string | null;
+                is_archived: boolean;
+                balance: number;
+                provider_balance: number | null;
+            }[];
+            pending_accounts: components["schemas"]["ProviderAccountResource"][];
+            unlinked_accounts: components["schemas"]["ProviderAccountResource"][];
+        };
+        /**
+         * BankProviderName
+         * @enum {string}
+         */
+        BankProviderName: "pluggy";
         /** CardResource */
         CardResource: {
             id: number;
@@ -638,6 +765,15 @@ export interface components {
         ConfirmImportBatchRequest: {
             skip_lines?: number[];
         };
+        /** ConnectTokenRequest */
+        ConnectTokenRequest: {
+            connection_id?: number;
+        };
+        /**
+         * ConnectionStatus
+         * @enum {string}
+         */
+        ConnectionStatus: "pending_link" | "active" | "needs_reauth" | "error";
         /**
          * Direction
          * @enum {string}
@@ -653,7 +789,7 @@ export interface components {
             };
             format: components["schemas"]["ImportFormat"];
             /** @enum {string} */
-            format_label: "Inter (conta)" | "Nubank (conta)" | "Nubank (cartão)" | "C6 (conta)" | "OFX";
+            format_label: "Inter (conta)" | "Nubank (conta)" | "Nubank (cartão)" | "C6 (conta)" | "OFX" | "Sincronização bancária";
             filename: string;
             status: components["schemas"]["ImportBatchStatus"];
             stats: {
@@ -692,7 +828,7 @@ export interface components {
          * ImportFormat
          * @enum {string}
          */
-        ImportFormat: "inter" | "nubank" | "nubank_card" | "c6" | "ofx";
+        ImportFormat: "inter" | "nubank" | "nubank_card" | "c6" | "ofx" | "pluggy";
         /** ImportPreviewResource */
         ImportPreviewResource: {
             batch: {
@@ -704,7 +840,7 @@ export interface components {
                 };
                 format: components["schemas"]["ImportFormat"];
                 /** @enum {string} */
-                format_label: "Inter (conta)" | "Nubank (conta)" | "Nubank (cartão)" | "C6 (conta)" | "OFX";
+                format_label: "Inter (conta)" | "Nubank (conta)" | "Nubank (cartão)" | "C6 (conta)" | "OFX" | "Sincronização bancária";
                 filename: string;
                 status: components["schemas"]["ImportBatchStatus"];
                 stats: {
@@ -778,6 +914,33 @@ export interface components {
             remaining_amount: number;
             next_date: string | null;
         };
+        /**
+         * LinkAccountsRequest
+         * @description As contas do banco (e seu tipo/moeda) vêm de settings.pending_accounts
+         *     (vínculo inicial, gravado por App\Domain\Banking\Actions\CreateConnection)
+         *     ou settings.unlinked_accounts (conexão já `active`, contas que o banco
+         *     passou a reportar depois — gravado por
+         *     App\Domain\Banking\Actions\SyncAccounts); aqui só validamos o formato do
+         *     pedido, a gravação em si (criar/vincular conta, trocar o status) é
+         *     App\Domain\Banking\Actions\LinkAccounts, sob lock.
+         *
+         *     Cobertura total das contas pendentes só é exigida no vínculo inicial
+         *     (`pending_link`): uma conexão já `active` aceita vincular só algumas das
+         *     `unlinked_accounts` por vez (o resto continua pendente para um próximo
+         *     vínculo).
+         *
+         *     Quando a conexão não está em nenhum desses dois estados com contas
+         *     pendentes, as regras ficam soltas de propósito: a checagem de
+         *     cobertura/tipo/moeda não faz sentido sem as contas do banco em mãos, e
+         *     quem deve rejeitar o pedido é a Action (409 connection_not_pending_link),
+         *     não um 422 de validação que mascararia a causa real.
+         */
+        LinkAccountsRequest: {
+            links: {
+                external_id: string;
+                account_id?: number | null;
+            }[];
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Format: email */
@@ -820,6 +983,34 @@ export interface components {
                 value?: string;
             }[];
             overwrite?: boolean;
+        };
+        /** ProviderAccountResource */
+        ProviderAccountResource: {
+            external_id: string;
+            name: string;
+            number: string | null;
+            /**
+             * @description Mesmo enum de Account::$type (não a string crua do
+             *     provedor): o frontend já sabe lidar com AccountType.
+             */
+            kind: components["schemas"]["AccountType"];
+            currency: string;
+            /**
+             * @description Sinal do app, não o do provedor: em cartão, o valor devido já
+             *     sai negativo aqui, como o saldo calculado da conta vai ficar
+             *     depois do vínculo — ver AccountMapper::appBalanceCents().
+             */
+            balance: number;
+            suggested_account_id: number | null;
+        };
+        /**
+         * ReconnectedRequest
+         * @description `item_id` é o item devolvido pelo widget ao fim do fluxo de reconexão (modo atualização);
+         *     o controller confere contra `connection->external_id` antes de marcar como reconectada —
+         *     ver App\Http\Controllers\Api\V1\BankConnectionController::reconnected().
+         */
+        ReconnectedRequest: {
+            item_id: string;
         };
         /** RegisterRequest */
         RegisterRequest: {
@@ -912,6 +1103,11 @@ export interface components {
             due_day?: number | null;
             last_four?: string | null;
         };
+        /** StoreBankConnectionRequest */
+        StoreBankConnectionRequest: {
+            /** Format: uuid */
+            item_id: string;
+        };
         /** StoreCategoryRequest */
         StoreCategoryRequest: {
             name: string;
@@ -929,7 +1125,12 @@ export interface components {
              * @description Maximum file size: 2048 kilobytes.
              */
             file: string;
-            format?: components["schemas"]["ImportFormat"];
+            /**
+             * @description 'pluggy' não tem parser de arquivo (linhas vêm do
+             *     SyncConnection, nunca de upload) — fora das opções aceitas aqui.
+             * @enum {string}
+             */
+            format?: "inter" | "nubank" | "nubank_card" | "c6" | "ofx";
         };
         /** StoreRuleRequest */
         StoreRuleRequest: {
@@ -1192,6 +1393,11 @@ export interface components {
              *     frontend não fixar 'BRL' ao decidir quando mostrar a moeda de uma conta.
              */
             primary_currency: string;
+            /**
+             * @description Sem credenciais da Pluggy configuradas (PLUGGY_CLIENT_ID/SECRET), o
+             *     frontend esconde o fluxo de conexão bancária inteiro.
+             */
+            banking_enabled: boolean;
         };
     };
     responses: {
@@ -1424,6 +1630,219 @@ export interface operations {
                     };
                 };
             };
+        };
+    };
+    "bankConnection.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Array of `BankConnectionResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BankConnectionResource"][];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
+    "bankConnection.store": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoreBankConnectionRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            connection: components["schemas"]["BankConnectionResource"];
+                            provider_accounts: components["schemas"]["ProviderAccountResource"][];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "bankConnection.destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connection ID */
+                connection: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "bankConnection.connectToken": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConnectTokenRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            connect_token: string;
+                            item_id: string;
+                        } | {
+                            connect_token: string;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "bankConnection.linkAccounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connection ID */
+                connection: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkAccountsRequest"];
+            };
+        };
+        responses: {
+            /** @description `BankConnectionResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BankConnectionResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "bankConnection.reconnected": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connection ID */
+                connection: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconnectedRequest"];
+            };
+        };
+        responses: {
+            /** @description `BankConnectionResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BankConnectionResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "connection_item_mismatch";
+                        message: string;
+                    };
+                };
+            };
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "bankConnection.sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connection ID */
+                connection: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            queued: boolean;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
         };
     };
     "card.index": {

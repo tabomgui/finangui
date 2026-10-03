@@ -3,6 +3,7 @@
 namespace App\Domain\Imports\Actions;
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Banking\Support\ProviderCategoryMatcher;
 use App\Domain\Cards\Actions\AssignStatement;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
@@ -13,13 +14,12 @@ use App\Domain\Imports\Enums\RowOutcome;
 use App\Domain\Imports\Errors\ImportBatchNotPending;
 use App\Domain\Imports\Models\ImportBatch;
 use App\Domain\Imports\Support\ImportedInstallments;
+use App\Domain\Imports\Support\ImportPreloads;
 use App\Domain\Imports\Support\IngestionPlanner;
 use App\Domain\Rules\Actions\CategorizeTransaction;
 use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Models\Rule;
 use App\Domain\Rules\Support\HistoryCategorizer;
-use App\Domain\Rules\Support\TextNormalizer;
-use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -75,7 +75,7 @@ final class IngestTransactions
             // Decidido só agora, com a conta travada: a mesma leitura que a
             // prévia fez pode ter ficado desatualizada entre a prévia e a
             // confirmação.
-            $decisions = $this->planner->plan($account, $rows);
+            $decisions = $this->planner->plan($account, $rows, $locked->format);
 
             $rules = Rule::query()->where('is_active', true)->ordered()->get()
                 ->map(RuleDefinition::fromRule(...))
@@ -84,9 +84,15 @@ final class IngestTransactions
             // Uma consulta (ou poucas, em lotes de até 1000 chaves) para todo
             // o histórico das linhas novas deste lote, em vez de uma consulta
             // por transação inserida (ver HistoryCategorizer::suggestMany()).
-            $historyMemo = $this->history->suggestMany($this->newRowHistoryPairs($decisions));
+            $historyMemo = $this->history->suggestMany(ImportPreloads::historyPairs($decisions));
 
-            [$stats, $undo] = $this->applyDecisions($locked, $account, $decisions, $rules, $historyMemo);
+            // Idem para a fatura do banco (meta.bill_id) e para a categoria
+            // do provedor (meta.provider_category): uma consulta para o
+            // lote inteiro, não uma por linha nova.
+            $billStatementMemo = ImportPreloads::billStatements($account, $decisions);
+            $usableCategoriesByName = ImportPreloads::usableCategoriesByName($decisions);
+
+            [$stats, $undo] = $this->applyDecisions($locked, $account, $decisions, $rules, $historyMemo, $billStatementMemo, $usableCategoriesByName);
 
             $createdStatementIds = CardStatement::query()
                 ->where('account_id', $account->id)
@@ -117,10 +123,19 @@ final class IngestTransactions
      * @param  list<RowDecision>  $decisions
      * @param  list<RuleDefinition>  $rules
      * @param  array<string, int>  $historyMemo
+     * @param  array<string, int>  $billStatementMemo  external_id da fatura → id do CardStatement (ver preloadBillStatements())
+     * @param  array<string, list<array{id: int, kind: string, is_transfer: bool, has_parent: bool}>>  $usableCategoriesByName  categorias ativas do usuário por nome normalizado (ver preloadUsableCategoriesByName())
      * @return array{0: array<string, int>, 1: list<array{transaction_id: int, attributes: array<string, mixed>}>}
      */
-    private function applyDecisions(ImportBatch $batch, Account $account, array $decisions, array $rules, array $historyMemo): array
-    {
+    private function applyDecisions(
+        ImportBatch $batch,
+        Account $account,
+        array $decisions,
+        array $rules,
+        array $historyMemo,
+        array $billStatementMemo,
+        array $usableCategoriesByName,
+    ): array {
         $stats = [
             'inserted' => 0,
             'duplicates' => 0,
@@ -137,7 +152,7 @@ final class IngestTransactions
 
         foreach ($decisions as $index => $decision) {
             match ($decision->outcome) {
-                RowOutcome::New => $this->insertNew($batch, $account, $decision->row, $rules, $historyMemo, $stats, $plansBySeedIndex, $index),
+                RowOutcome::New => $this->insertNew($batch, $account, $decision->row, $rules, $historyMemo, $billStatementMemo, $usableCategoriesByName, $stats, $plansBySeedIndex, $index),
                 RowOutcome::Duplicate => $stats['duplicates']++,
                 RowOutcome::Update => $this->matchedOutcomes->update($decision, $undo, $stats),
                 RowOutcome::ReplaceInstallment => $decision->transactionId !== null
@@ -164,6 +179,8 @@ final class IngestTransactions
      *
      * @param  list<RuleDefinition>  $rules
      * @param  array<string, int>  $historyMemo
+     * @param  array<string, int>  $billStatementMemo  external_id da fatura → id do CardStatement (ver preloadBillStatements())
+     * @param  array<string, list<array{id: int, kind: string, is_transfer: bool, has_parent: bool}>>  $usableCategoriesByName  ver preloadUsableCategoriesByName()
      * @param  array<string, int>  $stats
      * @param  array<int, InstallmentPlan>  $plansBySeedIndex
      */
@@ -173,6 +190,8 @@ final class IngestTransactions
         ParsedRow $row,
         array $rules,
         array $historyMemo,
+        array $billStatementMemo,
+        array $usableCategoriesByName,
         array &$stats,
         array &$plansBySeedIndex,
         int $index,
@@ -193,17 +212,28 @@ final class IngestTransactions
             'description' => $row->description,
             'original_description' => $row->description,
             'external_id' => $row->externalId,
-            'status' => $row->pending ? TransactionStatus::Pending : TransactionStatus::Posted,
+            // ParsedRow::status(): pendente datada no futuro (ex.: parcela
+            // de cartão que o banco já relata mas não lançou) vira
+            // Projected, não Pending.
+            'status' => $row->status(),
             'source' => $batch->format->source(),
             'import_batch_id' => $batch->id,
             'installment_plan_id' => $plan?->id,
             'installment_number' => $plan !== null ? $row->installment['number'] : null,
         ]);
 
-        $this->assignStatement->handle($transaction);
+        // Fatura do banco (ex.: Pluggy): se a linha aponta um bill_id e já
+        // existe uma fatura local com esse external_id, usa essa fatura
+        // específica em vez da regra de data padrão do AssignStatement.
+        $billId = $row->meta['bill_id'] ?? null;
+        $statementId = is_string($billId) ? ($billStatementMemo[$billId] ?? null) : null;
+
+        $this->assignStatement->handle($transaction, $statementId);
         $transaction->save();
 
         $this->categorize->handleImported($transaction, $rules, $historyMemo);
+
+        $this->applyProviderCategory($transaction, $row, $usableCategoriesByName);
 
         if ($plan !== null) {
             $plansBySeedIndex[$index] = $plan;
@@ -211,6 +241,40 @@ final class IngestTransactions
         }
 
         $stats['inserted']++;
+    }
+
+    /**
+     * Terceiro passo da categorização de uma linha nova importada do banco
+     * — só depois de regras e histórico (handleImported(), chamado antes
+     * disso, já cobre os dois primeiros): se a transação ainda não tem
+     * categoria e a linha carrega a categoria do provedor (meta.provider_category,
+     * ver TransactionMapper), usa ProviderCategoryMatcher pra casar pelo
+     * nome com uma categoria ativa do usuário. Sem match, não categoriza.
+     *
+     * @param  array<string, list<array{id: int, kind: string, is_transfer: bool, has_parent: bool}>>  $usableCategoriesByName
+     */
+    private function applyProviderCategory(Transaction $transaction, ParsedRow $row, array $usableCategoriesByName): void
+    {
+        if ($transaction->category_id !== null) {
+            return;
+        }
+
+        $providerCategory = $row->meta['provider_category'] ?? null;
+
+        if (! is_array($providerCategory) || ! isset($providerCategory['name'])) {
+            return;
+        }
+
+        /** @var array{name: string, parent: string|null} $providerCategory */
+        $categoryId = ProviderCategoryMatcher::match($providerCategory, $usableCategoriesByName, $transaction->direction);
+
+        if ($categoryId === null) {
+            return;
+        }
+
+        $transaction->category_id = $categoryId;
+        $transaction->categorized_by = 'pluggy';
+        $transaction->save();
     }
 
     /**
@@ -243,27 +307,5 @@ final class IngestTransactions
 
         $this->matchedOutcomes->replaceParcel($parcel, $decision->row, $batch, $undo);
         $stats['replaced']++;
-    }
-
-    /**
-     * @param  list<RowDecision>  $decisions
-     * @return list<array{description_key: string, direction: string}>
-     */
-    private function newRowHistoryPairs(array $decisions): array
-    {
-        $pairs = [];
-
-        foreach ($decisions as $decision) {
-            if ($decision->outcome !== RowOutcome::New) {
-                continue;
-            }
-
-            $pairs[] = [
-                'description_key' => TextNormalizer::key($decision->row->description),
-                'direction' => $decision->row->direction->value,
-            ];
-        }
-
-        return $pairs;
     }
 }

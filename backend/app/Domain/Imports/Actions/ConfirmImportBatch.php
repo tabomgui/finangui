@@ -4,6 +4,7 @@ namespace App\Domain\Imports\Actions;
 
 use App\Domain\Imports\Data\ParsedRow;
 use App\Domain\Imports\Enums\ImportBatchStatus;
+use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Errors\ImportBatchNotPending;
 use App\Domain\Imports\Models\ImportBatch;
 
@@ -28,7 +29,11 @@ final class ConfirmImportBatch
     {
         $batch = $batch->refresh();
 
-        if ($batch->status !== ImportBatchStatus::Pending) {
+        // format pluggy nunca fica pending de verdade para alguém confirmar
+        // (App\Domain\Banking\Actions\SyncTransactions ingere na hora, sem
+        // passar por aqui) — checagem explícita, defesa a mais contra um
+        // lote órfão de uma falha a meio caminho.
+        if ($batch->status !== ImportBatchStatus::Pending || $batch->format === ImportFormat::Pluggy) {
             throw new ImportBatchNotPending;
         }
 

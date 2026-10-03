@@ -62,6 +62,14 @@ export type RuleBody = {
   conditions: RuleConditionNodeInput[]
   actions: RuleActionInput[]
 }
+export type BankConnection = Schemas['BankConnectionResource']
+export type ConnectionStatus = Schemas['ConnectionStatus']
+export type BankProviderName = Schemas['BankProviderName']
+export type ConnectionAccount = BankConnection['accounts'][number]
+export type ProviderAccount = Schemas['ProviderAccountResource']
+export type LinkAccountsRequest = Schemas['LinkAccountsRequest']
+export type ConnectTokenRequest = Schemas['ConnectTokenRequest']
+
 export type LoginRequest = Schemas['LoginRequest']
 export type RegisterRequest = Schemas['RegisterRequest']
 export type UpdateProfileRequest = Schemas['UpdateProfileRequest']

@@ -3,6 +3,7 @@
 namespace Tests;
 
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 abstract class TestCase extends BaseTestCase
@@ -26,5 +27,10 @@ abstract class TestCase extends BaseTestCase
 
         // O Sanctum só inicia sessão para requests vindos de um domínio stateful.
         $this->withHeader('Referer', 'http://localhost');
+
+        // Nenhuma chamada de rede em teste: qualquer requisição HTTP não
+        // coberta por Http::fake() falha alto, em vez de tentar sair para a
+        // rede de verdade (ver PluggyProvider, testado com Http::fake()).
+        Http::preventStrayRequests();
     }
 }

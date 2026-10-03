@@ -49,6 +49,7 @@ describe('LoginPage', () => {
       has_password: true,
       google_linked: false,
       primary_currency: 'BRL',
+      banking_enabled: false,
     }
 
     await act(async () => {

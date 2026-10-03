@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "id": "00000000-0000-0000-0000-0000000000b3",
+      "date": "2026-09-22T12:00:00.000Z",
+      "description": "Loja Eletrônicos",
+      "descriptionRaw": "LOJA ELETRONICOS PARC 02/10",
+      "amount": -299.90,
+      "currencyCode": "BRL",
+      "status": "POSTED",
+      "type": "DEBIT",
+      "categoryId": "07010000",
+      "category": "Eletrônicos",
+      "creditCardMetadata": {
+        "installmentNumber": 2,
+        "totalInstallments": 10,
+        "totalAmount": 2999.00,
+        "purchaseDate": "2026-08-22",
+        "billId": "00000000-0000-0000-0000-0000000000c1"
+      }
+    }
+  ],
+  "next": null
+}

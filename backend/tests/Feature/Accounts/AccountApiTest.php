@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Banking\Models\BankConnection;
 use App\Models\User;
 
 it('cria conta', function () {
@@ -108,4 +109,49 @@ it('retorna 404 para conta de outro usuário', function () {
 
     $this->getJson("/api/v1/accounts/{$foreign->id}")->assertNotFound();
     $this->patchJson("/api/v1/accounts/{$foreign->id}", ['name' => 'x'])->assertNotFound();
+});
+
+it('expõe connection_id, provider_balance e provider_synced_at de uma conta vinculada', function () {
+    actingAsUser();
+    $connection = BankConnection::factory()->active()->create();
+    $account = Account::factory()->create([
+        'connection_id' => $connection->id,
+        'external_id' => 'acc-ext-1',
+        'provider_balance' => 150000,
+        'provider_synced_at' => '2026-03-07T10:00:00-03:00',
+    ]);
+
+    $this->getJson("/api/v1/accounts/{$account->id}")
+        ->assertOk()
+        ->assertJsonPath('data.connection_id', $connection->id)
+        ->assertJsonPath('data.provider_balance', 150000)
+        ->assertJsonPath('data.provider_synced_at', '2026-03-07T10:00:00-03:00');
+});
+
+it('uma conta sem conexão expõe connection_id e provider_balance como null', function () {
+    actingAsUser();
+    $account = Account::factory()->create();
+
+    $this->getJson("/api/v1/accounts/{$account->id}")
+        ->assertOk()
+        ->assertJsonPath('data.connection_id', null)
+        ->assertJsonPath('data.provider_balance', null)
+        ->assertJsonPath('data.provider_synced_at', null);
+});
+
+it('UpdateAccountRequest ignora campos de vínculo bancário enviados pelo cliente', function () {
+    actingAsUser();
+    $connection = BankConnection::factory()->active()->create();
+    $account = Account::factory()->create(['connection_id' => $connection->id, 'external_id' => 'acc-ext-2']);
+
+    $this->patchJson("/api/v1/accounts/{$account->id}", [
+        'connection_id' => null,
+        'external_id' => 'outro',
+        'provider_balance' => 999,
+    ])->assertOk();
+
+    $account->refresh();
+    expect($account->connection_id)->toBe($connection->id)
+        ->and($account->external_id)->toBe('acc-ext-2')
+        ->and($account->provider_balance)->toBeNull();
 });

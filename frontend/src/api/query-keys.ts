@@ -39,6 +39,7 @@ export const queryKeys = {
   rulePreview: (body: unknown) => ['rule-preview', body] as const,
   importBatches: (accountId?: number) => ['import-batches', 'list', { accountId }] as const,
   importBatch: (id: number) => ['import-batches', 'detail', id] as const,
+  bankConnections: () => ['bank-connections'] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {
@@ -48,6 +49,10 @@ function invalidate(queryClient: QueryClient, roots: string[]) {
 /**
  * Transações, transferências, contas e limites/faturas de cartão mexem em saldos, listas e no resumo
  * do mês; lançamentos novos também mudam o que uma prévia de regra ainda não salva mostraria.
+ * `bank-connections` entra porque `pending_accounts`/`unlinked_accounts` do recurso da conexão
+ * (e a sugestão de vínculo de cada um) dependem do estado das contas manuais: editar, arquivar
+ * ou excluir uma conta pelo `AccountRow` (usado tanto na lista de contas manuais quanto dentro
+ * do `ConnectionCard`, ver `features/banking/connection-card.tsx`) precisa refletir ali também.
  */
 export function invalidateLedger(queryClient: QueryClient) {
   return invalidate(queryClient, [
@@ -59,6 +64,7 @@ export function invalidateLedger(queryClient: QueryClient) {
     'card-statements',
     'installment-plans',
     'rule-preview',
+    'bank-connections',
   ])
 }
 
@@ -95,4 +101,8 @@ export function invalidateImports(queryClient: QueryClient) {
  */
 export function invalidateImportBatchesList(queryClient: QueryClient) {
   return queryClient.invalidateQueries({ queryKey: ['import-batches', 'list'] })
+}
+
+export function invalidateBankConnections(queryClient: QueryClient) {
+  return invalidate(queryClient, ['bank-connections'])
 }

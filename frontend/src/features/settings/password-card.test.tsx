@@ -12,6 +12,7 @@ const baseUser: User = {
   has_password: true,
   google_linked: false,
   primary_currency: 'BRL',
+  banking_enabled: false,
 }
 
 function renderCard(user: User) {

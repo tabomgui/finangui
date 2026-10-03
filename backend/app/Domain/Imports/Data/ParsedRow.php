@@ -3,6 +3,8 @@
 namespace App\Domain\Imports\Data;
 
 use App\Domain\Transactions\Enums\Direction;
+use App\Domain\Transactions\Enums\TransactionStatus;
+use Carbon\CarbonImmutable;
 
 /**
  * Linha normalizada por um parser, antes de qualquer decisão de ingestão.
@@ -14,6 +16,7 @@ final readonly class ParsedRow
      * @param  string  $date  "YYYY-MM-DD"
      * @param  int  $amount  centavos, sempre positivo
      * @param  array{number: int, total: int}|null  $installment
+     * @param  array<string, mixed>  $meta  dados que só a sincronização bancária preenche (`bill_id`, `provider_category` = `{name, parent}`); vazio para linhas de arquivo
      */
     public function __construct(
         public int $line,
@@ -24,7 +27,26 @@ final readonly class ParsedRow
         public string $externalId,
         public ?array $installment = null,
         public bool $pending = false,
+        public array $meta = [],
     ) {}
+
+    /**
+     * Status real de um lançamento desta linha: arquivos de extrato nunca
+     * marcam `pending` (sempre Posted); a sincronização bancária pode — e
+     * uma pendente datada no futuro (ex.: parcela de cartão que o banco já
+     * relata mas ainda não lançou) é Projected, não Pending (Pending é só
+     * para o que já deveria ter lançado e o banco ainda não confirmou).
+     */
+    public function status(): TransactionStatus
+    {
+        if (! $this->pending) {
+            return TransactionStatus::Posted;
+        }
+
+        return CarbonImmutable::parse($this->date)->greaterThan(CarbonImmutable::today())
+            ? TransactionStatus::Projected
+            : TransactionStatus::Pending;
+    }
 
     /**
      * @return array<string, mixed>
@@ -40,6 +62,7 @@ final readonly class ParsedRow
             'external_id' => $this->externalId,
             'installment' => $this->installment,
             'pending' => $this->pending,
+            'meta' => $this->meta,
         ];
     }
 
@@ -50,6 +73,8 @@ final readonly class ParsedRow
     {
         /** @var array{number: int, total: int}|null $installment */
         $installment = $data['installment'] ?? null;
+        /** @var array<string, mixed> $meta */
+        $meta = $data['meta'] ?? [];
 
         return new self(
             line: (int) $data['line'],
@@ -60,6 +85,7 @@ final readonly class ParsedRow
             externalId: (string) $data['external_id'],
             installment: $installment,
             pending: (bool) ($data['pending'] ?? false),
+            meta: $meta,
         );
     }
 }

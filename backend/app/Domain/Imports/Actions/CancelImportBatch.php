@@ -3,6 +3,7 @@
 namespace App\Domain\Imports\Actions;
 
 use App\Domain\Imports\Enums\ImportBatchStatus;
+use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Errors\ImportBatchNotPending;
 use App\Domain\Imports\Models\ImportBatch;
 
@@ -25,6 +26,8 @@ final class CancelImportBatch
         $deleted = ImportBatch::query()
             ->whereKey($batch->id)
             ->where('status', ImportBatchStatus::Pending)
+            // format pluggy nunca fica pending de verdade (ver ConfirmImportBatch).
+            ->where('format', '!=', ImportFormat::Pluggy->value)
             ->delete();
 
         if ($deleted === 0) {

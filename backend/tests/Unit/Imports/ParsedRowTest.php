@@ -41,5 +41,22 @@ it('toArray/fromArray fazem o ciclo completo sem installment e com os defaults',
 
     expect($restored->installment)->toBeNull()
         ->and($restored->pending)->toBeFalse()
+        ->and($restored->meta)->toBe([])
         ->and($restored->toArray())->toBe($row->toArray());
+});
+
+it('toArray/fromArray preservam meta (bill_id e provider_category_id)', function () {
+    $row = new ParsedRow(
+        line: 2,
+        date: '2026-03-07',
+        amount: 1500,
+        direction: Direction::Out,
+        description: 'Supermercado',
+        externalId: 'h:xyz',
+        meta: ['bill_id' => 'b1', 'provider_category_id' => '01010000'],
+    );
+
+    $restored = ParsedRow::fromArray($row->toArray());
+
+    expect($restored->meta)->toBe(['bill_id' => 'b1', 'provider_category_id' => '01010000']);
 });

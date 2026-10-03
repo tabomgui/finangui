@@ -26,7 +26,9 @@ final class StoreImportBatchRequest extends ApiRequest
                 $this->currencyIsBrl(),
             ],
             'file' => ['required', 'file', 'max:2048', 'extensions:csv,txt,ofx'],
-            'format' => ['sometimes', Rule::enum(ImportFormat::class)],
+            // 'pluggy' não tem parser de arquivo (linhas vêm do
+            // SyncConnection, nunca de upload) — fora das opções aceitas aqui.
+            'format' => ['sometimes', Rule::enum(ImportFormat::class)->except(ImportFormat::Pluggy)],
         ];
     }
 

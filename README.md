@@ -69,6 +69,21 @@ Regras de vínculo da conta:
 
 `SESSION_SAME_SITE` precisa continuar `lax`: `strict` quebra o callback do Google (o `state` da sessão se perde).
 
+## Conectar bancos (Pluggy)
+
+A integração usa a [Pluggy](https://pluggy.ai) para conectar contas e cartões de bancos reais via Open Finance.
+
+1. Crie uma conta em https://dashboard.pluggy.ai e pegue as credenciais do sandbox (ou de produção, depois).
+2. Preencha no `backend/.env`: `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET` e, se precisar apontar para outro ambiente, `PLUGGY_BASE_URL` (vazio cai para `https://api.pluggy.ai`).
+
+Sem `PLUGGY_CLIENT_ID`/`PLUGGY_CLIENT_SECRET`, a integração fica desligada: o botão "Conectar banco" não aparece e os endpoints de conexão respondem 409 (`banking_disabled`).
+
+No sandbox da Pluggy, use o conector "Pluggy Bank" com usuário `user-ok`, senha `password-ok` e, se pedir MFA, o código `123456`.
+
+Depois de conectar, cada conexão sincroniza automaticamente a cada 6 horas (contas, saldo, faturas e transações) e também pode ser sincronizada na hora pelo botão "Sincronizar agora". Essa sincronização roda em fila (job) e depende do **worker e do scheduler estarem no ar** — ambos já sobem com `make up` em desenvolvimento. `DB_QUEUE_RETRY_AFTER=660` e o `--timeout=600` do worker (já configurados em `docker-compose.yml`/`docker-compose.prod.yml`) cobrem o pior caso desse job; não reduza um sem o outro.
+
+Em produção, o nginx do serviço `web` já libera `frame-src https://connect.pluggy.ai` na Content-Security-Policy, necessário para o widget da Pluggy abrir o iframe de login do banco.
+
 ## Importar categorias do finangui-js
 
 No servidor antigo (MySQL):

@@ -81,4 +81,59 @@ final class InvoiceCycle
     {
         return $monthStart->setDay(min($day, $monthStart->daysInMonth));
     }
+
+    /**
+     * Fechamento nominal que produziria $dueDate como vencimento — o
+     * inverso de forPurchase()/dueAfter(): usado quando o banco informa uma
+     * fatura (sync bancário, ver App\Domain\Banking\Actions\SyncBills) sem
+     * dizer o fechamento. Tenta o ciclo do mês do próprio vencimento e, sem
+     * bater, o do mês anterior (o vencimento pode cair no mês seguinte ao
+     * fechamento). Sem nenhum dos dois reproduzir exatamente o vencimento
+     * informado (dias do cartão podem ter mudado desde que o banco gerou
+     * essa fatura, ou o próprio vencimento foi editado/adiado por alguns
+     * dias): usa o fechamento nominal mais recente estritamente antes do
+     * vencimento, contanto que caiba na janela de 40 dias entre fechamento e
+     * vencimento; sem nem isso, uma estimativa fixa de 10 dias antes.
+     */
+    public static function closingForDueDate(CarbonImmutable $dueDate, int $closingDay, int $dueDay): CarbonImmutable
+    {
+        $dueDate = $dueDate->startOfDay();
+        $sameMonth = self::forClosingMonth($dueDate->startOfMonth(), $closingDay, $dueDay);
+
+        if ($sameMonth->dueDate->equalTo($dueDate)) {
+            return $sameMonth->closingDate;
+        }
+
+        $previousMonth = self::forClosingMonth($dueDate->startOfMonth()->subMonthNoOverflow(), $closingDay, $dueDay);
+
+        if ($previousMonth->dueDate->equalTo($dueDate)) {
+            return $previousMonth->closingDate;
+        }
+
+        $nearestClosing = self::nearestClosingBefore($dueDate, $closingDay);
+
+        if ($nearestClosing !== null && $nearestClosing->diffInDays($dueDate) <= 40) {
+            return $nearestClosing;
+        }
+
+        return $dueDate->subDays(10);
+    }
+
+    /**
+     * Fechamento nominal (dia $closingDay, clampado no mês) mais recente
+     * estritamente antes de $dueDate — sem olhar para $dueDay, só o dia de
+     * fechamento em si. Null quando nem o do mês do vencimento nem o do mês
+     * anterior ficam antes dele (não deveria acontecer em uso normal, já
+     * que um mês inteiro sempre cabe antes).
+     */
+    private static function nearestClosingBefore(CarbonImmutable $dueDate, int $closingDay): ?CarbonImmutable
+    {
+        $candidate = self::onDay($dueDate->startOfMonth(), $closingDay);
+
+        if ($candidate->greaterThanOrEqualTo($dueDate)) {
+            $candidate = self::onDay($dueDate->startOfMonth()->subMonthNoOverflow(), $closingDay);
+        }
+
+        return $candidate->lessThan($dueDate) ? $candidate : null;
+    }
 }

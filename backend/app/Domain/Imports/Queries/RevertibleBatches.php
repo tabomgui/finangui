@@ -3,6 +3,7 @@
 namespace App\Domain\Imports\Queries;
 
 use App\Domain\Imports\Enums\ImportBatchStatus;
+use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Models\ImportBatch;
 use Illuminate\Support\Facades\DB;
 
@@ -22,7 +23,9 @@ final class RevertibleBatches
         $ranked = ImportBatch::query()
             ->select(['id'])
             ->selectRaw('ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY completed_at DESC, id DESC) AS rn')
-            ->where('status', ImportBatchStatus::Completed->value);
+            ->where('status', ImportBatchStatus::Completed->value)
+            // format pluggy nunca é revertível (ver RevertImportBatch).
+            ->where('format', '!=', ImportFormat::Pluggy->value);
 
         return DB::query()->fromSub($ranked, 'ranked')->where('rn', 1)->pluck('id')->map(fn ($id) => (int) $id)->all();
     }

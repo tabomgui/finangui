@@ -53,7 +53,7 @@ final class ImportPreview
         /** @var list<array<string, mixed>> $storedRows */
         $storedRows = $batch->rows ?? [];
         $rows = array_map(ParsedRow::fromArray(...), $storedRows);
-        $decisions = $this->planner->plan($account, $rows);
+        $decisions = $this->planner->plan($account, $rows, $batch->format);
 
         return new ImportPreviewData(
             $batch,

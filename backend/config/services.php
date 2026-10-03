@@ -41,4 +41,13 @@ return [
         'redirect' => env('GOOGLE_REDIRECT_URI'),
     ],
 
+    'pluggy' => [
+        'client_id' => env('PLUGGY_CLIENT_ID'),
+        'client_secret' => env('PLUGGY_CLIENT_SECRET'),
+        // `?:`, não o segundo argumento de env(): o .env.example traz
+        // PLUGGY_BASE_URL="" (string vazia, não ausente) — com o segundo
+        // argumento de env(), o default nunca entraria em jogo.
+        'base_url' => env('PLUGGY_BASE_URL') ?: 'https://api.pluggy.ai',
+    ],
+
 ];

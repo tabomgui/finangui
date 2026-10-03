@@ -7,6 +7,7 @@ use App\Domain\Cards\Actions\AssignStatement;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Imports\Enums\ImportBatchStatus;
+use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Errors\ImportBatchNotRevertible;
 use App\Domain\Imports\Models\ImportBatch;
 use App\Domain\Transactions\Models\Transaction;
@@ -48,7 +49,10 @@ final class RevertImportBatch
 
             $locked = ImportBatch::query()->whereKey($batch->id)->lockForUpdate()->firstOrFail();
 
-            if ($locked->status !== ImportBatchStatus::Completed) {
+            // format pluggy nunca é revertível pela UI: a sincronização
+            // bancária não é um lote que o usuário mandou e possa desfazer
+            // à mão (ver App\Domain\Banking\Actions\SyncTransactions).
+            if ($locked->status !== ImportBatchStatus::Completed || $locked->format === ImportFormat::Pluggy) {
                 throw new ImportBatchNotRevertible;
             }
 
