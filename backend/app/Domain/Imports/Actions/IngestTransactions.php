@@ -100,9 +100,16 @@ final class IngestTransactions
             // lote de fato inseriu (RowOutcome::New) — ainda dentro da
             // trava da conta e do lote, depois de categorizar: ligar ou
             // sugerir usa a categoria/descrição já resolvidas.
-            $detection = $insertedIds !== [] ? $this->detectTransfers->handle($insertedIds) : ['linked' => 0, 'suggested' => 0];
+            $detection = $insertedIds !== [] ? $this->detectTransfers->handle($insertedIds) : ['linked' => 0, 'suggested' => 0, 'undo' => []];
             $stats['transfers_linked'] = $detection['linked'];
             $stats['transfer_suggestions'] = $detection['suggested'];
+
+            // A perna de fora do lote que a detecção ligou automaticamente
+            // (ver DetectTransfers::applyLinks()) entra no mesmo undo do
+            // lote: RevertImportBatch restaura a categoria/fatura que ela
+            // tinha antes, não deixa sem categoria nem com uma nova só pelo
+            // acaso da ligação ter sido desfeita.
+            $undo = [...$undo, ...$detection['undo']];
 
             $createdStatementIds = CardStatement::query()
                 ->where('account_id', $account->id)

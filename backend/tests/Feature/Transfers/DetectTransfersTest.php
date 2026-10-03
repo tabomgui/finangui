@@ -2,6 +2,7 @@
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Models\InstallmentPlan;
+use App\Domain\Categories\Models\Category;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Models\Transaction;
 use App\Domain\Transfers\Actions\DetectTransfers;
@@ -23,11 +24,11 @@ function leg(Account $account, Direction $direction, array $overrides = []): Tra
         'direction' => $direction,
         'amount' => 50000,
         'date' => '2026-09-30',
-        // Descrição neutra (sem pista de transferência nem nome de conta):
-        // a descrição default da factory é sorteada entre valores que
-        // incluem "Pix recebido", o que somaria pontuação por pista e
-        // quebraria o empate que estes testes dependem de ser exato.
-        'description' => 'Lancamento comum',
+        // "Transferência" dá a mesma pista (TRANSF) a todas as pernas por
+        // padrão — a ligação automática agora exige evidência; os testes
+        // que querem testar ambiguidade continuam válidos porque a pista
+        // soma igualmente aos dois lados de um empate, sem desfazê-lo.
+        'description' => 'Transferência comum',
     ], $overrides));
 }
 
@@ -37,7 +38,7 @@ it('liga automaticamente um par inequívoco entre contas diferentes', function (
 
     $result = $this->detect->handle([$out->id, $in->id]);
 
-    expect($result)->toBe(['linked' => 1, 'suggested' => 0]);
+    expect($result)->toBe(['linked' => 1, 'suggested' => 0, 'undo' => []]);
 
     expect($out->refresh()->transfer_id)->not->toBeNull()
         ->and($in->refresh()->transfer_id)->toBe($out->transfer_id);
@@ -51,7 +52,7 @@ it('par ambíguo não liga, vira sugestão para cada combinação', function () 
 
     $result = $this->detect->handle([$out->id, $in1->id, $in2->id]);
 
-    expect($result)->toBe(['linked' => 0, 'suggested' => 2]);
+    expect($result)->toBe(['linked' => 0, 'suggested' => 2, 'undo' => []]);
 
     expect($out->refresh()->transfer_id)->toBeNull();
 
@@ -69,7 +70,7 @@ it('reexecutar com os mesmos ids não duplica sugestão nem religa o par já lig
 
     $result = $this->detect->handle([$out->id, $in->id]);
 
-    expect($result)->toBe(['linked' => 0, 'suggested' => 0])
+    expect($result)->toBe(['linked' => 0, 'suggested' => 0, 'undo' => []])
         ->and($out->refresh()->transfer_id)->toBe($firstTransferId);
 
     $extraAccount = Account::factory()->create(['user_id' => $this->user->id]);
@@ -80,7 +81,7 @@ it('reexecutar com os mesmos ids não duplica sugestão nem religa o par já lig
     $this->detect->handle([$otherOut->id, $in1->id, $in2->id]);
     $resultAgain = $this->detect->handle([$otherOut->id, $in1->id, $in2->id]);
 
-    expect($resultAgain)->toBe(['linked' => 0, 'suggested' => 0])
+    expect($resultAgain)->toBe(['linked' => 0, 'suggested' => 0, 'undo' => []])
         ->and(TransferSuggestion::count())->toBe(2);
 });
 
@@ -98,7 +99,7 @@ it('par descartado não volta a ligar nem a sugerir', function () {
 
     $result = $this->detect->handle([$out->id, $in->id]);
 
-    expect($result)->toBe(['linked' => 0, 'suggested' => 0])
+    expect($result)->toBe(['linked' => 0, 'suggested' => 0, 'undo' => []])
         ->and($out->refresh()->transfer_id)->toBeNull()
         ->and(TransferSuggestion::query()->where('status', TransferSuggestionStatus::Pending)->count())->toBe(0);
 });
@@ -109,7 +110,7 @@ it('transação ignorada não entra como candidata', function () {
 
     $result = $this->detect->handle([$out->id, $in->id]);
 
-    expect($result)->toBe(['linked' => 0, 'suggested' => 0]);
+    expect($result)->toBe(['linked' => 0, 'suggested' => 0, 'undo' => []]);
 });
 
 it('transação projetada não entra como candidata', function () {
@@ -118,7 +119,7 @@ it('transação projetada não entra como candidata', function () {
 
     $result = $this->detect->handle([$out->id, $in->id]);
 
-    expect($result)->toBe(['linked' => 0, 'suggested' => 0]);
+    expect($result)->toBe(['linked' => 0, 'suggested' => 0, 'undo' => []]);
 });
 
 it('parcela não entra como candidata', function () {
@@ -128,7 +129,7 @@ it('parcela não entra como candidata', function () {
 
     $result = $this->detect->handle([$out->id, $in->id]);
 
-    expect($result)->toBe(['linked' => 0, 'suggested' => 0]);
+    expect($result)->toBe(['linked' => 0, 'suggested' => 0, 'undo' => []]);
 });
 
 it('isola candidatas por usuário: mesmo valor e data de outro usuário não forma par', function () {
@@ -143,7 +144,7 @@ it('isola candidatas por usuário: mesmo valor e data de outro usuário não for
     // inexistente para quem chama detect agora (o usuário autenticado é o
     // segundo, não o dono de $out) — nenhum dos dois é candidata válida
     // junto do outro.
-    expect($result)->toBe(['linked' => 0, 'suggested' => 0]);
+    expect($result)->toBe(['linked' => 0, 'suggested' => 0, 'undo' => []]);
 });
 
 it('sem ids, considera só candidatas dentro da janela de dias pedida', function () {
@@ -152,11 +153,112 @@ it('sem ids, considera só candidatas dentro da janela de dias pedida', function
 
     $result = $this->detect->handle(null, 30);
 
-    expect($result)->toBe(['linked' => 0, 'suggested' => 0]);
+    expect($result)->toBe(['linked' => 0, 'suggested' => 0, 'undo' => []]);
 
     $resultWide = $this->detect->handle(null, 365);
 
-    expect($resultWide)->toBe(['linked' => 1, 'suggested' => 0]);
+    expect($resultWide)->toBe(['linked' => 1, 'suggested' => 0, 'undo' => []]);
     expect($out->refresh()->transfer_id)->not->toBeNull();
     expect($in->refresh()->transfer_id)->toBe($out->transfer_id);
+});
+
+it('sem evidência na descrição, o par mútuo não liga sozinho — só sugere', function () {
+    $out = leg($this->checking, Direction::Out, ['description' => 'Lancamento qualquer']);
+    $in = leg($this->savings, Direction::In, ['description' => 'Lancamento qualquer']);
+
+    $result = $this->detect->handle([$out->id, $in->id]);
+
+    expect($result)->toBe(['linked' => 0, 'suggested' => 1, 'undo' => []])
+        ->and($out->refresh()->transfer_id)->toBeNull();
+});
+
+it('perna pendente nunca liga automaticamente, mesmo com evidência — só sugere', function () {
+    $out = leg($this->checking, Direction::Out, ['status' => 'pending']);
+    $in = leg($this->savings, Direction::In);
+
+    $result = $this->detect->handle([$out->id, $in->id]);
+
+    expect($result)->toBe(['linked' => 0, 'suggested' => 1, 'undo' => []])
+        ->and($out->refresh()->transfer_id)->toBeNull();
+});
+
+it('compra no cartão de crédito e um PIX recebido do mesmo valor não ligam sozinhos — só sugerem', function () {
+    $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+
+    $purchase = leg($card, Direction::Out, ['description' => 'Compra loja exemplo']);
+    $pix = leg($this->savings, Direction::In, ['description' => 'Pix recebido']);
+
+    $result = $this->detect->handle([$purchase->id, $pix->id]);
+
+    expect($result['linked'])->toBe(0)
+        ->and($result['suggested'])->toBe(1)
+        ->and($purchase->refresh()->transfer_id)->toBeNull();
+});
+
+it('estorno manualmente categorizado e assinatura manualmente categorizada não ligam sozinhos, mesmo com pista de pagamento', function () {
+    $categoriaCompras = Category::factory()->create(['user_id' => $this->user->id, 'name' => 'Compras', 'is_transfer' => false]);
+    $categoriaAssinaturas = Category::factory()->create(['user_id' => $this->user->id, 'name' => 'Assinaturas', 'is_transfer' => false]);
+
+    $estorno = leg($this->checking, Direction::In, [
+        'description' => 'Estorno de pagamento', 'category_id' => $categoriaCompras->id, 'categorized_by' => 'manual',
+    ]);
+    $assinatura = leg($this->savings, Direction::Out, [
+        'description' => 'Pagamento Spotify', 'category_id' => $categoriaAssinaturas->id, 'categorized_by' => 'manual',
+    ]);
+
+    $result = $this->detect->handle([$estorno->id, $assinatura->id]);
+
+    expect($result['linked'])->toBe(0)
+        ->and($result['suggested'])->toBe(1)
+        ->and($estorno->refresh()->transfer_id)->toBeNull()
+        ->and($estorno->category_id)->toBe($categoriaCompras->id);
+});
+
+it('categoria manual marcada como transferência não impede a ligação automática', function () {
+    $categoriaTransferencia = Category::factory()->create(['user_id' => $this->user->id, 'name' => 'Transferências', 'is_transfer' => true]);
+
+    $out = leg($this->checking, Direction::Out, ['category_id' => $categoriaTransferencia->id, 'categorized_by' => 'manual']);
+    $in = leg($this->savings, Direction::In);
+
+    $result = $this->detect->handle([$out->id, $in->id]);
+
+    expect($result['linked'])->toBe(1)
+        ->and($out->refresh()->transfer_id)->not->toBeNull();
+});
+
+it('grava em undo a categoria/fatura de antes de ligar, para a perna de fora do lote', function () {
+    $category = Category::factory()->create(['user_id' => $this->user->id]);
+    $existing = leg($this->savings, Direction::In, ['category_id' => $category->id, 'categorized_by' => 'history']);
+    $inserted = leg($this->checking, Direction::Out);
+
+    $result = $this->detect->handle([$inserted->id]);
+
+    expect($result['linked'])->toBe(1)
+        ->and($result['undo'])->toBe([
+            ['transaction_id' => $existing->id, 'attributes' => [
+                'category_id' => $category->id, 'categorized_by' => 'history', 'statement_id' => null,
+            ]],
+        ]);
+
+    expect($existing->refresh()->category_id)->toBeNull();
+});
+
+it('ao ligar de verdade a melhor opção, a segunda melhor opção da mesma entrada deixa de ser sugerida', function () {
+    // in prefere out1 (mesma data: 0,8) sobre out2 (1 dia: 0,65) — só
+    // out1-in é mútuo e liga; out2 nunca seria ligado por si só, e some da
+    // lista de sugestões porque in realmente ligou com out1.
+    $in = leg($this->savings, Direction::In);
+    $out1 = leg($this->checking, Direction::Out);
+    $extraAccount = Account::factory()->create(['user_id' => $this->user->id]);
+    $out2 = leg($extraAccount, Direction::Out, ['date' => '2026-10-01']);
+
+    $result = $this->detect->handle([$out1->id, $in->id, $out2->id]);
+
+    expect($result['linked'])->toBe(1)
+        ->and($result['suggested'])->toBe(0)
+        ->and($out1->refresh()->transfer_id)->not->toBeNull()
+        ->and($in->refresh()->transfer_id)->toBe($out1->transfer_id)
+        ->and($out2->refresh()->transfer_id)->toBeNull();
+
+    expect(TransferSuggestion::query()->where('status', TransferSuggestionStatus::Pending)->count())->toBe(0);
 });

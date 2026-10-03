@@ -21,7 +21,7 @@ function suggestionLeg(Account $account, Direction $direction, array $overrides 
         'direction' => $direction,
         'amount' => 20000,
         'date' => '2026-09-30',
-        'description' => 'Lancamento comum',
+        'description' => 'Transferência comum',
     ], $overrides));
 }
 
@@ -52,6 +52,25 @@ it('lista sugestões pendentes, mais recentes primeiro, com as duas transações
         ->and($response[0]['in']['id'])->toBe($in2->id)
         ->and($response[0]['out']['account']['id'])->toBe($this->checking->id)
         ->and($response[1]['id'])->toBe($older->id);
+});
+
+it('pagina por cursor: per_page limita a página e devolve o cursor da próxima', function () {
+    foreach (range(1, 3) as $i) {
+        $out = suggestionLeg($this->checking, Direction::Out, ['amount' => 1000 * $i]);
+        $in = suggestionLeg($this->savings, Direction::In, ['amount' => 1000 * $i]);
+        TransferSuggestion::factory()->create([
+            'user_id' => $this->user->id, 'out_transaction_id' => $out->id, 'in_transaction_id' => $in->id, 'score' => 0.6,
+        ]);
+    }
+
+    $first = $this->getJson('/api/v1/transfer-suggestions?per_page=2')->assertOk()->json();
+
+    expect($first['data'])->toHaveCount(2)
+        ->and($first['meta']['per_page'])->toBe(2)
+        ->and($first['links']['next'])->not->toBeNull();
+
+    $second = $this->getJson($first['links']['next'])->assertOk()->json('data');
+    expect($second)->toHaveCount(1);
 });
 
 it('detect liga pares inequívocos e sugere os ambíguos, respeitando o throttle próprio', function () {
@@ -117,6 +136,11 @@ it('aceitar uma sugestão cuja perna já está ligada (stale) dá 409', function
     $this->postJson("/api/v1/transfer-suggestions/{$suggestion->id}/accept")
         ->assertStatus(409)
         ->assertJsonPath('code', 'transfer_link_invalid');
+
+    // Sugestão desatualizada: exclui em vez de ficar presa pra sempre
+    // (não dá pra aceitá-la de novo, e LinkTransfer só a excluiria se
+    // tivesse realmente ligado).
+    expect(TransferSuggestion::query()->whereKey($suggestion->id)->exists())->toBeFalse();
 });
 
 it('descarta uma sugestão: some da listagem e não reaparece com uma nova detecção', function () {

@@ -2,6 +2,7 @@
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Models\CardStatement;
+use App\Domain\Categories\Models\Category;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Models\Transaction;
 use App\Domain\Transfers\Actions\LinkTransfer;
@@ -77,6 +78,27 @@ it('remember: false desfaz sem gravar sugestão dismissed para o par', function 
     expect($out->refresh()->transfer_id)->toBeNull()
         ->and($in->refresh()->transfer_id)->toBeNull()
         ->and(TransferSuggestion::query()->where('out_transaction_id', $out->id)->where('in_transaction_id', $in->id)->exists())->toBeFalse();
+});
+
+it('remember: false recategoriza pela história as pernas que ficaram sem categoria', function () {
+    $category = Category::factory()->create(['user_id' => $this->user->id]);
+    Transaction::factory()->create([
+        'account_id' => $this->checking->id, 'direction' => Direction::Out, 'description' => 'Mercado Exemplo',
+        'category_id' => $category->id, 'categorized_by' => 'manual', 'status' => 'posted',
+    ]);
+
+    $out = Transaction::factory()->create([
+        'account_id' => $this->checking->id, 'direction' => Direction::Out, 'amount' => 5000,
+        'date' => '2026-03-15', 'description' => 'Mercado Exemplo',
+    ]);
+    $in = Transaction::factory()->create(['account_id' => $this->savings->id, 'direction' => Direction::In, 'amount' => 5000, 'date' => '2026-03-15']);
+    $transferId = app(LinkTransfer::class)->handle($out, $in);
+
+    app(UnlinkTransfer::class)->handle($transferId, remember: false);
+
+    expect($out->refresh()->category_id)->toBe($category->id)
+        ->and($out->categorized_by)->toBe('history')
+        ->and(TransferSuggestion::query()->where('out_transaction_id', $out->id)->exists())->toBeFalse();
 });
 
 it('saída de cartão mantém o statement_id como estava ao desfazer', function () {

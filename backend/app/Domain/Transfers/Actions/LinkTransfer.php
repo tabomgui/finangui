@@ -4,6 +4,7 @@ namespace App\Domain\Transfers\Actions;
 
 use App\Domain\Cards\Actions\AssignStatement;
 use App\Domain\Transactions\Enums\Direction;
+use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use App\Domain\Transfers\Enums\TransferSuggestionStatus;
 use App\Domain\Transfers\Errors\TransferLinkInvalid;
@@ -21,6 +22,28 @@ use Illuminate\Support\Str;
 final class LinkTransfer
 {
     public function __construct(private readonly AssignStatement $assignStatement) {}
+
+    /**
+     * "Juntar à mão": aceita as duas transações em qualquer ordem — a
+     * direção real de cada uma (não a posição do parâmetro) decide quem é
+     * a saída e quem é a entrada. Mesma direção nos dois é um par
+     * inválido, como qualquer outra violação de assertLinkable().
+     *
+     * @return string o transfer_id novo
+     *
+     * @throws TransferLinkInvalid
+     * @throws ModelNotFoundException<Transaction>
+     */
+    public function handleAnyOrder(Transaction $a, Transaction $b, int $maxDays = 2): string
+    {
+        if ($a->direction === $b->direction) {
+            throw new TransferLinkInvalid;
+        }
+
+        [$out, $in] = $a->direction === Direction::Out ? [$a, $b] : [$b, $a];
+
+        return $this->handle($out, $in, $maxDays);
+    }
 
     /**
      * @return string o transfer_id novo
@@ -77,6 +100,18 @@ final class LinkTransfer
         }
 
         if ($out->direction !== Direction::Out || $in->direction !== Direction::In) {
+            throw new TransferLinkInvalid;
+        }
+
+        if ($out->isInstallment() || $in->isInstallment()) {
+            throw new TransferLinkInvalid;
+        }
+
+        if ($out->status === TransactionStatus::Projected || $in->status === TransactionStatus::Projected) {
+            throw new TransferLinkInvalid;
+        }
+
+        if ($out->is_ignored || $in->is_ignored) {
             throw new TransferLinkInvalid;
         }
 

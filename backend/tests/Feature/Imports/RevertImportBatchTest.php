@@ -3,6 +3,7 @@
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
+use App\Domain\Categories\Models\Category;
 use App\Domain\Imports\Actions\IngestTransactions;
 use App\Domain\Imports\Actions\RevertImportBatch;
 use App\Domain\Imports\Data\ParsedRow;
@@ -228,29 +229,51 @@ it('revert exclui os vínculos de tag das transações inseridas pelo lote', fun
     expect(DB::table('tag_transaction')->where('transaction_id', $transaction->id)->count())->toBe(0);
 });
 
-it('reverter um lote cujo lançamento foi ligado a um manual mantém o manual, sem transfer_id', function () {
+it('reverter um lote cujo lançamento foi ligado a um manual mantém o manual (sem transfer_id) e a categoria que ele tinha antes', function () {
     $savings = Account::factory()->create(['user_id' => $this->user->id]);
+    $category = Category::factory()->create(['user_id' => $this->user->id]);
+    // categorized_by history (não manual): categoria manual não-transferência
+    // impediria a ligação automática sozinha (ver TransferMatcher::canAutoLink()).
     $manualIn = Transaction::factory()->create([
         'account_id' => $savings->id, 'direction' => Direction::In, 'amount' => 20000, 'date' => '2026-03-10',
-        'description' => 'Lancamento comum', 'original_description' => 'Lancamento comum',
+        'description' => 'Transferência recebida', 'original_description' => 'Transferência recebida',
+        'category_id' => $category->id, 'categorized_by' => 'history',
     ]);
 
     $batch = $this->ingest->handle(
         ImportBatch::factory()->create(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Nubank]),
-        [revertRow(['description' => 'Lancamento comum', 'amount' => 20000, 'direction' => Direction::Out, 'date' => '2026-03-10', 'externalId' => 'out-link-1'])],
+        [revertRow(['description' => 'Transferência enviada', 'amount' => 20000, 'direction' => Direction::Out, 'date' => '2026-03-10', 'externalId' => 'out-link-1'])],
     );
 
     expect($batch->stats['transfers_linked'])->toBe(1);
 
     $manualIn->refresh();
-    expect($manualIn->transfer_id)->not->toBeNull();
+    expect($manualIn->transfer_id)->not->toBeNull()
+        ->and($manualIn->category_id)->toBeNull(); // limpa ao ligar (ver LinkTransfer)
 
     $this->revert->handle($batch);
 
     $manualIn->refresh();
     expect($manualIn->transfer_id)->toBeNull()
+        ->and($manualIn->category_id)->toBe($category->id)
+        ->and($manualIn->categorized_by)->toBe('history')
         ->and(Transaction::query()->whereKey($manualIn->id)->exists())->toBeTrue()
         ->and(Transaction::where('external_id', 'out-link-1')->exists())->toBeFalse();
+});
+
+it('tolera transfer_id órfão (sem a outra perna): revert não quebra', function () {
+    $batch = ImportBatch::factory()->create([
+        'account_id' => $this->account->id, 'user_id' => $this->user->id,
+        'status' => ImportBatchStatus::Completed, 'completed_at' => now(),
+    ]);
+    $orphan = Transaction::factory()->create([
+        'account_id' => $this->account->id, 'import_batch_id' => $batch->id, 'transfer_id' => (string) Str::uuid(),
+    ]);
+
+    $this->revert->handle($batch);
+
+    expect($batch->refresh()->status)->toBe(ImportBatchStatus::Reverted)
+        ->and(Transaction::query()->whereKey($orphan->id)->exists())->toBeFalse();
 });
 
 it('só permite reverter o lote mais recente concluído da conta', function () {

@@ -9,13 +9,22 @@ use Carbon\CarbonImmutable;
 
 /**
  * Puro, sem banco: pontua pares de transações candidatas a transferência e
- * decide quais ligar automaticamente (match mútuo único) e quais sugerir.
+ * decide quais ligar automaticamente (match mútuo único, com evidência e
+ * sem nenhum dos impedimentos de canAutoLink()) e quais sugerir (pontuação
+ * mínima, no máximo duas por transação).
  */
 final class TransferMatcher
 {
-    private const KEYWORDS = ['TRANSF', 'PIX', 'TED', 'DOC', 'PAGAMENTO', 'FATURA', 'APLICACAO', 'RESGATE'];
+    /** TRANSF casa como prefixo (TRANSFERENCIA, TRANSFERIDO); as demais exigem a palavra exata. */
+    private const EVIDENCE_KEYWORDS = ['TRANSF', 'PIX', 'TED', 'DOC', 'PAGAMENTO', 'FATURA', 'APLICACAO', 'RESGATE'];
 
-    private const SUGGESTION_THRESHOLD = 0.3;
+    private const PAYMENT_KEYWORDS = ['PAGAMENTO', 'FATURA'];
+
+    private const MIN_ACCOUNT_NAME_LENGTH = 3;
+
+    private const SUGGESTION_THRESHOLD = 0.45;
+
+    private const MAX_SUGGESTIONS_PER_TRANSACTION = 2;
 
     /**
      * @param  list<TransferCandidate>  $candidates
@@ -24,6 +33,12 @@ final class TransferMatcher
      */
     public static function match(array $candidates, array $dismissed = [], int $maxDays = 2): array
     {
+        /** @var array<int, TransferCandidate> $byId */
+        $byId = [];
+        foreach ($candidates as $candidate) {
+            $byId[$candidate->id] = $candidate;
+        }
+
         $outs = self::sortedById(array_values(array_filter(
             $candidates,
             fn (TransferCandidate $c) => $c->direction === Direction::Out,
@@ -48,33 +63,32 @@ final class TransferMatcher
         $bestForOut = self::bestPartners($pairs, 'out', 'in');
         $bestForIn = self::bestPartners($pairs, 'in', 'out');
 
-        $linkedOutIds = [];
-        $linkedInIds = [];
         $links = [];
+        /** @var array<string, true> $linkedPairKeys */
+        $linkedPairKeys = [];
 
         foreach ($pairs as $pair) {
             $preferredByOut = $bestForOut[$pair['out']] ?? null;
             $preferredByIn = $bestForIn[$pair['in']] ?? null;
 
-            if ($preferredByOut === $pair['in'] && $preferredByIn === $pair['out']) {
-                $links[] = new TransferPair($pair['out'], $pair['in'], $pair['score']);
-                $linkedOutIds[$pair['out']] = true;
-                $linkedInIds[$pair['in']] = true;
-            }
-        }
-
-        $suggestions = [];
-        foreach ($pairs as $pair) {
-            if ($pair['score'] < self::SUGGESTION_THRESHOLD) {
+            if ($preferredByOut !== $pair['in'] || $preferredByIn !== $pair['out']) {
                 continue;
             }
 
-            if (isset($linkedOutIds[$pair['out']]) || isset($linkedInIds[$pair['in']])) {
+            if (! self::canAutoLink($byId[$pair['out']], $byId[$pair['in']])) {
+                // Match mútuo único, mas sem evidência/com algum impedimento
+                // (cartão, pendente, categoria manual): não liga sozinho,
+                // mas ainda compete normalmente por uma vaga de sugestão
+                // abaixo (ver buildSuggestions()) — só a chave exata do par
+                // fica marcada para não entrar duas vezes.
                 continue;
             }
 
-            $suggestions[] = new TransferPair($pair['out'], $pair['in'], $pair['score']);
+            $links[] = new TransferPair($pair['out'], $pair['in'], $pair['score']);
+            $linkedPairKeys["{$pair['out']}:{$pair['in']}"] = true;
         }
+
+        $suggestions = self::buildSuggestions($pairs, $linkedPairKeys);
 
         usort($links, fn (TransferPair $a, TransferPair $b) => [$a->outId, $a->inId] <=> [$b->outId, $b->inId]);
         usort($suggestions, fn (TransferPair $a, TransferPair $b) => [$a->outId, $a->inId] <=> [$b->outId, $b->inId]);
@@ -93,7 +107,7 @@ final class TransferMatcher
             default => 0.0,
         };
 
-        if (self::hasDescriptionClue($out, $in)) {
+        if (self::hasClue($out, $in)) {
             $score += 0.2;
         }
 
@@ -104,25 +118,164 @@ final class TransferMatcher
         return min($score, 1.0);
     }
 
-    private static function hasDescriptionClue(TransferCandidate $out, TransferCandidate $in): bool
+    /**
+     * Impedimentos à ligação automática de um match mútuo único — todos
+     * esses casos ainda podem virar sugestão, só não ligam sozinhos:
+     * nenhuma perna pendente; nenhuma perna com categoria manual numa
+     * categoria que não é de transferência (o usuário já decidiu o que
+     * aquele lançamento é); a saída nunca é de cartão de crédito; e, se a
+     * entrada é de cartão, só liga com pista de pagamento de fatura
+     * (`PAGAMENTO`/`FATURA`) e sem `ESTORNO`. Em qualquer caso, exige
+     * evidência (a mesma pista que soma a pontuação em score()) — um par
+     * só por coincidência de valor e data nunca liga sozinho.
+     */
+    private static function canAutoLink(TransferCandidate $out, TransferCandidate $in): bool
     {
-        foreach ([$out->description, $in->description] as $description) {
-            foreach (self::KEYWORDS as $keyword) {
-                if (str_contains($description, $keyword)) {
-                    return true;
-                }
+        if ($out->pending || $in->pending) {
+            return false;
+        }
+
+        if ($out->manualNonTransferCategory || $in->manualNonTransferCategory) {
+            return false;
+        }
+
+        if ($out->creditCard) {
+            return false;
+        }
+
+        if (! self::hasClue($out, $in)) {
+            return false;
+        }
+
+        if ($in->creditCard) {
+            if (! self::hasPaymentClue($out, $in)) {
+                return false;
+            }
+
+            if (self::hasEstornoClue($out, $in)) {
+                return false;
             }
         }
 
-        if ($in->accountName !== '' && str_contains($out->description, $in->accountName)) {
+        return true;
+    }
+
+    private static function hasClue(TransferCandidate $out, TransferCandidate $in): bool
+    {
+        return self::hasKeywordClue($out->description)
+            || self::hasKeywordClue($in->description)
+            || self::hasAccountNameClue($out, $in);
+    }
+
+    private static function hasKeywordClue(string $description): bool
+    {
+        foreach (self::EVIDENCE_KEYWORDS as $keyword) {
+            if (self::matchesKeyword($description, $keyword)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function hasPaymentClue(TransferCandidate $out, TransferCandidate $in): bool
+    {
+        foreach (self::PAYMENT_KEYWORDS as $keyword) {
+            if (self::matchesKeyword($out->description, $keyword) || self::matchesKeyword($in->description, $keyword)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function hasEstornoClue(TransferCandidate $out, TransferCandidate $in): bool
+    {
+        return self::matchesKeyword($out->description, 'ESTORNO') || self::matchesKeyword($in->description, 'ESTORNO');
+    }
+
+    private static function hasAccountNameClue(TransferCandidate $out, TransferCandidate $in): bool
+    {
+        if (mb_strlen($in->accountName) >= self::MIN_ACCOUNT_NAME_LENGTH && self::matchesKeyword($out->description, $in->accountName)) {
             return true;
         }
 
-        if ($out->accountName !== '' && str_contains($in->description, $out->accountName)) {
+        if (mb_strlen($out->accountName) >= self::MIN_ACCOUNT_NAME_LENGTH && self::matchesKeyword($in->description, $out->accountName)) {
             return true;
         }
 
         return false;
+    }
+
+    /**
+     * Palavra inteira, não substring: "UNITED" não casa `TED`, "DOCERIA"
+     * não casa `DOC`, conta "Inter" não casa "INTERNET" na descrição.
+     * `TRANSF` é o único prefixo (casa TRANSFERENCIA, TRANSFERIDO etc.);
+     * preg_quote escapa qualquer caractere especial de um nome de conta
+     * usado como pista.
+     */
+    private static function matchesKeyword(string $haystack, string $keyword): bool
+    {
+        $suffix = $keyword === 'TRANSF' ? '[A-Z0-9]*' : '';
+        $pattern = '/\b'.preg_quote($keyword, '/').$suffix.'\b/';
+
+        return preg_match($pattern, $haystack) === 1;
+    }
+
+    /**
+     * @param  list<array{out: int, in: int, score: float}>  $pairs
+     * @param  array<string, true>  $linkedPairKeys  chaves "out:in" que já ligaram de verdade (ver match()) — não voltam a aparecer como sugestão
+     * @return list<TransferPair>
+     */
+    private static function buildSuggestions(array $pairs, array $linkedPairKeys): array
+    {
+        $eligible = [];
+        foreach ($pairs as $pair) {
+            if ($pair['score'] < self::SUGGESTION_THRESHOLD) {
+                continue;
+            }
+
+            if (isset($linkedPairKeys["{$pair['out']}:{$pair['in']}"])) {
+                continue;
+            }
+
+            $eligible[] = $pair;
+        }
+
+        // Maior pontuação primeiro (empate: ids menores primeiro, só para
+        // desempate determinístico): o teto de duas sugestões por
+        // transação, abaixo, favorece sempre a maior pontuação quando uma
+        // transação tem mais de dois pares candidatos.
+        usort($eligible, function (array $a, array $b): int {
+            $byScore = $b['score'] <=> $a['score'];
+
+            return $byScore !== 0 ? $byScore : [$a['out'], $a['in']] <=> [$b['out'], $b['in']];
+        });
+
+        /** @var array<int, int> $outCount */
+        $outCount = [];
+        /** @var array<int, int> $inCount */
+        $inCount = [];
+        $suggestions = [];
+
+        foreach ($eligible as $pair) {
+            $outId = $pair['out'];
+            $inId = $pair['in'];
+
+            if (($outCount[$outId] ?? 0) >= self::MAX_SUGGESTIONS_PER_TRANSACTION) {
+                continue;
+            }
+
+            if (($inCount[$inId] ?? 0) >= self::MAX_SUGGESTIONS_PER_TRANSACTION) {
+                continue;
+            }
+
+            $suggestions[] = new TransferPair($outId, $inId, $pair['score']);
+            $outCount[$outId] = ($outCount[$outId] ?? 0) + 1;
+            $inCount[$inId] = ($inCount[$inId] ?? 0) + 1;
+        }
+
+        return $suggestions;
     }
 
     /**
@@ -165,7 +318,7 @@ final class TransferMatcher
 
     /**
      * Para cada valor da chave $key, acha o $otherKey com maior pontuação —
-     * só quando é único (empate no topo não entra, fica ambíguo).
+     * só quando é único (empate no topo não entra, fica ambígua).
      *
      * @param  list<array{out: int, in: int, score: float}>  $pairs
      * @return array<int, int>

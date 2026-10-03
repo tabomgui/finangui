@@ -13,6 +13,7 @@ use App\Domain\Imports\Models\ImportBatch;
 use App\Domain\Transactions\Models\Transaction;
 use App\Domain\Transfers\Actions\UnlinkTransfer;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -89,7 +90,19 @@ final class RevertImportBatch
                 ->pluck('transfer_id');
 
             foreach ($linkedTransferIds as $transferId) {
-                $this->unlinkTransfer->handle($transferId, remember: false);
+                try {
+                    $this->unlinkTransfer->handle($transferId, remember: false);
+                } catch (ModelNotFoundException) {
+                    // transfer_id órfão: a outra perna já não existe (nunca
+                    // deveria acontecer, mas UnlinkTransfer exige as duas
+                    // pernas presentes) — zera o campo desta mesma, em vez
+                    // de deixar a exceção abortar o revert inteiro; ela é
+                    // excluída já a seguir, de qualquer forma.
+                    Transaction::query()
+                        ->where('import_batch_id', $locked->id)
+                        ->where('transfer_id', $transferId)
+                        ->update(['transfer_id' => null]);
+                }
             }
 
             Transaction::query()->where('import_batch_id', $locked->id)->delete();

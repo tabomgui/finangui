@@ -3,6 +3,7 @@
 namespace App\Domain\Transfers\Actions;
 
 use App\Domain\Cards\Actions\AssignStatement;
+use App\Domain\Rules\Actions\CategorizeTransaction;
 use App\Domain\Transactions\Models\Transaction;
 use App\Domain\Transfers\Enums\TransferSuggestionStatus;
 use App\Domain\Transfers\Models\TransferSuggestion;
@@ -11,21 +12,25 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Desfaz uma transferência: as duas pernas voltam a ser lançamentos comuns
- * (sem categoria) e o par ganha uma sugestão "dismissed", para a detecção não
- * religar as duas sozinha.
+ * Desfaz uma transferência: as duas pernas voltam a ser lançamentos comuns.
+ * Com $remember (desfazer pedido pelo usuário), o par ganha uma sugestão
+ * "dismissed", para a detecção não religar as duas sozinha. Sem $remember
+ * (desfazer automático: RevertImportBatch, limpeza de pendentes), nenhuma
+ * das duas é "decisão do usuário" sobre o par — em vez da sugestão
+ * dismissed, cada perna que ficou sem categoria tenta se recategorizar
+ * (regras → histórico); quem chama com uma categoria anterior salva (ver
+ * App\Domain\Transfers\Actions\DetectTransfers, que grava isso no undo do
+ * lote antes de ligar) sobrescreve esse resultado depois, com a categoria
+ * de verdade.
  */
 final class UnlinkTransfer
 {
-    public function __construct(private readonly AssignStatement $assignStatement) {}
+    public function __construct(
+        private readonly AssignStatement $assignStatement,
+        private readonly CategorizeTransaction $categorize,
+    ) {}
 
     /**
-     * $remember = false pula a sugestão "dismissed": usado pelas limpezas
-     * automáticas (RevertImportBatch, limpeza de pendentes do
-     * SyncTransactions) que desligam uma perna só para preservar a outra
-     * antes de excluir — ali não houve decisão do usuário sobre o par, e
-     * uma futura detecção deve poder religá-lo normalmente.
-     *
      * @throws ModelNotFoundException<Transaction>
      */
     public function handle(string $transferId, bool $remember = true): void
@@ -49,7 +54,20 @@ final class UnlinkTransfer
                     ['out_transaction_id' => $out->id, 'in_transaction_id' => $in->id],
                     ['score' => 0, 'status' => TransferSuggestionStatus::Dismissed],
                 );
+            } else {
+                $this->recategorize($out);
+                $this->recategorize($in);
             }
         });
+    }
+
+    private function recategorize(Transaction $transaction): void
+    {
+        if ($transaction->category_id !== null) {
+            return;
+        }
+
+        $this->categorize->handle($transaction);
+        $transaction->save();
     }
 }

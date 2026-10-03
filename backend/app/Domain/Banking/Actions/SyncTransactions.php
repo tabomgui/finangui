@@ -15,6 +15,7 @@ use App\Domain\Imports\Models\ImportBatch;
 use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
+use App\Domain\Transfers\Actions\DetectTransfers;
 use App\Domain\Transfers\Actions\UnlinkTransfer;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -60,6 +61,7 @@ final class SyncTransactions
         private readonly BankProvider $provider,
         private readonly IngestTransactions $ingest,
         private readonly UnlinkTransfer $unlinkTransfer,
+        private readonly DetectTransfers $detectTransfers,
     ) {}
 
     /**
@@ -205,7 +207,11 @@ final class SyncTransactions
      * Desliga (sem lembrar como descartado) qualquer perna de transferência
      * entre as que serão excluídas antes do delete em lote: a outra perna,
      * de outra conta, sobrevive como lançamento comum em vez de ficar com
-     * um transfer_id para um par que não existe mais.
+     * um transfer_id para um par que não existe mais. Rodar DetectTransfers
+     * para quem sobreviveu, no fim: voltando a ser uma candidata comum,
+     * pode formar um par novo com outra transação (ligar de verdade ou
+     * virar sugestão) — sem isso, ficaria esperando o próximo lançamento
+     * novo em qualquer conta para ser considerada de novo.
      *
      * @param  list<string>  $receivedIds  ids da listagem completa (ver cleanupStalePending()) — o que não está aqui o banco não reportou mais
      */
@@ -216,11 +222,28 @@ final class SyncTransactions
 
         $transferIds = $query()->whereNotNull('transfer_id')->pluck('transfer_id');
 
+        $survivorIds = [];
         foreach ($transferIds as $transferId) {
+            // A outra perna é sempre de outra conta — nunca desta, a única
+            // escopada pela limpeza (ver stalePendingQuery()): acha o id
+            // dela antes de desligar.
+            $otherLeg = Transaction::query()
+                ->where('transfer_id', $transferId)
+                ->where('account_id', '!=', $account->id)
+                ->first();
+
             $this->unlinkTransfer->handle($transferId, remember: false);
+
+            if ($otherLeg !== null) {
+                $survivorIds[] = $otherLeg->id;
+            }
         }
 
         $query()->delete();
+
+        if ($survivorIds !== []) {
+            $this->detectTransfers->handle($survivorIds);
+        }
     }
 
     /**

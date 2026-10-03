@@ -2,6 +2,7 @@
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Models\CardStatement;
+use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Models\Transaction;
@@ -105,6 +106,48 @@ it('recusa moeda diferente', function () {
     $in = Transaction::factory()->create(['account_id' => $usd->id, 'direction' => Direction::In, 'amount' => 1000, 'currency' => 'USD']);
 
     expect(fn () => linkTransfer($out, $in))->toThrow(TransferLinkInvalid::class);
+});
+
+it('recusa parcela de plano', function () {
+    $plan = InstallmentPlan::factory()->create(['account_id' => $this->checking->id]);
+    $out = Transaction::factory()->create([
+        'account_id' => $this->checking->id, 'direction' => Direction::Out, 'amount' => 1000,
+        'installment_plan_id' => $plan->id, 'installment_number' => 1,
+    ]);
+    $in = Transaction::factory()->create(['account_id' => $this->savings->id, 'direction' => Direction::In, 'amount' => 1000]);
+
+    expect(fn () => linkTransfer($out, $in))->toThrow(TransferLinkInvalid::class);
+});
+
+it('recusa transação projetada', function () {
+    $out = Transaction::factory()->create(['account_id' => $this->checking->id, 'direction' => Direction::Out, 'amount' => 1000, 'status' => 'projected']);
+    $in = Transaction::factory()->create(['account_id' => $this->savings->id, 'direction' => Direction::In, 'amount' => 1000]);
+
+    expect(fn () => linkTransfer($out, $in))->toThrow(TransferLinkInvalid::class);
+});
+
+it('recusa transação ignorada', function () {
+    $out = Transaction::factory()->create(['account_id' => $this->checking->id, 'direction' => Direction::Out, 'amount' => 1000, 'is_ignored' => true]);
+    $in = Transaction::factory()->create(['account_id' => $this->savings->id, 'direction' => Direction::In, 'amount' => 1000]);
+
+    expect(fn () => linkTransfer($out, $in))->toThrow(TransferLinkInvalid::class);
+});
+
+it('handleAnyOrder identifica a direção de verdade, independente da ordem dos parâmetros', function () {
+    $out = Transaction::factory()->create(['account_id' => $this->checking->id, 'direction' => Direction::Out, 'amount' => 1000, 'date' => '2026-03-15']);
+    $in = Transaction::factory()->create(['account_id' => $this->savings->id, 'direction' => Direction::In, 'amount' => 1000, 'date' => '2026-03-15']);
+
+    $transferId = app(LinkTransfer::class)->handleAnyOrder($in, $out);
+
+    expect($out->refresh()->transfer_id)->toBe($transferId)
+        ->and($in->refresh()->transfer_id)->toBe($transferId);
+});
+
+it('handleAnyOrder recusa duas transações com a mesma direção', function () {
+    $out1 = Transaction::factory()->create(['account_id' => $this->checking->id, 'direction' => Direction::Out, 'amount' => 1000]);
+    $out2 = Transaction::factory()->create(['account_id' => $this->savings->id, 'direction' => Direction::Out, 'amount' => 1000]);
+
+    expect(fn () => app(LinkTransfer::class)->handleAnyOrder($out1, $out2))->toThrow(TransferLinkInvalid::class);
 });
 
 it('recusa fora da janela padrão de dias, mas aceita com janela maior', function () {

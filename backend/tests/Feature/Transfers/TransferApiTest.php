@@ -3,6 +3,7 @@
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Models\Transaction;
+use App\Domain\Transfers\Actions\LinkTransfer;
 
 function createTransfer(Account $from, Account $to, array $overrides = []): array
 {
@@ -109,6 +110,34 @@ it('excluir uma perna pelo endpoint de transações exclui as duas', function ()
     $transfer = createTransfer(Account::factory()->create(), Account::factory()->create());
 
     $this->deleteJson("/api/v1/transactions/{$transfer['from']['id']}")->assertNoContent();
+
+    expect(Transaction::count())->toBe(0);
+});
+
+it('excluir a perna manual de um par cuja outra perna veio do banco preserva a perna do banco (desligada)', function () {
+    actingAsUser();
+    $checking = Account::factory()->create();
+    $savings = Account::factory()->create();
+    $manual = Transaction::factory()->create(['account_id' => $checking->id, 'direction' => Direction::Out, 'amount' => 10000, 'date' => '2026-10-01']);
+    $fromBank = Transaction::factory()->create(['account_id' => $savings->id, 'direction' => Direction::In, 'amount' => 10000, 'date' => '2026-10-01', 'external_id' => 'ext-bank-1']);
+    app(LinkTransfer::class)->handle($manual, $fromBank);
+
+    $this->deleteJson("/api/v1/transactions/{$manual->id}")->assertNoContent();
+
+    expect(Transaction::query()->whereKey($manual->id)->exists())->toBeFalse()
+        ->and(Transaction::query()->whereKey($fromBank->id)->exists())->toBeTrue()
+        ->and($fromBank->refresh()->transfer_id)->toBeNull();
+});
+
+it('excluir a perna do banco de um par cuja outra perna é manual (sem external_id) exclui as duas, como antes', function () {
+    actingAsUser();
+    $checking = Account::factory()->create();
+    $savings = Account::factory()->create();
+    $manual = Transaction::factory()->create(['account_id' => $checking->id, 'direction' => Direction::Out, 'amount' => 10000, 'date' => '2026-10-01']);
+    $fromBank = Transaction::factory()->create(['account_id' => $savings->id, 'direction' => Direction::In, 'amount' => 10000, 'date' => '2026-10-01', 'external_id' => 'ext-bank-2']);
+    app(LinkTransfer::class)->handle($manual, $fromBank);
+
+    $this->deleteJson("/api/v1/transactions/{$fromBank->id}")->assertNoContent();
 
     expect(Transaction::count())->toBe(0);
 });

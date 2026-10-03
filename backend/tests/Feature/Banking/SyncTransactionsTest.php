@@ -306,6 +306,36 @@ describe('limpeza de pendentes antigos (listagem completa)', function () {
             ->and($otherLeg->refresh()->transfer_id)->toBeNull();
     });
 
+    it('depois de desligar uma perna na limpeza, roda a detecção de novo para quem sobreviveu', function () {
+        $account = Account::factory()->create(['external_id' => 'acc-1']);
+        $otherAccount = Account::factory()->create();
+        $thirdAccount = Account::factory()->create();
+        $transferId = (string) Str::uuid();
+
+        Transaction::factory()->create([
+            'account_id' => $account->id, 'external_id' => 'old-transfer', 'status' => TransactionStatus::Pending,
+            'source' => TransactionSource::Pluggy, 'date' => '2026-09-01', 'transfer_id' => $transferId,
+            'direction' => Direction::Out, 'amount' => 5000,
+        ]);
+        $otherLeg = Transaction::factory()->create([
+            'account_id' => $otherAccount->id, 'status' => TransactionStatus::Posted,
+            'date' => '2026-09-01', 'transfer_id' => $transferId,
+            'direction' => Direction::In, 'amount' => 5000, 'description' => 'Transferência recebida',
+        ]);
+        // Candidata nova, só possível depois que otherLeg voltar a ser
+        // comum: mesmo valor e data, direção oposta, outra conta.
+        $newMatch = Transaction::factory()->create([
+            'account_id' => $thirdAccount->id, 'status' => TransactionStatus::Posted,
+            'date' => '2026-09-01', 'direction' => Direction::Out, 'amount' => 5000, 'description' => 'Transferência enviada',
+        ]);
+        $this->fake->transactionsByAccount['acc-1'] = [];
+
+        $this->action->handle($account, [], $this->now, []);
+
+        expect($otherLeg->refresh()->transfer_id)->not->toBeNull()
+            ->and($newMatch->refresh()->transfer_id)->toBe($otherLeg->transfer_id);
+    });
+
     it('também considera pendente futura (projected, não parcela) antiga e ausente na limpeza', function () {
         $account = Account::factory()->create(['external_id' => 'acc-1']);
         $staleProjected = Transaction::factory()->create([

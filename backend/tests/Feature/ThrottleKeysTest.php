@@ -56,12 +56,22 @@ it('bank-connections (store) e link-accounts têm limites próprios, isolados de
     $this->postJson("/api/v1/bank-connections/{$connection->id}/link-accounts", ['links' => []])->assertStatus(429);
 });
 
-it('transfer-suggestions/detect tem limite próprio (6/min), isolado de rules/preview', function () {
+it('transfer-suggestions/detect tem limite próprio (6/min): martelar rules/preview não o afeta, e martelar detect não afeta rules/preview', function () {
     actingAsUser();
 
     for ($i = 0; $i < 10; $i++) {
         $this->postJson('/api/v1/rules/preview', []);
     }
 
-    $this->postJson('/api/v1/transfer-suggestions/detect')->assertStatus(200);
+    // Ainda não bateu no próprio limite (6/min): martelar rules/preview
+    // (prefixo diferente) não consumiu nada dele.
+    for ($i = 0; $i < 6; $i++) {
+        $this->postJson('/api/v1/transfer-suggestions/detect')->assertStatus(200);
+    }
+
+    // A 7ª bate no limite próprio.
+    $this->postJson('/api/v1/transfer-suggestions/detect')->assertStatus(429);
+
+    // rules/preview continua livre: martelar detect não consumiu o limite dele.
+    expect($this->postJson('/api/v1/rules/preview', [])->status())->not->toBe(429);
 });
