@@ -58,9 +58,11 @@ export function ConnectionCard({
 
   const name = connection.institution_name ?? 'Banco'
   const isPendingLink = connection.status === 'pending_link'
+  const isActive = connection.status === 'active'
   // Enquanto pending_link não há nada ativo para sincronizar/reconectar (a conexão ainda nem
   // escolheu as contas); sem provedor configurado, as próprias rotas respondem 409
-  // banking_disabled — esconder os dois de propósito, não só desabilitar.
+  // banking_disabled — esconde os dois de propósito, não só desabilita. O menu em si (e
+  // "Desconectar", que só limpa o lado local) continua disponível nos dois casos.
   const showProviderActions = bankingEnabled && !isPendingLink
 
   async function handleSync() {
@@ -102,30 +104,32 @@ export function ConnectionCard({
             {connection.last_error && <p className="truncate text-xs text-destructive">{connection.last_error}</p>}
           </div>
         </div>
-        {showProviderActions && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label={`Ações da conexão ${name}`}>
-                <EllipsisVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={handleSync}>
-                <RefreshCw className="h-4 w-4" />
-                Sincronizar agora
-              </DropdownMenuItem>
-              <DropdownMenuItem disabled={reconnectDisabled} onSelect={() => onReconnect?.(connection)}>
-                <Link2 className="h-4 w-4" />
-                Reconectar
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive" onSelect={() => setDisconnecting(true)}>
-                <Unlink className="h-4 w-4" />
-                Desconectar
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label={`Ações da conexão ${name}`}>
+              <EllipsisVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {showProviderActions && (
+              <>
+                <DropdownMenuItem onSelect={handleSync}>
+                  <RefreshCw className="h-4 w-4" />
+                  Sincronizar agora
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={reconnectDisabled} onSelect={() => onReconnect?.(connection)}>
+                  <Link2 className="h-4 w-4" />
+                  Reconectar
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
+            <DropdownMenuItem className="text-destructive" onSelect={() => setDisconnecting(true)}>
+              <Unlink className="h-4 w-4" />
+              Desconectar
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </CardHeader>
 
       {isPendingLink && connection.pending_accounts.length > 0 && (
@@ -133,6 +137,16 @@ export function ConnectionCard({
           <Button size="sm" onClick={() => onLinkAccounts?.(connection)}>
             <Link2 className="h-4 w-4" />
             Vincular contas
+          </Button>
+        </CardContent>
+      )}
+
+      {isActive && connection.unlinked_accounts.length > 0 && (
+        <CardContent className="flex items-center justify-between gap-3 pt-0">
+          <p className="text-sm text-muted-foreground">Novas contas no banco</p>
+          <Button size="sm" variant="outline" onClick={() => onLinkAccounts?.(connection)}>
+            <Link2 className="h-4 w-4" />
+            Vincular
           </Button>
         </CardContent>
       )}

@@ -80,7 +80,7 @@ Sem `PLUGGY_CLIENT_ID`/`PLUGGY_CLIENT_SECRET`, a integração fica desligada: o 
 
 No sandbox da Pluggy, use o conector "Pluggy Bank" com usuário `user-ok`, senha `password-ok` e, se pedir MFA, o código `123456`.
 
-Depois de conectar, cada conexão sincroniza automaticamente a cada 6 horas (contas, saldo, faturas e transações) e também pode ser sincronizada na hora pelo botão "Sincronizar". Essa sincronização roda em fila (job) e depende do **worker e do scheduler estarem no ar** — ambos já sobem com `make up` em desenvolvimento. `DB_QUEUE_RETRY_AFTER=660` e o `--timeout=600` do worker (já configurados em `docker-compose.yml`/`docker-compose.prod.yml`) cobrem o pior caso desse job; não reduza um sem o outro.
+Depois de conectar, cada conexão sincroniza automaticamente a cada 6 horas (contas, saldo, faturas e transações) e também pode ser sincronizada na hora pelo botão "Sincronizar agora". Essa sincronização roda em fila (job) e depende do **worker e do scheduler estarem no ar** — ambos já sobem com `make up` em desenvolvimento. `DB_QUEUE_RETRY_AFTER=660` e o `--timeout=600` do worker (já configurados em `docker-compose.yml`/`docker-compose.prod.yml`) cobrem o pior caso desse job; não reduza um sem o outro.
 
 Em produção, o nginx do serviço `web` já libera `frame-src https://connect.pluggy.ai` na Content-Security-Policy, necessário para o widget da Pluggy abrir o iframe de login do banco.
 

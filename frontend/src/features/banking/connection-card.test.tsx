@@ -210,16 +210,24 @@ describe('ConnectionCard', () => {
     expect(screen.queryByRole('button', { name: 'Vincular contas' })).not.toBeInTheDocument()
   })
 
-  it('esconde o menu de ações (sincronizar/reconectar) para conexão pending_link', () => {
+  it('o menu continua disponível em pending_link, mas sem Sincronizar/Reconectar', async () => {
     renderCard({ connection: connection({ status: 'pending_link' }) })
 
-    expect(screen.queryByRole('button', { name: /Ações da conexão/ })).not.toBeInTheDocument()
+    await openMenu('Ações da conexão Banco Fictício')
+
+    expect(screen.queryByRole('menuitem', { name: 'Sincronizar agora' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Reconectar' })).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Desconectar' })).toBeInTheDocument()
   })
 
-  it('esconde o menu de ações quando o banking está desligado', () => {
+  it('o menu continua disponível com o banking desligado, mas sem Sincronizar/Reconectar', async () => {
     renderCard({ connection: connection({ status: 'active' }), bankingEnabled: false })
 
-    expect(screen.queryByRole('button', { name: /Ações da conexão/ })).not.toBeInTheDocument()
+    await openMenu('Ações da conexão Banco Fictício')
+
+    expect(screen.queryByRole('menuitem', { name: 'Sincronizar agora' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Reconectar' })).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Desconectar' })).toBeInTheDocument()
   })
 
   it('desconectar abre confirmação e, ao confirmar, chama a mutação', async () => {
@@ -232,5 +240,28 @@ describe('ConnectionCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Desconectar' }))
 
     await vi.waitFor(() => expect(disconnectMutateAsync).toHaveBeenCalledWith(3))
+  })
+
+  it('mostra "Novas contas no banco" com o botão "Vincular" quando a conexão ativa tem unlinked_accounts', () => {
+    const onLinkAccounts = vi.fn()
+    const target = connection({
+      id: 8,
+      status: 'active',
+      unlinked_accounts: [
+        { external_id: 'ext-1', name: 'Conta nova', number: null, kind: 'checking', currency: 'BRL', balance: 0, suggested_account_id: null },
+      ],
+    })
+    renderCard({ connection: target, onLinkAccounts })
+
+    expect(screen.getByText('Novas contas no banco')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Vincular' }))
+
+    expect(onLinkAccounts).toHaveBeenCalledWith(target)
+  })
+
+  it('não mostra "Novas contas no banco" sem unlinked_accounts', () => {
+    renderCard({ connection: connection({ status: 'active', unlinked_accounts: [] }) })
+
+    expect(screen.queryByText('Novas contas no banco')).not.toBeInTheDocument()
   })
 })

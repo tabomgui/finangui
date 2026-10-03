@@ -62,4 +62,16 @@ describe('ReauthBanner', () => {
 
     expect(screen.getByRole('button', { name: 'Reconectar' })).toBeDisabled()
   })
+
+  it('esconde o botão "Reconectar" quando o banking está desligado, mas mantém o aviso', () => {
+    render(
+      <ReauthBanner
+        connections={[connection({ institution_name: 'Nubank', status: 'needs_reauth' })]}
+        bankingEnabled={false}
+      />,
+    )
+
+    expect(screen.getByText('O Nubank pediu para reconectar.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reconectar' })).not.toBeInTheDocument()
+  })
 })

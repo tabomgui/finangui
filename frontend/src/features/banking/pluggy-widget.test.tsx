@@ -1,7 +1,11 @@
 import { render, waitFor } from '@testing-library/react'
 import { StrictMode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PluggyWidget } from './pluggy-widget'
+
+let mockResolvedTheme: 'light' | 'dark' | undefined = 'light'
+
+vi.mock('next-themes', () => ({ useTheme: () => ({ resolvedTheme: mockResolvedTheme }) }))
 
 type MockProps = {
   connectToken: string
@@ -39,6 +43,10 @@ const { toast } = await import('sonner')
 function lastInstance() {
   return instances[instances.length - 1]
 }
+
+beforeEach(() => {
+  mockResolvedTheme = 'light'
+})
 
 describe('PluggyWidget', () => {
   it('cria a instância com connectToken, updateItem e tema claro por padrão', async () => {
@@ -110,6 +118,24 @@ describe('PluggyWidget', () => {
     unmount()
 
     expect(instance.destroy).toHaveBeenCalled()
+  })
+
+  it('lê o tema uma vez só: trocar o tema do app com o widget aberto não destrói/recria a instância', async () => {
+    instances.length = 0
+    nextInitResult = 'resolve'
+    mockResolvedTheme = 'dark'
+    const { rerender } = render(<PluggyWidget connectToken="tok-1" onSuccess={vi.fn()} onClose={vi.fn()} onError={vi.fn()} />)
+
+    await waitFor(() => expect(instances).toHaveLength(1))
+    expect(lastInstance().props.theme).toBe('dark')
+
+    mockResolvedTheme = 'light'
+    rerender(<PluggyWidget connectToken="tok-1" onSuccess={vi.fn()} onClose={vi.fn()} onError={vi.fn()} />)
+
+    // Nem uma segunda instância, nem a instância existente destruída.
+    expect(instances).toHaveLength(1)
+    expect(lastInstance().destroy).not.toHaveBeenCalled()
+    expect(lastInstance().props.theme).toBe('dark')
   })
 
   it('sob StrictMode (double-mount do dev), cria só uma instância de verdade', async () => {

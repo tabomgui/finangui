@@ -2,6 +2,7 @@ import { Landmark, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useBankConnections } from '@/api/queries/bank-connections'
+import { useMe } from '@/api/queries/auth'
 import { useDashboard } from '@/api/queries/dashboard'
 import { PageBody } from '@/components/layout/page-body'
 import { PageHeader } from '@/components/layout/page-header'
@@ -29,6 +30,7 @@ export function DashboardPage() {
   const month = monthFromParam(params.get('mes'), currentMonth)
   const { data, isPending, isError, isPlaceholderData, refetch } = useDashboard(month)
   const { data: connections } = useBankConnections()
+  const { data: me } = useMe()
   const reconnectFlow = useReconnectFlow()
 
   const setMonth = (next: string) => setParams({ mes: next }, { replace: true })
@@ -52,7 +54,12 @@ export function DashboardPage() {
         </div>
       </PageHeader>
       <PageBody>
-        <ReauthBanner connections={connections ?? []} onReconnect={reconnectFlow.reconnect} reconnectDisabled={reconnectFlow.isPending} />
+        <ReauthBanner
+          connections={connections ?? []}
+          onReconnect={reconnectFlow.reconnect}
+          reconnectDisabled={reconnectFlow.isPending}
+          bankingEnabled={me?.banking_enabled}
+        />
         {isError ? (
           <Card className="rounded-2xl p-0 shadow-card">
             <EmptyState

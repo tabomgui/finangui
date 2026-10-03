@@ -81,6 +81,11 @@ function connection(pendingAccounts: ProviderAccount[]): BankConnection {
   }
 }
 
+/** Conexão já ativa com contas novas que o banco passou a reportar (vínculo parcial permitido). */
+function activeConnection(unlinkedAccounts: ProviderAccount[]): BankConnection {
+  return { ...connection([]), status: 'active', unlinked_accounts: unlinkedAccounts }
+}
+
 function renderDialog(props: Partial<ComponentProps<typeof LinkAccountsDialog>> & { connection: BankConnection }) {
   const client = new QueryClient()
   return { client, ...render(
@@ -244,5 +249,67 @@ describe('LinkAccountsDialog', () => {
 
     expect(linkMutateAsync).not.toHaveBeenCalled()
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('vínculo inicial (pending_link) não oferece "Não vincular agora"', async () => {
+    renderDialog({ connection: connection([providerAccount()]) })
+
+    const trigger = screen.getByRole('combobox', { name: 'Vínculo de Conta corrente' })
+    fireEvent.pointerDown(trigger, { button: 0, pointerType: 'mouse' })
+    fireEvent.click(trigger)
+
+    expect(await screen.findByRole('option', { name: 'Criar conta nova' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Não vincular agora' })).not.toBeInTheDocument()
+  })
+
+  it('conexão active com contas novas oferece "Não vincular agora" e só envia as linhas escolhidas', async () => {
+    const onOpenChange = vi.fn()
+    renderDialog({
+      connection: activeConnection([
+        providerAccount({ external_id: 'ext-1', name: 'Conta A' }),
+        providerAccount({ external_id: 'ext-2', name: 'Conta B' }),
+      ]),
+      onOpenChange,
+    })
+
+    await selectOption('Vínculo de Conta A', 'Não vincular agora')
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+    await vi.waitFor(() =>
+      expect(linkMutateAsync).toHaveBeenCalledWith({
+        id: 10,
+        body: { links: [{ external_id: 'ext-2', account_id: null }] },
+      }),
+    )
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('desabilita Confirmar quando todas as contas novas ficam como "Não vincular agora"', async () => {
+    renderDialog({ connection: activeConnection([providerAccount({ external_id: 'ext-1', name: 'Conta A' })]) })
+
+    await selectOption('Vínculo de Conta A', 'Não vincular agora')
+
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled()
+    expect(linkMutateAsync).not.toHaveBeenCalled()
+  })
+
+  it('422 mapeia o erro pelo índice do que foi de fato enviado (pulando as linhas "Não vincular agora")', async () => {
+    linkMutateAsync.mockRejectedValue(
+      new ApiError(422, 'Dados inválidos.', null, { 'links.0.account_id': ['Esta conta já está conectada a um banco.'] }),
+    )
+    renderDialog({
+      connection: activeConnection([
+        providerAccount({ external_id: 'ext-1', name: 'Conta A' }),
+        providerAccount({ external_id: 'ext-2', name: 'Conta B' }),
+      ]),
+    })
+
+    // Conta A pulada: o pedido só leva Conta B, no índice 0 — o erro de índice 0 é dela, não da A.
+    await selectOption('Vínculo de Conta A', 'Não vincular agora')
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+    expect(await screen.findByText('Esta conta já está conectada a um banco.')).toBeInTheDocument()
+    const rowB = screen.getByRole('combobox', { name: 'Vínculo de Conta B' }).closest('div')
+    expect(rowB).toHaveTextContent('Esta conta já está conectada a um banco.')
   })
 })

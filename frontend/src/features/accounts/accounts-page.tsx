@@ -77,7 +77,12 @@ export function AccountsPage() {
         }
       />
       <PageBody>
-        <ReauthBanner connections={connections ?? []} onReconnect={reconnectFlow.reconnect} reconnectDisabled={reconnectFlow.isPending} />
+        <ReauthBanner
+          connections={connections ?? []}
+          onReconnect={reconnectFlow.reconnect}
+          reconnectDisabled={reconnectFlow.isPending}
+          bankingEnabled={me?.banking_enabled}
+        />
 
         {connectionsError ? (
           <EmptyState

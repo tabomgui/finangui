@@ -8,10 +8,12 @@ type ReauthBannerProps = {
   onReconnect?: (connection: BankConnection) => void
   /** Desabilita "Reconectar" enquanto um pedido de token/o widget já está em andamento (ver `useReconnectFlow`). */
   reconnectDisabled?: boolean
+  /** Sem provedor configurado, reconectar não faz sentido (a rota responde 409 banking_disabled) — esconde o botão, mas mantém o aviso. */
+  bankingEnabled?: boolean
 }
 
 /** Faixa de aviso para conexões `needs_reauth`; aparece no Início e em Contas. */
-export function ReauthBanner({ connections, onReconnect, reconnectDisabled = false }: ReauthBannerProps) {
+export function ReauthBanner({ connections, onReconnect, reconnectDisabled = false, bankingEnabled = true }: ReauthBannerProps) {
   const needsReauth = connections.filter((connection) => connection.status === 'needs_reauth')
   if (needsReauth.length === 0) return null
 
@@ -28,15 +30,17 @@ export function ReauthBanner({ connections, onReconnect, reconnectDisabled = fal
             <TriangleAlert className="h-4 w-4 shrink-0" />
             <span className="truncate">O {connection.institution_name ?? 'banco'} pediu para reconectar.</span>
           </span>
-          <Button
-            size="sm"
-            variant="outline"
-            className="shrink-0 bg-card"
-            disabled={reconnectDisabled}
-            onClick={() => onReconnect?.(connection)}
-          >
-            Reconectar
-          </Button>
+          {bankingEnabled && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0 bg-card"
+              disabled={reconnectDisabled}
+              onClick={() => onReconnect?.(connection)}
+            >
+              Reconectar
+            </Button>
+          )}
         </div>
       ))}
     </div>

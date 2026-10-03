@@ -49,9 +49,10 @@ function invalidate(queryClient: QueryClient, roots: string[]) {
 /**
  * Transações, transferências, contas e limites/faturas de cartão mexem em saldos, listas e no resumo
  * do mês; lançamentos novos também mudam o que uma prévia de regra ainda não salva mostraria.
- * `bank-connections` entra porque o `ConnectionCard` mostra as contas conectadas a partir dessa
- * lista (não de `accounts`): editar/arquivar/excluir uma conta pelo `AccountRow` dentro do card
- * (ver `features/banking/connection-card.tsx`) precisa refletir ali também.
+ * `bank-connections` entra porque `pending_accounts`/`unlinked_accounts` do recurso da conexão
+ * (e a sugestão de vínculo de cada um) dependem do estado das contas manuais: editar, arquivar
+ * ou excluir uma conta pelo `AccountRow` (usado tanto na lista de contas manuais quanto dentro
+ * do `ConnectionCard`, ver `features/banking/connection-card.tsx`) precisa refletir ali também.
  */
 export function invalidateLedger(queryClient: QueryClient) {
   return invalidate(queryClient, [
