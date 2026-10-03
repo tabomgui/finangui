@@ -50,6 +50,7 @@ final class TransactionResource extends JsonResource
             'status' => $this->status,
             'source' => $this->source,
             'categorized_by' => $this->categorized_by,
+            'categorization' => $this->categorization(),
             'is_ignored' => $this->is_ignored,
             'transfer_id' => $this->transfer_id,
             'statement_id' => $this->statement_id,
@@ -59,5 +60,28 @@ final class TransactionResource extends JsonResource
                 'total' => $this->installmentPlan->installments,
             ] : null,
         ];
+    }
+
+    /**
+     * Decompõe categorized_by ("manual", "history", "pluggy" ou
+     * "rule:{id}") para o frontend não precisar fazer parsing de string.
+     * Sem categoria ou valor desconhecido: nulo.
+     *
+     * @return array{source: 'manual'|'rule'|'history'|'pluggy', rule_id: int|null}|null
+     */
+    private function categorization(): ?array
+    {
+        $categorizedBy = $this->categorized_by;
+        $ruleId = is_string($categorizedBy) && str_starts_with($categorizedBy, 'rule:')
+            ? (int) substr($categorizedBy, 5)
+            : 0;
+
+        return match (true) {
+            $categorizedBy === 'manual' => ['source' => 'manual', 'rule_id' => null],
+            $categorizedBy === 'history' => ['source' => 'history', 'rule_id' => null],
+            $categorizedBy === 'pluggy' => ['source' => 'pluggy', 'rule_id' => null],
+            $ruleId > 0 => ['source' => 'rule', 'rule_id' => $ruleId],
+            default => null,
+        };
     }
 }
