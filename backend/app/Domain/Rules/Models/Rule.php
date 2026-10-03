@@ -9,8 +9,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * @property list<array<string, mixed>> $conditions
- * @property list<array<string, mixed>> $actions
+ * @property list<array{field: string, op: string, value: string|int}|array{match: string, conditions: list<array{field: string, op: string, value: string|int}>}> $conditions
+ * @property list<array{type: string, category_id?: int, tag_id?: int, value?: string}> $actions
  */
 class Rule extends Model
 {

@@ -159,6 +159,7 @@ return [
     'url' => 'O formato de URL indicado para o campo :attribute é inválido.',
     'uuid' => ':Attribute deve ser um UUID válido.',
     'attributes' => [
+        'actions' => 'ações',
         'address' => 'endereço',
         'affiliate_url' => 'URL de afiliado',
         'age' => 'idade',
@@ -208,6 +209,7 @@ return [
         'grand_prize' => 'grande Prêmio',
         'group' => 'grupo',
         'hour' => 'hora',
+        'ids' => 'regras',
         'image' => 'imagem',
         'image_desktop' => 'imagem da área de trabalho',
         'image_main' => 'imagem principal',
@@ -228,6 +230,7 @@ return [
         'line_address_1' => 'endereço de linha 1',
         'line_address_2' => 'endereço de linha 2',
         'login' => 'Conecte-se',
+        'match' => 'combinação',
         'message' => 'mensagem',
         'middle_name' => 'nome do meio',
         'minute' => 'minuto',

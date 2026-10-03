@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\InstallmentPlanController;
 use App\Http\Controllers\Api\V1\MeController;
+use App\Http\Controllers\Api\V1\RuleController;
 use App\Http\Controllers\Api\V1\TagController;
 use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Controllers\Api\V1\TransferController;
@@ -54,5 +55,16 @@ Route::prefix('v1')->group(function () {
         Route::post('card-statements/{statement}/payments', [CardStatementController::class, 'pay'])->whereNumber('statement');
         Route::patch('installment-plans/{plan}', [InstallmentPlanController::class, 'update'])->whereNumber('plan');
         Route::post('installment-plans/{plan}/cancel', [InstallmentPlanController::class, 'cancel'])->whereNumber('plan');
+
+        // rules/order precisa vir antes de rules/{rule}: senão "order" seria
+        // capturado como o parâmetro {rule} (que só aceita número por causa do
+        // whereNumber, então aqui a ordem não é estritamente necessária, mas
+        // evita depender disso).
+        Route::put('rules/order', [RuleController::class, 'reorder']);
+        Route::get('rules', [RuleController::class, 'index']);
+        Route::post('rules', [RuleController::class, 'store']);
+        Route::get('rules/{rule}', [RuleController::class, 'show'])->whereNumber('rule');
+        Route::patch('rules/{rule}', [RuleController::class, 'update'])->whereNumber('rule');
+        Route::delete('rules/{rule}', [RuleController::class, 'destroy'])->whereNumber('rule');
     });
 });
