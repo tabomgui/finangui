@@ -3,6 +3,7 @@
 use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Providers\FakeBankProvider;
+use Illuminate\Support\Facades\Queue;
 
 /**
  * O middleware "throttle:max,min" genérico (sem limiter nomeado) usa só o
@@ -16,6 +17,13 @@ it('martelar rules/preview não consome o limite de bank-connections/.../sync', 
     app()->instance(BankProvider::class, new FakeBankProvider);
     actingAsUser();
     $connection = BankConnection::factory()->active()->create();
+
+    // Queue::fake(): só o throttle da rota importa aqui, não o resultado
+    // do sync em si — sem isso, QUEUE_CONNECTION=sync (phpunit.xml) rodaria
+    // SyncConnection na hora, e ele falharia por não achar um item fake
+    // para o external_id desta conexão (o que esta conexão sincroniza não
+    // é o que este teste quer exercitar).
+    Queue::fake();
 
     for ($i = 0; $i < 10; $i++) {
         $this->postJson('/api/v1/rules/preview', []);

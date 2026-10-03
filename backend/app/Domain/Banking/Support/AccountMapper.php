@@ -6,6 +6,9 @@ use App\Domain\Accounts\Enums\AccountType;
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Models\BankConnection;
+use App\Domain\Transactions\Enums\TransactionStatus;
+use App\Domain\Transactions\Models\Transaction;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
 
 /**
@@ -55,6 +58,13 @@ final class AccountMapper
      * preenchido quando a conta manual ainda não tinha um (criada antes de
      * vincular, sem os últimos dígitos) — nunca sobrescreve o que o
      * usuário já informou.
+     *
+     * `provider_sync_from` guarda a partir de quando o sync bancário pode
+     * importar transações desta conta: a data do lançamento mais antigo já
+     * existente (ou a criação da conta, sem nenhum lançamento) — o que é
+     * anterior a isso já está refletido no saldo inicial que o usuário
+     * lançou à mão. Uma conta criada pelo vínculo (createLinked) nunca tem
+     * esse piso — não há histórico prévio a proteger.
      */
     public function linkExisting(Account $existing, BankConnection $connection, ProviderAccount $account): Account
     {
@@ -63,6 +73,7 @@ final class AccountMapper
             'external_id' => $account->id,
             'provider_balance' => $account->balanceCents,
             'provider_synced_at' => Carbon::now(),
+            'provider_sync_from' => $this->syncFloorFor($existing),
         ];
 
         if ($account->kind === 'credit_card' && blank($existing->last_four)) {
@@ -88,6 +99,50 @@ final class AccountMapper
         ]);
 
         return $existing;
+    }
+
+    /**
+     * Ajuste de abertura de uma conta criada pelo vínculo (nunca de uma
+     * conta manual vinculada depois — essa já tem seu próprio
+     * opening_balance e provider_sync_from, ver linkExisting): depois do
+     * primeiro sync bem-sucedido de transações da conta,
+     * `opening_balance = saldo informado pelo banco − Σ(lançadas, não
+     * ignoradas)`, para o saldo do app bater com o do banco sem contar o
+     * histórico duas vezes. Roda só uma vez (provider_opening_set_at);
+     * chamado por App\Domain\Banking\Jobs\SyncConnection depois de
+     * SyncTransactions.
+     */
+    public function settleOpeningBalance(Account $account): void
+    {
+        if ($account->provider_sync_from !== null
+            || $account->provider_opening_set_at !== null
+            || $account->provider_balance === null) {
+            return;
+        }
+
+        $postedNet = (int) Transaction::query()
+            ->where('account_id', $account->id)
+            ->where('status', TransactionStatus::Posted->value)
+            ->where('is_ignored', false)
+            ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) as net")
+            ->value('net');
+
+        $account->update([
+            'opening_balance' => $account->provider_balance->cents - $postedNet,
+            'provider_opening_set_at' => CarbonImmutable::now(),
+        ]);
+    }
+
+    /**
+     * Piso de sync (provider_sync_from) de uma conta manual que está sendo
+     * vinculada agora: a data do lançamento mais antigo já existente, ou a
+     * data de criação da conta, sem nenhum lançamento.
+     */
+    private function syncFloorFor(Account $existing): string
+    {
+        $firstTransactionDate = Transaction::query()->where('account_id', $existing->id)->min('date');
+
+        return is_string($firstTransactionDate) ? $firstTransactionDate : $existing->created_at->toDateString();
     }
 
     /**

@@ -1,5 +1,6 @@
 <?php
 
+use App\Domain\Banking\Jobs\SyncStaleConnections;
 use App\Domain\Cards\Jobs\PostDueInstallments;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -10,3 +11,4 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::job(new PostDueInstallments)->dailyAt('00:10');
+Schedule::job(new SyncStaleConnections)->everySixHours();

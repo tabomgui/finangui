@@ -5,6 +5,7 @@ use App\Domain\Accounts\Models\Account;
 use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Support\AccountMapper;
+use App\Domain\Transactions\Models\Transaction;
 
 beforeEach(function () {
     actingAsUser();
@@ -137,4 +138,84 @@ it('atualiza saldo e limite de uma conta já vinculada, sem tocar em nome/dias',
         ->and($updated->name)->toBe('Cartão')
         ->and($updated->closing_day)->toBe(5)
         ->and($updated->due_day)->toBe(15);
+});
+
+it('vincular uma conta existente sem lançamento guarda provider_sync_from na data de criação da conta', function () {
+    $existing = Account::factory()->create();
+
+    $linked = $this->mapper->linkExisting($existing, $this->connection, mapperAccount(['id' => 'acc-9']));
+
+    expect($linked->provider_sync_from->toDateString())->toBe($existing->created_at->toDateString());
+});
+
+it('vincular uma conta existente com lançamentos guarda provider_sync_from na data do mais antigo', function () {
+    $existing = Account::factory()->create();
+    Transaction::factory()->create(['account_id' => $existing->id, 'date' => '2026-01-20']);
+    Transaction::factory()->create(['account_id' => $existing->id, 'date' => '2026-02-10']);
+
+    $linked = $this->mapper->linkExisting($existing, $this->connection, mapperAccount(['id' => 'acc-9']));
+
+    expect($linked->provider_sync_from->toDateString())->toBe('2026-01-20');
+});
+
+it('conta criada pelo vínculo nunca recebe provider_sync_from', function () {
+    $account = $this->mapper->createLinked($this->connection, mapperAccount());
+
+    expect($account->provider_sync_from)->toBeNull();
+});
+
+describe('settleOpeningBalance', function () {
+    it('ajusta a abertura de uma conta criada pelo vínculo para bater com o saldo do banco', function () {
+        $account = $this->mapper->createLinked($this->connection, mapperAccount(['balanceCents' => 100000]));
+        $account->update(['provider_balance' => 100000]);
+        Transaction::factory()->create(['account_id' => $account->id, 'amount' => 30000, 'direction' => 'out', 'status' => 'posted']);
+        Transaction::factory()->create(['account_id' => $account->id, 'amount' => 5000, 'direction' => 'in', 'status' => 'posted']);
+
+        $this->mapper->settleOpeningBalance($account);
+        $account->refresh();
+
+        // saldo do banco (100000) = opening + (−30000 + 5000) ⇒ opening = 125000
+        expect($account->opening_balance->cents)->toBe(125000)
+            ->and($account->provider_opening_set_at)->not->toBeNull();
+    });
+
+    it('não conta pendentes nem ignoradas no ajuste', function () {
+        $account = $this->mapper->createLinked($this->connection, mapperAccount(['balanceCents' => 100000]));
+        $account->update(['provider_balance' => 100000]);
+        Transaction::factory()->create(['account_id' => $account->id, 'amount' => 30000, 'direction' => 'out', 'status' => 'pending']);
+        Transaction::factory()->create(['account_id' => $account->id, 'amount' => 9000, 'direction' => 'out', 'status' => 'posted', 'is_ignored' => true]);
+
+        $this->mapper->settleOpeningBalance($account);
+        $account->refresh();
+
+        expect($account->opening_balance->cents)->toBe(100000);
+    });
+
+    it('nunca roda numa conta manual vinculada (provider_sync_from preenchido)', function () {
+        $existing = Account::factory()->create();
+        $linked = $this->mapper->linkExisting($existing, $this->connection, mapperAccount(['balanceCents' => 100000]));
+        $linked->update(['opening_balance' => 777, 'provider_balance' => 100000]);
+
+        $this->mapper->settleOpeningBalance($linked);
+        $linked->refresh();
+
+        expect($linked->opening_balance->cents)->toBe(777)
+            ->and($linked->provider_opening_set_at)->toBeNull();
+    });
+
+    it('é idempotente: rodar de novo não muda o que já foi ajustado', function () {
+        $account = $this->mapper->createLinked($this->connection, mapperAccount(['balanceCents' => 100000]));
+        $account->update(['provider_balance' => 100000]);
+        Transaction::factory()->create(['account_id' => $account->id, 'amount' => 30000, 'direction' => 'out', 'status' => 'posted']);
+
+        $this->mapper->settleOpeningBalance($account);
+        $account->refresh();
+        $firstOpening = $account->opening_balance->cents;
+
+        Transaction::factory()->create(['account_id' => $account->id, 'amount' => 1000, 'direction' => 'out', 'status' => 'posted']);
+        $this->mapper->settleOpeningBalance($account);
+        $account->refresh();
+
+        expect($account->opening_balance->cents)->toBe($firstOpening);
+    });
 });

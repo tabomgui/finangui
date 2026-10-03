@@ -81,4 +81,29 @@ final class InvoiceCycle
     {
         return $monthStart->setDay(min($day, $monthStart->daysInMonth));
     }
+
+    /**
+     * Fechamento nominal que produziria $dueDate como vencimento — o
+     * inverso de forPurchase()/dueAfter(): usado quando o banco informa uma
+     * fatura (sync bancário, ver App\Domain\Banking\Actions\SyncBills) sem
+     * dizer o fechamento. Tenta o ciclo do mês do próprio vencimento e,
+     * sem bater, o do mês anterior (o vencimento pode cair no mês seguinte
+     * ao fechamento); sem nenhum dos dois reproduzir exatamente o
+     * vencimento informado (dias do cartão podem ter mudado desde que o
+     * banco gerou essa fatura), fica com a estimativa do mês do próprio
+     * vencimento.
+     */
+    public static function closingForDueDate(CarbonImmutable $dueDate, int $closingDay, int $dueDay): CarbonImmutable
+    {
+        $dueDate = $dueDate->startOfDay();
+        $sameMonth = self::forClosingMonth($dueDate->startOfMonth(), $closingDay, $dueDay);
+
+        if ($sameMonth->dueDate->equalTo($dueDate)) {
+            return $sameMonth->closingDate;
+        }
+
+        $previousMonth = self::forClosingMonth($dueDate->startOfMonth()->subMonthNoOverflow(), $closingDay, $dueDay);
+
+        return $previousMonth->dueDate->equalTo($dueDate) ? $previousMonth->closingDate : $sameMonth->closingDate;
+    }
 }

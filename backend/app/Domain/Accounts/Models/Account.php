@@ -31,6 +31,8 @@ use LogicException;
  * @property string|null $external_id
  * @property Money|null $provider_balance
  * @property CarbonImmutable|null $provider_synced_at
+ * @property CarbonImmutable|null $provider_sync_from
+ * @property CarbonImmutable|null $provider_opening_set_at
  */
 class Account extends Model
 {
@@ -43,6 +45,7 @@ class Account extends Model
         'user_id', 'name', 'type', 'currency', 'opening_balance', 'color', 'icon', 'is_archived',
         'credit_limit', 'closing_day', 'due_day', 'last_four',
         'connection_id', 'external_id', 'provider_balance', 'provider_synced_at',
+        'provider_sync_from', 'provider_opening_set_at',
     ];
 
     /**
@@ -71,6 +74,8 @@ class Account extends Model
             'due_day' => 'integer',
             'provider_balance' => MoneyCast::class,
             'provider_synced_at' => 'immutable_datetime',
+            'provider_sync_from' => 'immutable_date',
+            'provider_opening_set_at' => 'immutable_datetime',
         ];
     }
 
