@@ -6,21 +6,20 @@ use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Actions\AssignStatement;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
-use App\Domain\Cards\Support\StatementResolver;
 use App\Domain\Imports\Data\ParsedRow;
 use App\Domain\Imports\Data\RowDecision;
 use App\Domain\Imports\Enums\ImportBatchStatus;
 use App\Domain\Imports\Enums\RowOutcome;
 use App\Domain\Imports\Errors\ImportBatchNotPending;
 use App\Domain\Imports\Models\ImportBatch;
+use App\Domain\Imports\Support\ImportedInstallments;
 use App\Domain\Imports\Support\IngestionPlanner;
+use App\Domain\Imports\Support\UndoSnapshot;
 use App\Domain\Rules\Actions\CategorizeTransaction;
 use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Models\Rule;
 use App\Domain\Rules\Support\HistoryCategorizer;
 use App\Domain\Rules\Support\TextNormalizer;
-use App\Domain\Transactions\Enums\Direction;
-use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use App\Support\Money\Money;
@@ -39,10 +38,10 @@ final class IngestTransactions
 {
     public function __construct(
         private readonly AssignStatement $assignStatement,
-        private readonly StatementResolver $statementResolver,
         private readonly CategorizeTransaction $categorize,
         private readonly IngestionPlanner $planner,
         private readonly HistoryCategorizer $history,
+        private readonly ProjectInstallments $projectInstallments,
     ) {}
 
     /**
@@ -88,40 +87,7 @@ final class IngestTransactions
             // por transação inserida (ver HistoryCategorizer::suggestMany()).
             $historyMemo = $this->history->suggestMany($this->newRowHistoryPairs($decisions));
 
-            $stats = [
-                'inserted' => 0,
-                'duplicates' => 0,
-                'updated' => 0,
-                'replaced' => 0,
-                'adopted' => 0,
-                'swapped' => 0,
-            ];
-            $undo = [];
-            // Planos criados neste próprio lote: uma segunda (ou terceira...)
-            // parcela nova do mesmo parcelamento, no mesmo arquivo, ainda não
-            // existe no banco para o planner casar como ReplaceInstallment —
-            // sem isso, cada parcela nova do mesmo parcelamento criaria o seu
-            // próprio plano. Ver matchPlanCreatedThisBatch().
-            $plansThisBatch = [];
-
-            foreach ($decisions as $decision) {
-                match ($decision->outcome) {
-                    RowOutcome::New => $this->insertNew($locked, $account, $decision->row, $rules, $historyMemo, $stats, $plansThisBatch),
-                    RowOutcome::Duplicate => $stats['duplicates']++,
-                    RowOutcome::Update => $this->update($decision, $undo, $stats),
-                    // transactionId null: o IngestionPlanner já identificou que
-                    // isto bate com a primeira parcela da mesma compra vista
-                    // mais cedo neste mesmo arquivo (ver
-                    // IngestionPlanner::matchesPlanSeedInBatch) — a prévia
-                    // mostra "replace_installment" sem casamento no banco, e a
-                    // execução usa o plano que o próprio lote acabou de criar.
-                    RowOutcome::ReplaceInstallment => $decision->transactionId !== null
-                        ? $this->replaceInstallmentOutcome($decision, $locked, $undo, $stats)
-                        : $this->replaceInstallmentCreatedThisBatch($decision, $locked, $plansThisBatch, $undo, $stats),
-                    RowOutcome::Adopt => $this->adopt($decision, $locked, $undo, $stats),
-                    RowOutcome::SwapPending => $this->swapPending($decision, $undo, $stats),
-                };
-            }
+            [$stats, $undo] = $this->applyDecisions($locked, $account, $decisions, $rules, $historyMemo);
 
             $createdStatementIds = CardStatement::query()
                 ->where('account_id', $account->id)
@@ -142,16 +108,65 @@ final class IngestTransactions
     }
 
     /**
+     * Uma passada pelas decisões (na ordem do arquivo) aplica tudo, exceto
+     * a "semente dentro do próprio lote" (ReplaceInstallment sem
+     * transaction): essa é adiada para depois, porque a semente pode
+     * aparecer mais tarde no arquivo do que quem a usa (ex.: "parcela 3/10"
+     * antes de "2/10" no arquivo — ImportedInstallments::classify() ainda
+     * assim escolhe a 2/10, de menor número, como semente).
+     *
+     * @param  list<RowDecision>  $decisions
+     * @param  list<RuleDefinition>  $rules
+     * @param  array<string, int>  $historyMemo
+     * @return array{0: array<string, int>, 1: list<array{transaction_id: int, attributes: array<string, mixed>}>}
+     */
+    private function applyDecisions(ImportBatch $batch, Account $account, array $decisions, array $rules, array $historyMemo): array
+    {
+        $stats = [
+            'inserted' => 0,
+            'duplicates' => 0,
+            'updated' => 0,
+            'replaced' => 0,
+            'adopted' => 0,
+            'swapped' => 0,
+        ];
+        $undo = [];
+        /** @var array<int, InstallmentPlan> $plansBySeedIndex */
+        $plansBySeedIndex = [];
+        /** @var list<RowDecision> $deferred */
+        $deferred = [];
+
+        foreach ($decisions as $index => $decision) {
+            match ($decision->outcome) {
+                RowOutcome::New => $this->insertNew($batch, $account, $decision->row, $rules, $historyMemo, $stats, $plansBySeedIndex, $index),
+                RowOutcome::Duplicate => $stats['duplicates']++,
+                RowOutcome::Update => $this->update($decision, $undo, $stats),
+                RowOutcome::ReplaceInstallment => $decision->transactionId !== null
+                    ? $this->replaceInstallmentOutcome($decision, $batch, $undo, $stats)
+                    : $deferred[] = $decision,
+                RowOutcome::Adopt => $this->adopt($decision, $batch, $undo, $stats),
+                RowOutcome::SwapPending => $this->swapPending($decision, $undo, $stats),
+            };
+        }
+
+        foreach ($deferred as $decision) {
+            $this->replaceSeededParcel($decision, $batch, $plansBySeedIndex, $undo, $stats);
+        }
+
+        return [$stats, $undo];
+    }
+
+    /**
      * Linha nova "de verdade": o IngestionPlanner só devolve New para uma
-     * parcela quando nem o banco (ReplaceInstallment com transactionId) nem
+     * parcela quando nem o banco (ReplaceInstallment com transaction) nem
      * nenhuma linha anterior deste mesmo arquivo (ReplaceInstallment sem
-     * transactionId, ver replaceInstallmentCreatedThisBatch()) já cobrem
-     * esta compra — então aqui sempre cria o plano quando é parcela.
+     * transaction, ver replaceSeededParcel()) já cobrem esta compra — então
+     * aqui sempre cria o plano quando é parcela.
      *
      * @param  list<RuleDefinition>  $rules
      * @param  array<string, int>  $historyMemo
      * @param  array<string, int>  $stats
-     * @param  list<array{plan: InstallmentPlan, descriptionKey: string, total: int, amount: int}>  $plansThisBatch
+     * @param  array<int, InstallmentPlan>  $plansBySeedIndex
      */
     private function insertNew(
         ImportBatch $batch,
@@ -160,12 +175,11 @@ final class IngestTransactions
         array $rules,
         array $historyMemo,
         array &$stats,
-        array &$plansThisBatch,
+        array &$plansBySeedIndex,
+        int $index,
     ): void {
-        // Só conta credit_card e só saída: a mesma condição que o planner usa
-        // para tentar casar com uma parcela existente (ver IngestionPlanner).
-        $isInstallment = $row->installment !== null && $account->isCreditCard() && $row->direction === Direction::Out;
-        $plan = $isInstallment ? $this->createInstallmentPlan($batch, $account, $row) : null;
+        $isInstallment = ImportedInstallments::isInstallmentRow($account, $row);
+        $plan = $isInstallment ? $this->projectInstallments->createPlan($batch, $account, $row) : null;
 
         $transaction = new Transaction([
             'account_id' => $account->id,
@@ -193,46 +207,38 @@ final class IngestTransactions
         $this->categorize->handleImported($transaction, $rules, $historyMemo);
 
         if ($plan !== null) {
-            /** @var array{number: int, total: int} $installment */
-            $installment = $row->installment;
-            $plansThisBatch[] = [
-                'plan' => $plan,
-                'descriptionKey' => TextNormalizer::key($row->description),
-                'total' => $installment['total'],
-                'amount' => $row->amount,
-            ];
-            $this->projectRemainingInstallments($batch, $account, $plan, $row, $transaction);
+            $plansBySeedIndex[$index] = $plan;
+            $this->projectInstallments->projectRemaining($batch, $account, $plan, $row, $transaction);
         }
 
         $stats['inserted']++;
     }
 
     /**
-     * Parcela de uma compra nova cuja primeira ocorrência, neste mesmo
-     * arquivo, já criou o plano (o IngestionPlanner casou pela mesma regra
-     * em matchesPlanSeedInBatch — total, chave de descrição e valor com
-     * tolerância menor que o total de parcelas): substitui a parcela
-     * projetada que insertNew() já deixou pronta para este número.
+     * Parcela de uma compra nova cuja primeira ocorrência (a de menor
+     * número, ver ImportedInstallments::classify()), neste mesmo arquivo,
+     * já criou o plano: substitui a parcela projetada que insertNew() já
+     * deixou pronta para este número.
      *
-     * @param  list<array{plan: InstallmentPlan, descriptionKey: string, total: int, amount: int}>  $plansThisBatch
+     * @param  array<int, InstallmentPlan>  $plansBySeedIndex
      * @param  list<array{transaction_id: int, attributes: array<string, mixed>}>  $undo
      * @param  array<string, int>  $stats
      */
-    private function replaceInstallmentCreatedThisBatch(RowDecision $decision, ImportBatch $batch, array $plansThisBatch, array &$undo, array &$stats): void
+    private function replaceSeededParcel(RowDecision $decision, ImportBatch $batch, array $plansBySeedIndex, array &$undo, array &$stats): void
     {
-        $matchedPlan = $this->matchPlanCreatedThisBatch($plansThisBatch, $decision->row);
+        $plan = $decision->seedIndex !== null ? ($plansBySeedIndex[$decision->seedIndex] ?? null) : null;
 
-        if ($matchedPlan === null) {
-            // Não deveria acontecer: o planner usa a mesma regra de
-            // casamento antes de decidir isto. Falha alto em vez de inserir
-            // uma parcela "nova" por engano, que duplicaria o plano.
+        if ($plan === null) {
+            // Não deveria acontecer: o planner usa a mesma classificação
+            // antes de decidir isto. Falha alto em vez de inserir uma
+            // parcela "nova" por engano, que duplicaria o plano.
             throw new RuntimeException("Linha {$decision->row->line}: parcela esperada no lote não foi encontrada.");
         }
 
         /** @var array{number: int, total: int} $installment */
         $installment = $decision->row->installment;
         $parcel = Transaction::query()
-            ->where('installment_plan_id', $matchedPlan['plan']->id)
+            ->where('installment_plan_id', $plan->id)
             ->where('installment_number', $installment['number'])
             ->firstOrFail();
 
@@ -263,133 +269,39 @@ final class IngestTransactions
     }
 
     /**
-     * Acha, entre os planos que este próprio lote já criou, um cuja parcela
-     * bateria com a linha: mesmo total, mesma chave de descrição e valor com
-     * diferença menor que o total de parcelas (mesma tolerância do
-     * IngestionPlanner::matchInstallment, ver ali).
-     *
-     * @param  list<array{plan: InstallmentPlan, descriptionKey: string, total: int, amount: int}>  $plansThisBatch
-     * @return array{plan: InstallmentPlan, descriptionKey: string, total: int, amount: int}|null
-     */
-    private function matchPlanCreatedThisBatch(array $plansThisBatch, ParsedRow $row): ?array
-    {
-        /** @var array{number: int, total: int} $installment */
-        $installment = $row->installment;
-        $descriptionKey = TextNormalizer::key($row->description);
-
-        foreach ($plansThisBatch as $entry) {
-            if ($entry['total'] !== $installment['total'] || $entry['descriptionKey'] !== $descriptionKey) {
-                continue;
-            }
-
-            if (abs($entry['amount'] - $row->amount) >= $entry['total']) {
-                continue;
-            }
-
-            return $entry;
-        }
-
-        return null;
-    }
-
-    /**
-     * purchase_date estimada: a data da linha menos (N−1) meses, sem
-     * overflow (ex.: parcela 2/10 lançada em 31/03 "nasceu" em 28 ou 29/02).
-     */
-    private function createInstallmentPlan(ImportBatch $batch, Account $account, ParsedRow $row): InstallmentPlan
-    {
-        /** @var array{number: int, total: int} $installment */
-        $installment = $row->installment;
-
-        return InstallmentPlan::create([
-            'account_id' => $account->id,
-            'description' => $row->description,
-            'installments' => $installment['total'],
-            'purchase_date' => CarbonImmutable::parse($row->date)->subMonthsNoOverflow($installment['number'] - 1),
-            'total_amount' => $row->amount * $installment['total'],
-            'import_batch_id' => $batch->id,
-        ]);
-    }
-
-    /**
-     * Projeta as parcelas N+1..M (a linha importada já gravou a parcela N):
-     * mesmo valor da linha, uma fatura seguinte por parcela
-     * (StatementResolver::next), lançada se a data já chegou, e herdando da
-     * parcela N tudo que a categorização/regras podem ter mudado nela
-     * (descrição, favorecido, ignorada, categoria/categorized_by e tags) —
-     * original_description continua sendo a da própria linha de cada
-     * parcela, não a da parcela N.
-     */
-    private function projectRemainingInstallments(
-        ImportBatch $batch,
-        Account $account,
-        InstallmentPlan $plan,
-        ParsedRow $row,
-        Transaction $parcel,
-    ): void {
-        /** @var array{number: int, total: int} $installment */
-        $installment = $row->installment;
-        $today = CarbonImmutable::today();
-        $rowDate = CarbonImmutable::parse($row->date);
-        $statement = CardStatement::query()->findOrFail($parcel->statement_id);
-        $tagIds = $parcel->tags->pluck('id')->all();
-
-        for ($number = $installment['number'] + 1; $number <= $installment['total']; $number++) {
-            $statement = $this->statementResolver->next($account, $statement);
-            $date = $rowDate->addMonthsNoOverflow($number - $installment['number']);
-
-            $projected = Transaction::create([
-                'account_id' => $account->id,
-                'date' => $date,
-                'amount' => $row->amount,
-                'direction' => $row->direction,
-                'currency' => $account->currency,
-                'description' => $parcel->description,
-                'original_description' => $row->description,
-                'payee' => $parcel->payee,
-                'is_ignored' => $parcel->is_ignored,
-                'status' => $date->lessThanOrEqualTo($today) ? TransactionStatus::Posted : TransactionStatus::Projected,
-                'source' => TransactionSource::Installment,
-                'statement_id' => $statement->id,
-                'installment_plan_id' => $plan->id,
-                'installment_number' => $number,
-                'import_batch_id' => $batch->id,
-                'category_id' => $parcel->category_id,
-                'categorized_by' => $parcel->categorized_by,
-            ]);
-
-            if ($tagIds !== []) {
-                $projected->tags()->sync($tagIds);
-            }
-        }
-    }
-
-    /**
      * @param  list<array{transaction_id: int, attributes: array<string, mixed>}>  $undo
      * @param  array<string, int>  $stats
      */
     private function update(RowDecision $decision, array &$undo, array &$stats): void
     {
-        $transaction = Transaction::query()->findOrFail($decision->transactionId);
+        $transaction = $decision->transaction ?? Transaction::query()->findOrFail($decision->transactionId);
+        $dateChanged = $transaction->date->toDateString() !== $decision->row->date;
+        $previousStatementId = $transaction->statement_id;
 
-        $undo[] = [
-            'transaction_id' => $transaction->id,
-            'attributes' => [
-                'status' => $transaction->status->value,
-                'amount' => $transaction->amount->cents,
-                'date' => $transaction->date->toDateString(),
-                'statement_id' => $transaction->statement_id,
-            ],
+        $attributes = [
+            'status' => TransactionStatus::Posted,
+            'date' => CarbonImmutable::parse($decision->row->date),
         ];
 
-        $dateChanged = $transaction->date->toDateString() !== $decision->row->date;
+        // Pernas de transferência e parcelas de plano têm o valor travado
+        // por outras regras do domínio (simetria da transferência, total do
+        // parcelamento travado): a importação nunca sobrescreve isso.
+        if ($transaction->transfer_id === null && $transaction->installment_plan_id === null) {
+            $attributes['amount'] = Money::cents($decision->row->amount);
+        }
 
-        $transaction->status = TransactionStatus::Posted;
-        $transaction->amount = Money::cents($decision->row->amount);
-        $transaction->date = CarbonImmutable::parse($decision->row->date);
+        $changed = UndoSnapshot::applyAndDiff($transaction, $attributes);
 
         if ($dateChanged) {
             $this->assignStatement->handle($transaction);
+
+            if ($transaction->statement_id !== $previousStatementId) {
+                $changed['statement_id'] = $previousStatementId;
+            }
+        }
+
+        if ($changed !== []) {
+            $undo[] = ['transaction_id' => $transaction->id, 'attributes' => $changed];
         }
 
         $transaction->save();
@@ -402,50 +314,39 @@ final class IngestTransactions
      */
     private function replaceInstallmentOutcome(RowDecision $decision, ImportBatch $batch, array &$undo, array &$stats): void
     {
-        $transaction = Transaction::query()->findOrFail($decision->transactionId);
+        $transaction = $decision->transaction ?? Transaction::query()->findOrFail($decision->transactionId);
         $this->replaceParcel($transaction, $decision->row, $batch, $undo);
         $stats['replaced']++;
     }
 
     /**
-     * Confirma uma parcela de plano — já existente no banco (ReplaceInstallment)
-     * ou criada mais cedo neste mesmo lote (matchPlanCreatedThisBatch): fica
-     * posted com a data real e ganha external_id/source. statement_id nunca
-     * muda aqui: é a sequência do próprio plano (StatementResolver::next a
-     * partir da fatura da parcela anterior) que decide a fatura de cada
-     * parcela — mais confiável do que recalcular pela data que o banco
-     * informou agora, que pode cair perto do fechamento de um ciclo vizinho.
+     * Confirma uma parcela de plano — já existente no banco
+     * (ReplaceInstallment) ou criada mais cedo neste mesmo lote
+     * (replaceSeededParcel): fica posted com a data e o valor reais, e
+     * ganha external_id/source. statement_id nunca muda aqui: é a
+     * sequência do próprio plano (StatementResolver::next a partir da
+     * fatura da parcela anterior) que decide a fatura de cada parcela —
+     * mais confiável do que recalcular pela data que o banco informou
+     * agora, que pode cair perto do fechamento de um ciclo vizinho.
      *
      * @param  list<array{transaction_id: int, attributes: array<string, mixed>}>  $undo
      */
     private function replaceParcel(Transaction $transaction, ParsedRow $row, ImportBatch $batch, array &$undo): void
     {
-        $attributes = [];
+        $changed = UndoSnapshot::applyAndDiff($transaction, [
+            'external_id' => $row->externalId,
+            'source' => $batch->format->source(),
+            'status' => TransactionStatus::Posted,
+            'date' => CarbonImmutable::parse($row->date),
+            // O valor estimado (plano ÷ N ou o da própria linha semente)
+            // pode diferir do que o banco de fato cobrou nesta parcela
+            // (juros, arredondamento): adota o valor real para a fatura
+            // bater com o banco.
+            'amount' => Money::cents($row->amount),
+        ]);
 
-        if ($transaction->external_id !== $row->externalId) {
-            $attributes['external_id'] = $transaction->external_id;
-        }
-
-        $newSource = $batch->format->source();
-        if ($transaction->source !== $newSource) {
-            $attributes['source'] = $transaction->source->value;
-        }
-
-        if ($transaction->status !== TransactionStatus::Posted) {
-            $attributes['status'] = $transaction->status->value;
-        }
-
-        if ($transaction->date->toDateString() !== $row->date) {
-            $attributes['date'] = $transaction->date->toDateString();
-        }
-
-        $transaction->external_id = $row->externalId;
-        $transaction->source = $newSource;
-        $transaction->status = TransactionStatus::Posted;
-        $transaction->date = CarbonImmutable::parse($row->date);
-
-        if ($attributes !== []) {
-            $undo[] = ['transaction_id' => $transaction->id, 'attributes' => $attributes];
+        if ($changed !== []) {
+            $undo[] = ['transaction_id' => $transaction->id, 'attributes' => $changed];
         }
 
         $transaction->save();
@@ -460,36 +361,20 @@ final class IngestTransactions
      */
     private function adopt(RowDecision $decision, ImportBatch $batch, array &$undo, array &$stats): void
     {
-        $transaction = Transaction::query()->findOrFail($decision->transactionId);
-        $attributes = [];
+        $transaction = $decision->transaction ?? Transaction::query()->findOrFail($decision->transactionId);
 
-        if ($transaction->external_id !== $decision->row->externalId) {
-            $attributes['external_id'] = $transaction->external_id;
+        $changed = UndoSnapshot::applyAndDiff($transaction, [
+            'external_id' => $decision->row->externalId,
+            'source' => $batch->format->source(),
+            'status' => TransactionStatus::Posted,
+            'original_description' => $decision->row->description,
+        ]);
+
+        if ($changed !== []) {
+            $undo[] = ['transaction_id' => $transaction->id, 'attributes' => $changed];
         }
 
-        $newSource = $batch->format->source();
-        if ($transaction->source !== $newSource) {
-            $attributes['source'] = $transaction->source->value;
-        }
-
-        if ($transaction->status !== TransactionStatus::Posted) {
-            $attributes['status'] = $transaction->status->value;
-        }
-
-        if ($transaction->original_description !== $decision->row->description) {
-            $attributes['original_description'] = $transaction->original_description;
-        }
-
-        if ($attributes !== []) {
-            $undo[] = ['transaction_id' => $transaction->id, 'attributes' => $attributes];
-        }
-
-        $transaction->external_id = $decision->row->externalId;
-        $transaction->source = $newSource;
-        $transaction->status = TransactionStatus::Posted;
-        $transaction->original_description = $decision->row->description;
         $transaction->save();
-
         $stats['adopted']++;
     }
 
@@ -502,25 +387,18 @@ final class IngestTransactions
      */
     private function swapPending(RowDecision $decision, array &$undo, array &$stats): void
     {
-        $transaction = Transaction::query()->findOrFail($decision->transactionId);
-        $attributes = [];
+        $transaction = $decision->transaction ?? Transaction::query()->findOrFail($decision->transactionId);
 
-        if ($transaction->external_id !== $decision->row->externalId) {
-            $attributes['external_id'] = $transaction->external_id;
+        $changed = UndoSnapshot::applyAndDiff($transaction, [
+            'external_id' => $decision->row->externalId,
+            'status' => TransactionStatus::Posted,
+        ]);
+
+        if ($changed !== []) {
+            $undo[] = ['transaction_id' => $transaction->id, 'attributes' => $changed];
         }
 
-        if ($transaction->status !== TransactionStatus::Posted) {
-            $attributes['status'] = $transaction->status->value;
-        }
-
-        if ($attributes !== []) {
-            $undo[] = ['transaction_id' => $transaction->id, 'attributes' => $attributes];
-        }
-
-        $transaction->external_id = $decision->row->externalId;
-        $transaction->status = TransactionStatus::Posted;
         $transaction->save();
-
         $stats['swapped']++;
     }
 }

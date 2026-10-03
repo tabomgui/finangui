@@ -95,6 +95,12 @@ final class CategorizeTransaction
             return;
         }
 
+        // Antes de aplicar a regra: set_description pode mudar a descrição,
+        // e o historyMemo pré-calculado (ver IngestTransactions) foi montado
+        // com a chave da descrição original da linha — ler depois pegaria a
+        // chave errada e nunca acharia a entrada do mapa.
+        $descriptionKey = TextNormalizer::key($transaction->description);
+
         $rules ??= $this->activeRuleDefinitions();
 
         $context = RuleContext::forExisting($transaction, overwrite: false);
@@ -108,7 +114,6 @@ final class CategorizeTransaction
             return;
         }
 
-        $descriptionKey = TextNormalizer::key($transaction->description);
         $categoryId = $historyMemo !== null
             ? ($historyMemo[self::historyKey($descriptionKey, $transaction->direction)] ?? null)
             : $this->history->suggest($descriptionKey, $transaction->direction);

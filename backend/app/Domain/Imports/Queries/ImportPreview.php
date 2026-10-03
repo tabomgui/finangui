@@ -118,27 +118,29 @@ final class ImportPreview
 
     /**
      * Dados (id, data, descrição) das transações que decisões diferentes de
-     * "new" apontam, numa única consulta.
+     * "new" apontam: o IngestionPlanner já carregou o model de cada uma
+     * junto da decisão (ver RowDecision::$transaction), então não precisa
+     * de outra consulta aqui.
      *
      * @param  list<RowDecision>  $decisions
      * @return array<int, array{id: int, date: string, description: string}>
      */
     private function matches(array $decisions): array
     {
-        $ids = array_values(array_unique(array_filter(
-            array_map(fn (RowDecision $decision) => $decision->transactionId, $decisions),
-        )));
+        $matches = [];
 
-        if ($ids === []) {
-            return [];
+        foreach ($decisions as $decision) {
+            if ($decision->transaction === null) {
+                continue;
+            }
+
+            $matches[$decision->transaction->id] = [
+                'id' => $decision->transaction->id,
+                'date' => $decision->transaction->date->toDateString(),
+                'description' => $decision->transaction->description,
+            ];
         }
 
-        return Transaction::query()->whereIn('id', $ids)->get()
-            ->mapWithKeys(fn (Transaction $transaction) => [$transaction->id => [
-                'id' => $transaction->id,
-                'date' => $transaction->date->toDateString(),
-                'description' => $transaction->description,
-            ]])
-            ->all();
+        return $matches;
     }
 }

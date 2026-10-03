@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Actions\PayStatement;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Categories\Models\Category;
@@ -17,6 +18,8 @@ use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
+use App\Support\Money\Money;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -340,4 +343,85 @@ it('lança ImportBatchNotPending quando o lote não está pendente', function ()
 
     expect(fn () => $this->action->handle($batch, []))
         ->toThrow(ImportBatchNotPending::class);
+});
+
+it('duas parcelas idênticas (mesmo número) no mesmo arquivo são compras diferentes: um plano para cada', function () {
+    $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+
+    $batch = $this->action->handle(
+        pendingBatch(['account_id' => $card->id, 'user_id' => $this->user->id, 'format' => ImportFormat::NubankCard]),
+        [
+            ingestRow(['description' => 'Loja X', 'amount' => 10000, 'date' => '2026-03-03', 'installment' => ['number' => 1, 'total' => 3], 'externalId' => 'x1']),
+            ingestRow(['description' => 'Loja X', 'amount' => 10000, 'date' => '2026-03-03', 'installment' => ['number' => 1, 'total' => 3], 'externalId' => 'x2']),
+        ],
+    );
+
+    expect($batch->stats['inserted'])->toBe(2)
+        ->and($batch->stats['replaced'])->toBe(0)
+        ->and(InstallmentPlan::where('account_id', $card->id)->count())->toBe(2);
+
+    foreach (['x1', 'x2'] as $externalId) {
+        $transaction = Transaction::where('external_id', $externalId)->first();
+        expect($transaction->installment_plan_id)->not->toBeNull();
+    }
+});
+
+it('parcela de número maior listada antes da de número menor no arquivo: a de menor número semeia o plano e a confirmação não falha', function () {
+    $this->travelTo('2026-02-01');
+    $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+
+    $batch = $this->action->handle(
+        pendingBatch(['account_id' => $card->id, 'user_id' => $this->user->id, 'format' => ImportFormat::NubankCard]),
+        [
+            ingestRow(['line' => 1, 'description' => 'Notebook Exemplo', 'amount' => 35000, 'date' => '2026-04-05', 'installment' => ['number' => 3, 'total' => 10], 'externalId' => 'nb-3']),
+            ingestRow(['line' => 2, 'description' => 'Notebook Exemplo', 'amount' => 35000, 'date' => '2026-03-03', 'installment' => ['number' => 2, 'total' => 10], 'externalId' => 'nb-2']),
+        ],
+    );
+
+    expect(InstallmentPlan::where('account_id', $card->id)->count())->toBe(1)
+        ->and($batch->stats['inserted'])->toBe(1)
+        ->and($batch->stats['replaced'])->toBe(1);
+
+    $plan = InstallmentPlan::where('account_id', $card->id)->first();
+    $parcels = Transaction::where('installment_plan_id', $plan->id)->orderBy('installment_number')->get();
+
+    expect($parcels)->toHaveCount(9) // parcelas 2..10
+        ->and($parcels->first()->installment_number)->toBe(2)
+        ->and($parcels->first()->external_id)->toBe('nb-2')
+        ->and($parcels->get(1)->installment_number)->toBe(3)
+        ->and($parcels->get(1)->external_id)->toBe('nb-3')
+        ->and($parcels->get(1)->status)->toBe(TransactionStatus::Posted);
+});
+
+it('em conta de cartão, pagamento de fatura relatado pelo extrato adota a perna da transferência sem mudar os totais da fatura', function () {
+    $this->travelTo('2026-02-15');
+    $checking = Account::factory()->create(['user_id' => $this->user->id]);
+    $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+    $statement = CardStatement::factory()->create(['account_id' => $card->id, 'closing_date' => '2026-03-10', 'due_date' => '2026-03-17']);
+
+    $legs = app(PayStatement::class)->handle($statement, $checking->id, Money::cents(120000), CarbonImmutable::parse('2026-03-05'));
+
+    $before = CardStatement::query()->withTotals()->findOrFail($statement->id);
+    $paidBefore = $before->paid()->cents;
+    $remainingBefore = $before->remaining()->cents;
+
+    $batch = $this->action->handle(
+        pendingBatch(['account_id' => $card->id, 'user_id' => $this->user->id, 'format' => ImportFormat::NubankCard]),
+        [ingestRow([
+            'description' => 'Pagamento recebido', 'amount' => 120000, 'direction' => Direction::In,
+            'date' => '2026-03-06', 'externalId' => 'pay-1',
+        ])],
+    );
+
+    expect($batch->stats['adopted'])->toBe(1)
+        ->and($batch->stats['inserted'])->toBe(0);
+
+    $legs['in']->refresh();
+    expect($legs['in']->external_id)->toBe('pay-1')
+        ->and($legs['in']->source)->toBe(TransactionSource::Csv)
+        ->and($legs['in']->amount->cents)->toBe(120000);
+
+    $after = CardStatement::query()->withTotals()->findOrFail($statement->id);
+    expect($after->paid()->cents)->toBe($paidBefore)
+        ->and($after->remaining()->cents)->toBe($remainingBefore);
 });

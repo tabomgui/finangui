@@ -4,18 +4,15 @@ RUN apk add --no-cache libpq-dev icu-dev libzip-dev \
     && docker-php-ext-install pdo_pgsql intl zip bcmath pcntl
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY docker/php/conf.d/uploads.ini /usr/local/etc/php/conf.d/uploads.ini
 
 WORKDIR /var/www/html
 
 # Desenvolvimento: o código entra por volume (docker-compose.yml).
 FROM base AS dev
 
-COPY docker/php/conf.d/uploads.ini /usr/local/etc/php/conf.d/uploads.ini
-
 # Produção: código e dependências dentro da imagem.
 FROM base AS prod
-
-COPY docker/php/conf.d/uploads.ini /usr/local/etc/php/conf.d/uploads.ini
 
 COPY backend/composer.json backend/composer.lock ./
 RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --no-autoloader

@@ -678,3 +678,61 @@ it('não consulta transações de outra conta nem de outro usuário', function (
 
     expect($decisions[0]->outcome)->toBe(RowOutcome::New);
 });
+
+it('duas parcelas idênticas (mesmo número) no mesmo arquivo nunca são a mesma compra: as duas viram new', function () {
+    $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+
+    $decisions = $this->planner->plan($card, [
+        importRow(['line' => 1, 'externalId' => 'a', 'description' => 'Loja X', 'amount' => 10000, 'installment' => ['number' => 1, 'total' => 3]]),
+        importRow(['line' => 2, 'externalId' => 'b', 'description' => 'Loja X', 'amount' => 10000, 'installment' => ['number' => 1, 'total' => 3]]),
+    ]);
+
+    expect($decisions[0]->outcome)->toBe(RowOutcome::New)
+        ->and($decisions[0]->seedIndex)->toBeNull()
+        ->and($decisions[1]->outcome)->toBe(RowOutcome::New)
+        ->and($decisions[1]->seedIndex)->toBeNull();
+});
+
+it('parcela de número maior listada antes da de número menor no arquivo: a de menor número semeia a compra', function () {
+    $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+
+    $decisions = $this->planner->plan($card, [
+        importRow(['line' => 1, 'externalId' => 'three', 'description' => 'Notebook', 'amount' => 35000, 'installment' => ['number' => 3, 'total' => 10]]),
+        importRow(['line' => 2, 'externalId' => 'two', 'description' => 'Notebook', 'amount' => 35000, 'installment' => ['number' => 2, 'total' => 10]]),
+    ]);
+
+    expect($decisions[1]->outcome)->toBe(RowOutcome::New)
+        ->and($decisions[1]->seedIndex)->toBeNull()
+        ->and($decisions[0]->outcome)->toBe(RowOutcome::ReplaceInstallment)
+        ->and($decisions[0]->transactionId)->toBeNull()
+        ->and($decisions[0]->seedIndex)->toBe(1);
+});
+
+it('em conta de cartão, uma linha de entrada adota uma perna de transferência (pagamento de fatura) sem exigir descrição parecida', function () {
+    $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+    $paymentLeg = Transaction::factory()->create([
+        'account_id' => $card->id, 'description' => 'Pagamento de fatura', 'original_description' => 'Pagamento de fatura',
+        'amount' => 120000, 'direction' => Direction::In, 'date' => '2026-03-05', 'transfer_id' => (string) Str::uuid(),
+    ]);
+
+    $decisions = $this->planner->plan($card, [
+        importRow(['description' => 'Pagamento recebido', 'amount' => 120000, 'direction' => Direction::In, 'date' => '2026-03-06']),
+    ]);
+
+    expect($decisions[0]->outcome)->toBe(RowOutcome::Adopt)
+        ->and($decisions[0]->transactionId)->toBe($paymentLeg->id);
+});
+
+it('fora de conta de cartão, a mesma perna de transferência só adota com descrição parecida', function () {
+    $paymentLeg = Transaction::factory()->create([
+        'account_id' => $this->account->id, 'description' => 'Pagamento de fatura', 'original_description' => 'Pagamento de fatura',
+        'amount' => 120000, 'direction' => Direction::In, 'date' => '2026-03-05', 'transfer_id' => (string) Str::uuid(),
+    ]);
+
+    $decisions = $this->planner->plan($this->account, [
+        importRow(['description' => 'Pagamento recebido', 'amount' => 120000, 'direction' => Direction::In, 'date' => '2026-03-06']),
+    ]);
+
+    expect($decisions[0]->outcome)->toBe(RowOutcome::New)
+        ->and($paymentLeg)->not->toBeNull();
+});
