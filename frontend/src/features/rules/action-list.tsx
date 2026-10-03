@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { rootErrorMessage } from '@/lib/form-errors'
 import { ACTION_LABELS } from './rule-labels'
 import { emptyAction, type ActionValues, type RuleFormValues } from './rule-form-values'
 
@@ -53,9 +54,10 @@ type ActionRowProps = {
   onRemove: () => void
   errors?: ActionErrors
   idPrefix: string
+  rowLabel: string
 }
 
-function ActionRow({ value, onChange, onRemove, errors, idPrefix }: ActionRowProps) {
+function ActionRow({ value, onChange, onRemove, errors, idPrefix, rowLabel }: ActionRowProps) {
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-border p-3 sm:flex-row sm:items-start sm:gap-3">
       <div className="flex-1 space-y-2">
@@ -80,7 +82,9 @@ function ActionRow({ value, onChange, onRemove, errors, idPrefix }: ActionRowPro
             htmlFor={`${idPrefix}-value`}
             error={errors?.value?.message}
           >
-            <Input value={value.value} onChange={(event) => onChange({ ...value, value: event.target.value })} />
+            {/* `Field` só injeta aria-describedby/aria-invalid por clone — sem `id` explícito aqui,
+                o `htmlFor` do label acima não casava com nada. */}
+            <Input id={`${idPrefix}-value`} value={value.value} onChange={(event) => onChange({ ...value, value: event.target.value })} />
           </Field>
         )}
 
@@ -92,7 +96,7 @@ function ActionRow({ value, onChange, onRemove, errors, idPrefix }: ActionRowPro
 
         {value.type === 'ignore' && <p className="text-sm text-muted-foreground">O lançamento fica marcado como ignorado.</p>}
       </div>
-      <Button type="button" variant="ghost" size="icon" aria-label="Remover ação" onClick={onRemove}>
+      <Button type="button" variant="ghost" size="icon" aria-label={`Remover ${rowLabel}`} onClick={onRemove}>
         <Trash2 className="h-4 w-4" />
       </Button>
     </div>
@@ -103,7 +107,7 @@ export function ActionList({ form }: ActionListProps) {
   const { fields, append, remove } = useFieldArray({ control: form.control, name: 'actions' })
   const actions = useWatch({ control: form.control, name: 'actions' })
   const actionsError = form.formState.errors.actions
-  const rootMessage = typeof actionsError?.message === 'string' ? actionsError.message : undefined
+  const rootMessage = rootErrorMessage(actionsError)
   const itemErrors = actionsError as unknown as ActionErrors[] | undefined
 
   const usedTypes = new Set(actions.map((action) => action.type))
@@ -121,6 +125,7 @@ export function ActionList({ form }: ActionListProps) {
             render={({ field: controllerField }) => (
               <ActionRow
                 idPrefix={`action-${index}`}
+                rowLabel={`ação ${index + 1}`}
                 value={controllerField.value}
                 onChange={controllerField.onChange}
                 onRemove={() => remove(index)}

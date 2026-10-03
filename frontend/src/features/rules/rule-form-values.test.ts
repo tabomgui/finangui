@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import type { Rule, Transaction } from '@/api/types'
-import { ruleDefaults, ruleDefaultsFromTransaction, ruleSchema, toRuleBody } from './rule-form-values'
+import { ruleDefaults, ruleDefaultsFromTransaction, rulePreviewSchema, ruleSchema, toRuleBody } from './rule-form-values'
+
+// `uid` é só chave de React (item de grupo/ação), não faz parte do valor que importa comparar aqui.
+function stripUid<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((item) => stripUid(item)) as T
+  if (value && typeof value === 'object') {
+    const { uid: _uid, ...rest } = value as Record<string, unknown>
+    return Object.fromEntries(Object.entries(rest).map(([key, item]) => [key, stripUid(item)])) as T
+  }
+  return value
+}
 
 function baseRule(overrides: Partial<Rule>): Rule {
   return {
@@ -48,7 +58,7 @@ describe('ruleDefaults', () => {
   it('sem regra: uma condição e uma ação vazias, ativa por padrão', () => {
     const defaults = ruleDefaults()
 
-    expect(defaults).toEqual({
+    expect(stripUid(defaults)).toEqual({
       name: '',
       is_active: true,
       match: 'all',
@@ -71,11 +81,11 @@ describe('ruleDefaults', () => {
 
     const defaults = ruleDefaults(rule)
 
-    expect(defaults.conditions).toEqual([
+    expect(stripUid(defaults.conditions)).toEqual([
       { kind: 'condition', field: 'description', op: 'contains', value: 'uber' },
       { kind: 'group', match: 'any', conditions: [{ kind: 'condition', field: 'amount', op: 'gt', value: '1000' }] },
     ])
-    expect(defaults.actions).toEqual([
+    expect(stripUid(defaults.actions)).toEqual([
       { type: 'set_category', category_id: 3, tag_id: null, value: '' },
       { type: 'add_tag', category_id: null, tag_id: 7, value: '' },
     ])
@@ -86,7 +96,7 @@ describe('ruleDefaultsFromTransaction', () => {
   it('com categoria: condição pela descrição e ação pela categoria', () => {
     const transaction = baseTransaction({ description: 'Uber viagem', category_id: 5 })
 
-    expect(ruleDefaultsFromTransaction(transaction)).toEqual({
+    expect(stripUid(ruleDefaultsFromTransaction(transaction))).toEqual({
       name: 'Uber viagem',
       is_active: true,
       match: 'all',
@@ -98,7 +108,7 @@ describe('ruleDefaultsFromTransaction', () => {
   it('sem categoria: ação de categoria fica vazia', () => {
     const transaction = baseTransaction({ description: 'Mercado', category_id: null })
 
-    expect(ruleDefaultsFromTransaction(transaction).actions).toEqual([
+    expect(stripUid(ruleDefaultsFromTransaction(transaction).actions)).toEqual([
       { type: 'set_category', category_id: null, tag_id: null, value: '' },
     ])
   })
@@ -181,5 +191,22 @@ describe('ruleSchema', () => {
     values.actions = [{ type: 'set_category', category_id: 3, tag_id: null, value: '' }]
 
     expect(ruleSchema.safeParse(values).success).toBe(true)
+  })
+})
+
+describe('rulePreviewSchema', () => {
+  it('aceita sem nome: a prévia não depende dele', () => {
+    const values = ruleDefaults()
+    values.conditions = [{ kind: 'condition', field: 'description', op: 'contains', value: 'uber' }]
+    values.actions = [{ type: 'set_category', category_id: 3, tag_id: null, value: '' }]
+
+    expect(values.name).toBe('')
+    expect(rulePreviewSchema.safeParse(values).success).toBe(true)
+  })
+
+  it('ainda exige valor nas condições', () => {
+    const values = ruleDefaults()
+
+    expect(rulePreviewSchema.safeParse(values).success).toBe(false)
   })
 })

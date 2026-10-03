@@ -22,13 +22,21 @@ import { applyFieldErrors, notifyError } from '@/lib/form-errors'
 import { ActionList } from './action-list'
 import { ApplyRuleDialog } from './apply-rule-dialog'
 import { ConditionList } from './condition-list'
+import { isCoverablePath } from './rule-labels'
 import { ruleDefaults, ruleDefaultsFromTransaction, ruleSchema, toRuleBody, type RuleFormValues } from './rule-form-values'
 import { RulePreviewCard } from './rule-preview-card'
 
+const POSITIVE_INTEGER = /^[1-9]\d*$/
+
 export function RuleEditorPage() {
   const params = useParams()
+  const [searchParams] = useSearchParams()
   const ruleId = params.id ? Number(params.id) : null
-  return ruleId === null ? <NewRulePage /> : <EditRulePage id={ruleId} />
+
+  if (ruleId !== null) return <EditRulePage key={ruleId} id={ruleId} />
+  // Troca de transação de origem (ex.: "Criar regra a partir desta" de outro lançamento) remonta
+  // o formulário do zero — nunca reaproveita estado de uma transação para outra.
+  return <NewRulePage key={searchParams.get('transacao') ?? 'blank'} />
 }
 
 type RuleFormBodyProps = {
@@ -79,28 +87,40 @@ function RuleFormBody({ form, overwrite, onOverwriteChange }: RuleFormBodyProps)
   )
 }
 
+/**
+ * Lê "?transacao=" (prefill de "Criar regra a partir desta"), valida e busca a transação antes
+ * de montar o formulário de fato — `NewRuleForm` só monta quando já se sabe o `defaultValues`
+ * certo, pra nunca mostrar a regra vazia por um instante e trocar sozinha embaixo dos dedos.
+ */
 function NewRulePage() {
   const [searchParams] = useSearchParams()
-  const transactionId = searchParams.get('transacao') ? Number(searchParams.get('transacao')) : null
-  const { data: transaction, isPending } = useTransaction(transactionId)
+  const rawTransactionId = searchParams.get('transacao')
+  const validParam = rawTransactionId === null || POSITIVE_INTEGER.test(rawTransactionId)
+  const transactionId = rawTransactionId !== null && validParam ? Number(rawTransactionId) : null
+  const { data: transaction, isPending, isError } = useTransaction(transactionId)
+
+  const notFound = (rawTransactionId !== null && !validParam) || (transactionId !== null && isError)
+
+  const toastShown = useRef(false)
+  useEffect(() => {
+    if (notFound && !toastShown.current) {
+      toastShown.current = true
+      toast.error('Lançamento não encontrado.')
+    }
+  }, [notFound])
+
+  if (transactionId !== null && isPending) return <FullPageSpinner />
+
+  const initialValues = transaction ? ruleDefaultsFromTransaction(transaction) : ruleDefaults()
+  return <NewRuleForm initialValues={initialValues} />
+}
+
+function NewRuleForm({ initialValues }: { initialValues: RuleFormValues }) {
   const create = useCreateRule()
   const navigate = useNavigate()
   const [overwrite, setOverwrite] = useState(false)
 
-  const form = useForm<RuleFormValues>({ resolver: zodResolver(ruleSchema), defaultValues: ruleDefaults() })
-
-  // A transação (quando há "?transacao=") só chega depois da primeira renderização: assim que
-  // carregar, preenche o formulário do zero com o prefill — sem isso o usuário veria o formulário
-  // vazio por um instante e depois ele mudaria sozinho embaixo dos dedos.
-  const prefilled = useRef(false)
-  useEffect(() => {
-    if (transaction && !prefilled.current) {
-      prefilled.current = true
-      form.reset(ruleDefaultsFromTransaction(transaction))
-    }
-  }, [transaction, form])
-
-  if (transactionId !== null && isPending) return <FullPageSpinner />
+  const form = useForm<RuleFormValues>({ resolver: zodResolver(ruleSchema), defaultValues: initialValues })
 
   const submit = form.handleSubmit(async (values) => {
     try {
@@ -108,7 +128,7 @@ function NewRulePage() {
       toast.success('Regra salva.')
       navigate(`/regras/${rule.id}`, { replace: true })
     } catch (error) {
-      if (!applyFieldErrors(error, form.setError, '*')) notifyError(error)
+      if (!applyFieldErrors(error, form.setError, '*', isCoverablePath)) notifyError(error)
     }
   })
 
@@ -184,13 +204,17 @@ function EditRulePage({ id }: { id: number }) {
 
   const submit = form.handleSubmit(async (values) => {
     try {
-      await update.mutateAsync({
+      const updated = await update.mutateAsync({
         id,
         body: { ...toRuleBody(values), name: values.name.trim(), is_active: values.is_active },
       })
+      // Sem isto, o formulário continuaria "sujo" (o `loadedRef` acima só reage à primeira carga
+      // da regra, de propósito, pra não atropelar o que o usuário está digitando) — e por
+      // "isDirty" ficar true, "Aplicar às existentes" continuaria desabilitado mesmo recém-salvo.
+      form.reset(ruleDefaults(updated))
       toast.success('Regra salva.')
     } catch (error) {
-      if (!applyFieldErrors(error, form.setError, '*')) notifyError(error)
+      if (!applyFieldErrors(error, form.setError, '*', isCoverablePath)) notifyError(error)
     }
   })
 

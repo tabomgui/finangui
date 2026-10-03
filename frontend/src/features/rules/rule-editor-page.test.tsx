@@ -34,9 +34,14 @@ vi.mock('@/api/queries/rules', () => ({
 }))
 
 let mockTransaction: Transaction | undefined
+let mockTransactionError = false
 
 vi.mock('@/api/queries/transactions', () => ({
-  useTransaction: () => ({ data: mockTransaction, isPending: mockTransaction === undefined }),
+  useTransaction: () => ({
+    data: mockTransaction,
+    isPending: mockTransaction === undefined && !mockTransactionError,
+    isError: mockTransactionError,
+  }),
 }))
 
 const categories: Category[] = [
@@ -132,6 +137,7 @@ beforeEach(() => {
   mockRule = undefined
   mockRuleError = false
   mockTransaction = undefined
+  mockTransactionError = false
   createMutateAsync.mockReset()
   updateMutateAsync.mockReset()
   deleteMutateAsync.mockReset()
@@ -149,7 +155,7 @@ describe('RuleEditorPage', () => {
     renderPage(['/regras/nova'])
 
     fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Uber' } })
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: 'uber' } })
+    fireEvent.change(screen.getByLabelText('Valor', { exact: false }), { target: { value: 'uber' } })
     chooseCategory('Transporte')
 
     fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
@@ -173,7 +179,7 @@ describe('RuleEditorPage', () => {
     renderPage(['/regras/nova?transacao=10'])
 
     expect(screen.getByLabelText('Nome')).toHaveValue('Uber viagem')
-    expect(screen.getByLabelText('Valor')).toHaveValue('Uber viagem')
+    expect(screen.getByLabelText('Valor', { exact: false })).toHaveValue('Uber viagem')
     expect(screen.getByText('Transporte')).toBeInTheDocument()
   })
 
@@ -182,7 +188,7 @@ describe('RuleEditorPage', () => {
     renderPage(['/regras/nova'])
 
     fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Uber' } })
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: 'uber' } })
+    fireEvent.change(screen.getByLabelText('Valor', { exact: false }), { target: { value: 'uber' } })
     chooseCategory('Transporte')
 
     fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
@@ -193,13 +199,13 @@ describe('RuleEditorPage', () => {
   it('trocar o campo de uma condição de texto para amount troca o operador e o controle', async () => {
     renderPage(['/regras/nova'])
 
-    const trigger = screen.getByLabelText('Campo')
+    const trigger = screen.getByLabelText('Campo', { exact: false })
     fireEvent.pointerDown(trigger, { button: 0, pointerType: 'mouse' })
     fireEvent.click(trigger)
     fireEvent.click(await screen.findByRole('option', { name: 'Valor' }))
 
-    expect(screen.getByLabelText('Operador')).toHaveTextContent('é igual a')
-    expect(screen.getByLabelText('Valor')).toHaveAttribute('inputmode', 'decimal')
+    expect(screen.getByLabelText('Operador', { exact: false })).toHaveTextContent('é igual a')
+    expect(screen.getByLabelText('Valor', { exact: false })).toHaveAttribute('inputmode', 'decimal')
   })
 
   it('editar: carrega a regra existente', () => {
@@ -209,7 +215,7 @@ describe('RuleEditorPage', () => {
 
     expect(screen.getByText('Editar regra')).toBeInTheDocument()
     expect(screen.getByLabelText('Nome')).toHaveValue('Mercado')
-    expect(screen.getByLabelText('Valor')).toHaveValue('mercado')
+    expect(screen.getByLabelText('Valor', { exact: false })).toHaveValue('mercado')
   })
 
   it('editar: regra não encontrada mostra o toast e volta para a lista', async () => {
@@ -219,5 +225,98 @@ describe('RuleEditorPage', () => {
 
     await waitFor(() => expect(screen.getByText('Lista de regras')).toBeInTheDocument())
     expect(toast.error).toHaveBeenCalledWith('Regra não encontrada.')
+  })
+
+  it('editar: depois de salvar, o formulário deixa de estar sujo e "Aplicar às existentes" habilita (C2)', async () => {
+    const original = rule()
+    mockRule = original
+    const saved = rule({ name: 'Uber viagens' })
+    updateMutateAsync.mockImplementation(async () => saved)
+
+    renderPage(['/regras/5'])
+
+    // Recém-carregada, sem edição: o formulário ainda não está "sujo".
+    expect(screen.getByRole('button', { name: 'Aplicar às existentes' })).not.toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Uber viagens' } })
+    expect(screen.getByRole('button', { name: 'Aplicar às existentes' })).toBeDisabled()
+    expect(screen.getByText('Salve a regra antes de aplicar.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Regra salva.'))
+    expect(screen.getByRole('button', { name: 'Aplicar às existentes' })).not.toBeDisabled()
+    expect(screen.queryByText('Salve a regra antes de aplicar.')).not.toBeInTheDocument()
+  })
+
+  it('422 num caminho sem campo visível (tipo da ação) cai no toast genérico (I1)', async () => {
+    createMutateAsync.mockRejectedValue(new ApiError(422, 'Dados inválidos.', null, { 'actions.0.type': ['Tipo inválido.'] }))
+    renderPage(['/regras/nova'])
+
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Uber' } })
+    fireEvent.change(screen.getByLabelText('Valor', { exact: false }), { target: { value: 'uber' } })
+    chooseCategory('Transporte')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Dados inválidos.'))
+  })
+
+  it('erro de servidor na lista de um grupo ("máximo de condições") aparece junto do grupo (I1)', async () => {
+    mockRule = rule({
+      conditions: [
+        { field: 'description', op: 'contains', value: 'uber' },
+        { match: 'all', conditions: [{ field: 'amount', op: 'gt', value: 1000 }] },
+      ],
+    })
+    updateMutateAsync.mockRejectedValue(
+      new ApiError(422, 'Dados inválidos.', null, { 'conditions.1.conditions': ['Máximo de condições no grupo.'] }),
+    )
+
+    renderPage(['/regras/5'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
+
+    expect(await screen.findByText('Máximo de condições no grupo.')).toBeInTheDocument()
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it('dois grupos: o 422 no segundo grupo cai no campo certo, não no do primeiro grupo (I2)', async () => {
+    mockRule = rule({
+      conditions: [
+        { field: 'description', op: 'contains', value: 'uber' },
+        { match: 'all', conditions: [{ field: 'amount', op: 'gt', value: 100 }] },
+        { match: 'any', conditions: [{ field: 'amount', op: 'gt', value: 200 }] },
+      ],
+    })
+    updateMutateAsync.mockRejectedValue(new ApiError(422, 'Dados inválidos.', null, { 'conditions.2.conditions.0.value': ['Valor inválido.'] }))
+
+    renderPage(['/regras/5'])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
+
+    const secondGroupValue = await screen.findByLabelText('Valor (condição 1 do grupo 3)', { exact: false })
+    expect(secondGroupValue).toHaveAttribute('aria-invalid', 'true')
+
+    const firstGroupValue = screen.getByLabelText('Valor (condição 1 do grupo 2)', { exact: false })
+    expect(firstGroupValue).not.toHaveAttribute('aria-invalid', 'true')
+
+    expect(screen.getByText('Valor inválido.')).toBeInTheDocument()
+  })
+
+  it('?transacao= de um lançamento inexistente avisa e mantém o formulário vazio (I6)', async () => {
+    mockTransactionError = true
+
+    renderPage(['/regras/nova?transacao=999'])
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Lançamento não encontrado.'))
+    expect(screen.getByLabelText('Nome')).toHaveValue('')
+  })
+
+  it('?transacao= com valor inválido (não inteiro positivo) avisa sem tentar buscar (I6)', async () => {
+    renderPage(['/regras/nova?transacao=abc'])
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Lançamento não encontrado.'))
+    expect(screen.getByLabelText('Nome')).toHaveValue('')
   })
 })

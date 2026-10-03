@@ -18,6 +18,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { notifyError } from '@/lib/form-errors'
+import { pluralize } from './rule-labels'
 import { ruleDefaults, toRuleBody } from './rule-form-values'
 
 type ApplyRuleDialogProps = {
@@ -35,6 +36,10 @@ function formatAppliedAt(value: string): string {
   return format(parseISO(value), "dd/MM/yyyy 'às' HH:mm")
 }
 
+function changedCountLabel(count: number): string {
+  return `${count} ${pluralize(count, 'alterado', 'alterados')}`
+}
+
 /**
  * Confirma e dispara a aplicação retroativa (job por regra), depois acompanha `last_applied_at`
  * via polling até o job terminar ou até 60s passarem — o que vier primeiro.
@@ -45,7 +50,7 @@ export function ApplyRuleDialog({ rule, overwrite, onOverwriteChange, disabled }
   // Compara com o `last_applied_at` anterior (não com um timestamp absoluto): evita depender do
   // relógio do servidor estar sincronizado com o do navegador.
   const previousLastAppliedAtRef = useRef<string | null>(null)
-  const startedAtRef = useRef<number | null>(null)
+  const applyingRef = useRef(applying)
   const queryClient = useQueryClient()
   const apply = useApplyRule()
 
@@ -54,25 +59,48 @@ export function ApplyRuleDialog({ rule, overwrite, onOverwriteChange, disabled }
   const { data: polledRule } = useRule(rule.id, applying ? POLL_INTERVAL_MS : undefined)
 
   useEffect(() => {
-    if (!applying) return
+    applyingRef.current = applying
+  }, [applying])
 
+  // Detecta o fim do job: quando `last_applied_at` muda, pare de sondar e avise. Isso só roda
+  // quando o GET de fato traz dados diferentes — por isso o timeout de 60s (abaixo) não pode
+  // depender deste efeito: se a resposta nunca mudar, ele nunca executa de novo.
+  useEffect(() => {
+    if (!applying) return
     if (polledRule?.last_applied_at && polledRule.last_applied_at !== previousLastAppliedAtRef.current) {
       setApplying(false)
-      toast.success(`Regra aplicada: ${polledRule.last_applied_changes ?? 0} lançamentos alterados.`)
+      toast.success(`Regra aplicada: ${changedCountLabel(polledRule.last_applied_changes ?? 0)}.`)
       invalidateLedger(queryClient)
       invalidateRules(queryClient)
-      return
-    }
-
-    if (startedAtRef.current !== null && Date.now() - startedAtRef.current >= TIMEOUT_MS) {
-      setApplying(false)
-      toast('A aplicação continua em segundo plano.')
     }
   }, [applying, polledRule, queryClient])
 
+  // Timeout real, independente de qualquer resposta de rede: garante que `applying` volte a
+  // `false` em 60s mesmo que o GET de polling continue devolvendo exatamente o mesmo corpo
+  // (nesse caso, o efeito acima nunca dispara de novo).
+  useEffect(() => {
+    if (!applying) return
+    const timer = setTimeout(() => {
+      setApplying(false)
+      toast('A aplicação continua em segundo plano.')
+    }, TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [applying])
+
+  // Se a página for desmontada (navegação) enquanto o job ainda está em voo, não há mais quem
+  // vá notar o fim dele — invalida de uma vez para a próxima visita já vir com dados frescos.
+  useEffect(() => {
+    return () => {
+      if (applyingRef.current) {
+        invalidateLedger(queryClient)
+        invalidateRules(queryClient)
+      }
+    }
+  }, [queryClient])
+
   async function confirm() {
+    if (applying || apply.isPending) return
     previousLastAppliedAtRef.current = rule.last_applied_at
-    startedAtRef.current = Date.now()
     setOpen(false)
     setApplying(true)
     try {
@@ -94,7 +122,7 @@ export function ApplyRuleDialog({ rule, overwrite, onOverwriteChange, disabled }
 
       {rule.last_applied_at && (
         <p className="text-xs text-muted-foreground">
-          Aplicada em {formatAppliedAt(rule.last_applied_at)} · {rule.last_applied_changes ?? 0} alterados.
+          Aplicada em {formatAppliedAt(rule.last_applied_at)} · {changedCountLabel(rule.last_applied_changes ?? 0)}.
         </p>
       )}
 
@@ -102,7 +130,11 @@ export function ApplyRuleDialog({ rule, overwrite, onOverwriteChange, disabled }
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Aplicar às existentes?</AlertDialogTitle>
-            <AlertDialogDescription>Isso vai alterar cerca de {preview.data?.changed ?? 0} lançamentos.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {preview.isPending || preview.isPlaceholderData || preview.data === undefined
+                ? 'Calculando quantos lançamentos seriam alterados…'
+                : `Isso vai alterar cerca de ${preview.data.changed} ${pluralize(preview.data.changed, 'lançamento', 'lançamentos')}.`}
+            </AlertDialogDescription>
           </AlertDialogHeader>
 
           <div className="flex items-start gap-3 rounded-xl border border-border p-3">

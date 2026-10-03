@@ -2,22 +2,25 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '@/api/errors'
 import type { RulePreview, Transaction } from '@/api/types'
 import { ruleDefaults, type RuleFormValues } from './rule-form-values'
 import { RulePreviewCard } from './rule-preview-card'
 
 const useRulePreviewMock = vi.fn()
+let categoriesPending = false
+let tagsPending = false
 
 vi.mock('@/api/queries/rules', () => ({
   useRulePreview: (...args: unknown[]) => useRulePreviewMock(...args),
 }))
 
 vi.mock('@/api/queries/categories', () => ({
-  useCategories: () => ({ data: [{ id: 1, name: 'Transporte' }] }),
+  useCategories: () => ({ data: [{ id: 1, name: 'Transporte' }], isPending: categoriesPending }),
 }))
 
 vi.mock('@/api/queries/tags', () => ({
-  useTags: () => ({ data: [{ id: 2, name: 'viagem' }] }),
+  useTags: () => ({ data: [{ id: 2, name: 'viagem' }], isPending: tagsPending }),
 }))
 
 function Wrapper({ initialValues }: { initialValues: RuleFormValues }) {
@@ -46,6 +49,8 @@ beforeEach(() => {
   vi.useFakeTimers()
   useRulePreviewMock.mockReset()
   useRulePreviewMock.mockReturnValue(idleQueryResult())
+  categoriesPending = false
+  tagsPending = false
 })
 
 afterEach(() => {
@@ -57,7 +62,7 @@ describe('RulePreviewCard', () => {
     render(<Wrapper initialValues={ruleDefaults()} />)
 
     act(() => {
-      vi.advanceTimersByTime(600)
+      vi.advanceTimersByTime(900)
     })
 
     expect(screen.getByText('Complete a regra para ver a prévia.')).toBeInTheDocument()
@@ -90,7 +95,7 @@ describe('RulePreviewCard', () => {
     render(<Wrapper initialValues={validValues()} />)
 
     act(() => {
-      vi.advanceTimersByTime(600)
+      vi.advanceTimersByTime(900)
     })
 
     expect(screen.getByText('Casa 5 lançamentos · mudaria 3 lançamentos')).toBeInTheDocument()
@@ -104,11 +109,58 @@ describe('RulePreviewCard', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'Sobrescrever categorias existentes' }))
 
     act(() => {
-      vi.advanceTimersByTime(600)
+      vi.advanceTimersByTime(900)
     })
 
     const lastCall = useRulePreviewMock.mock.calls.at(-1)
     expect(lastCall?.[0]).toMatchObject({ overwrite: true })
     expect(lastCall?.[1]).toBe(true)
+  })
+
+  it('tag apagada mostra "excluída", mas enquanto a lista de tags carrega mostra o placeholder', () => {
+    const transaction = {
+      id: 1,
+      description: 'Uber',
+      amount: 1500,
+      currency: 'BRL',
+      direction: 'out',
+      category: null,
+    } as unknown as Transaction
+
+    useRulePreviewMock.mockReturnValue(
+      idleQueryResult(
+        preview({
+          sample: [{ transaction, changes: { category_id: null, description: null, payee: null, tag_ids: [999], is_ignored: false } }],
+        }),
+      ),
+    )
+    tagsPending = true
+
+    render(<Wrapper initialValues={validValues()} />)
+
+    act(() => {
+      vi.advanceTimersByTime(900)
+    })
+
+    expect(screen.getByText('+#…')).toBeInTheDocument()
+  })
+
+  it('429 mostra mensagem calma de prévia, não o texto padrão de erro', () => {
+    useRulePreviewMock.mockReturnValue({
+      data: undefined,
+      isPending: false,
+      isPlaceholderData: false,
+      isError: true,
+      error: new ApiError(429, 'Muitas tentativas. Aguarde um minuto e tente de novo.'),
+      refetch: vi.fn(),
+    })
+
+    render(<Wrapper initialValues={validValues()} />)
+
+    act(() => {
+      vi.advanceTimersByTime(900)
+    })
+
+    expect(screen.getByText('Muitas prévias seguidas; aguarde um instante.')).toBeInTheDocument()
   })
 })

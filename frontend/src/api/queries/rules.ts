@@ -48,7 +48,12 @@ export function useCreateRule() {
   return useMutation({
     mutationFn: async (body: CreateRuleBody) =>
       (await unwrap(api.POST('/rules', { body: asRequestBody<StoreRuleRequest>(body) }))).data,
-    onSuccess: () => invalidateRules(queryClient),
+    // Semeia o cache do detalhe com a regra recém-criada: a tela de edição, para onde se navega
+    // na sequência, já encontra os dados prontos em vez de pedir de novo e mostrar um spinner.
+    onSuccess: (rule) => {
+      queryClient.setQueryData(queryKeys.rule(rule.id), rule)
+      return invalidateRules(queryClient)
+    },
   })
 }
 

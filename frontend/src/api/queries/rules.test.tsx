@@ -6,16 +6,16 @@ import { describe, expect, it, vi } from 'vitest'
 import { queryKeys } from '@/api/query-keys'
 import type { Rule } from '@/api/types'
 
-const { PUT } = vi.hoisted(() => ({ PUT: vi.fn() }))
+const { PUT, POST } = vi.hoisted(() => ({ PUT: vi.fn(), POST: vi.fn() }))
 
 vi.mock('@/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/client')>()
-  return { ...actual, api: { ...actual.api, PUT } }
+  return { ...actual, api: { ...actual.api, PUT, POST } }
 })
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
-const { useReorderRules } = await import('./rules')
+const { useReorderRules, useCreateRule } = await import('./rules')
 
 function rule(id: number, name: string): Rule {
   return {
@@ -95,5 +95,22 @@ describe('useReorderRules', () => {
     // ...depois desfeito, com aviso.
     await waitFor(() => expect(orderedIds(client)).toEqual([1, 2, 3]))
     expect(toast.error).toHaveBeenCalledWith('Envie todas as regras, sem repetir.')
+  })
+})
+
+describe('useCreateRule', () => {
+  it('semeia o cache do detalhe com a regra recém-criada', async () => {
+    const created = rule(42, 'Uber')
+    POST.mockResolvedValue({ data: { data: created }, error: undefined, response: { ok: true, status: 201 } })
+    const client = new QueryClient()
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+
+    const { result } = renderHook(() => useCreateRule(), { wrapper })
+
+    act(() => {
+      result.current.mutate({ match: 'all', conditions: [], actions: [], name: 'Uber' })
+    })
+
+    await waitFor(() => expect(client.getQueryData(queryKeys.rule(42))).toEqual(created))
   })
 })

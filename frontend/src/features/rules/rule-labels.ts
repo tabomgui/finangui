@@ -45,6 +45,25 @@ export const OPERATORS_BY_FIELD: Record<string, string[]> = {
   account_id: EQUALITY_OPERATORS,
 }
 
+/** Campos de texto livre: o valor digitado continua válido ao trocar de um para outro. */
+export const TEXT_FIELDS = new Set<string>(['description', 'original_description', 'payee', 'notes'])
+
+/** Singular/plural simples (português não tem irregularidade nos termos usados aqui). */
+export function pluralize(count: number, singular: string, plural: string): string {
+  return count === 1 ? singular : plural
+}
+
+// `applyFieldErrors('*', ...)` grava todo caminho que um 422 trouxer, mas nem todo caminho tem um
+// campo visível que mostre a mensagem: o índice de um item sozinho ("conditions.2") e o tipo de
+// uma ação ("actions.1.type") não renderizam nada. Usado por `rule-editor-page.tsx` para decidir
+// se, mesmo com o erro "aplicado", ainda cabe um toast genérico — senão o usuário via um 422 que
+// não aparecia em lugar nenhum da tela.
+const UNCOVERED_ERROR_PATH_PATTERNS = [/^conditions\.\d+$/, /^actions\.\d+$/, /^actions\.\d+\.type$/]
+
+export function isCoverablePath(path: string): boolean {
+  return !UNCOVERED_ERROR_PATH_PATTERNS.some((pattern) => pattern.test(path))
+}
+
 export const ACTION_LABELS: Record<string, string> = {
   set_category: 'Definir categoria',
   set_description: 'Definir descrição',
