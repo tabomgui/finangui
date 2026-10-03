@@ -145,6 +145,20 @@ describe('RulePreviewCard', () => {
     expect(screen.getByText('+#…')).toBeInTheDocument()
   })
 
+  it('mostra o aviso sobre lançamentos ignorados quando a regra tem a ação ignore', () => {
+    const values = validValues()
+    values.actions = [...values.actions, { type: 'ignore', category_id: null, tag_id: null, value: '' }]
+    render(<Wrapper initialValues={values} />)
+
+    expect(screen.getByText('Lançamentos ignorados saem do saldo, dos relatórios e do total das faturas.')).toBeInTheDocument()
+  })
+
+  it('não mostra o aviso de ignorar quando a regra não tem essa ação', () => {
+    render(<Wrapper initialValues={validValues()} />)
+
+    expect(screen.queryByText('Lançamentos ignorados saem do saldo, dos relatórios e do total das faturas.')).not.toBeInTheDocument()
+  })
+
   it('429 mostra mensagem calma de prévia, não o texto padrão de erro', () => {
     useRulePreviewMock.mockReturnValue({
       data: undefined,
