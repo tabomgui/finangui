@@ -14,10 +14,12 @@ use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Transactions\Enums\Direction;
 use Carbon\CarbonImmutable;
 use Generator;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -548,7 +550,7 @@ final class PluggyProvider implements BankProvider
             'method' => $method,
             'uri' => $uri,
             'status' => $response->status(),
-            'body' => $response->body(),
+            'body' => $this->truncatedBody($response),
         ]);
 
         $providerCode = $response->json('code');
@@ -563,6 +565,16 @@ final class PluggyProvider implements BankProvider
         return is_numeric($header) ? (int) $header : null;
     }
 
+    /**
+     * Corpo cru da resposta, cortado em 1000 caracteres: só para o log de
+     * uma recusa (debug), nunca pensado para guardar um corpo inteiro
+     * (pode ser grande e não acrescenta nada depois de um certo tamanho).
+     */
+    private function truncatedBody(Response $response): string
+    {
+        return mb_substr($response->body(), 0, 1000);
+    }
+
     private function client(): PendingRequest
     {
         /** @var string $baseUrl */
@@ -575,10 +587,15 @@ final class PluggyProvider implements BankProvider
             ->connectTimeout(5);
     }
 
+    /**
+     * A key fica cacheada criptografada (Crypt::encryptString): o cache
+     * "database"/"file" do Laravel não é um cofre — nada nele precisa
+     * continuar lendo texto puro só porque é "só um cache".
+     */
     private function apiKey(): string
     {
-        /** @var string $apiKey */
-        $apiKey = Cache::remember(self::API_KEY_CACHE_KEY, now()->addMinutes(110), function (): string {
+        /** @var string $encrypted */
+        $encrypted = Cache::remember(self::API_KEY_CACHE_KEY, now()->addMinutes(110), function (): string {
             /** @var string $baseUrl */
             $baseUrl = config('services.pluggy.base_url');
 
@@ -610,9 +627,26 @@ final class PluggyProvider implements BankProvider
                 throw new ProviderUnavailable("Falha ao autenticar na Pluggy (POST /auth): HTTP {$response->status()}.");
             }
 
-            return (string) $response->json('apiKey');
+            $apiKey = $response->json('apiKey');
+
+            if (! is_string($apiKey) || $apiKey === '') {
+                // 2xx sem apiKey não deveria acontecer; mais seguro tratar
+                // como indisponibilidade transitória do que cachear uma key
+                // vazia (toda chamada seguinte tentaria autenticar com "").
+                throw new ProviderUnavailable('Pluggy não devolveu apiKey em POST /auth.');
+            }
+
+            return Crypt::encryptString($apiKey);
         });
 
-        return $apiKey;
+        try {
+            return Crypt::decryptString($encrypted);
+        } catch (DecryptException) {
+            // Cache de antes desta mudança (texto puro) ou corrompido: força
+            // reautenticar, em vez de devolver lixo como se fosse a key.
+            Cache::forget(self::API_KEY_CACHE_KEY);
+
+            return $this->apiKey();
+        }
     }
 }

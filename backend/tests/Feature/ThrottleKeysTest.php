@@ -4,6 +4,7 @@ use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Providers\FakeBankProvider;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 
 /**
  * O middleware "throttle:max,min" genérico (sem limiter nomeado) usa só o
@@ -30,4 +31,27 @@ it('martelar rules/preview não consome o limite de bank-connections/.../sync', 
     }
 
     $this->postJson("/api/v1/bank-connections/{$connection->id}/sync")->assertStatus(202);
+});
+
+it('bank-connections (store) e link-accounts têm limites próprios, isolados de rules/preview', function () {
+    app()->instance(BankProvider::class, new FakeBankProvider);
+    actingAsUser();
+
+    // store: 10/min — a 11ª bate no limite (429); nenhuma delas deveria
+    // ter sucesso de verdade (item_id aleatório, sem contas), então o que
+    // importa aqui é só o código de status não ser 429 antes da 11ª.
+    for ($i = 0; $i < 10; $i++) {
+        expect($this->postJson('/api/v1/bank-connections', ['item_id' => (string) Str::uuid()])->status())->not->toBe(429);
+    }
+    $this->postJson('/api/v1/bank-connections', ['item_id' => (string) Str::uuid()])->assertStatus(429);
+
+    // Nem rules/preview (prefixo diferente) nem link-accounts (prefixo
+    // próprio, 20/min) foram afetados por martelar store.
+    expect($this->postJson('/api/v1/rules/preview', [])->status())->not->toBe(429);
+
+    $connection = BankConnection::factory()->create();
+    for ($i = 0; $i < 20; $i++) {
+        expect($this->postJson("/api/v1/bank-connections/{$connection->id}/link-accounts", ['links' => []])->status())->not->toBe(429);
+    }
+    $this->postJson("/api/v1/bank-connections/{$connection->id}/link-accounts", ['links' => []])->assertStatus(429);
 });

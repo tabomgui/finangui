@@ -1,5 +1,6 @@
 <?php
 
+use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Shared\DomainError;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -39,4 +40,17 @@ return Application::configure(basePath: dirname(__DIR__))
             'code' => $e->errorCode(),
             'message' => $e->getMessage(),
         ], 409));
+
+        // ProviderUnavailable não é um DomainError (é uma falha do lado de
+        // fora, não uma regra de negócio) — só as rotas interativas que
+        // falam com o provedor na hora (connect-token, criar, vincular,
+        // reconectar, sincronizar) chegam a deixar isso escapar até aqui;
+        // App\Domain\Banking\Jobs\SyncConnection, em fila, nunca passa por
+        // este renderer (o ciclo de vida de exceção de um job é outro —
+        // ver failed()/$tries/$backoff).
+        $exceptions->dontReport(ProviderUnavailable::class);
+        $exceptions->render(fn (ProviderUnavailable $e) => response()->json([
+            'code' => 'provider_unavailable',
+            'message' => 'O banco não respondeu. Tente de novo em instantes.',
+        ], 503));
     })->create();

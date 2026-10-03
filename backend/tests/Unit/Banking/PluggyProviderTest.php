@@ -7,6 +7,8 @@ use App\Domain\Banking\Providers\Pluggy\PluggyProvider;
 use App\Domain\Transactions\Enums\Direction;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -719,4 +721,40 @@ it('converte um 400 inesperado em ProviderRequestFailed, com status e providerCo
         expect($e->status)->toBe(400)
             ->and($e->providerCode)->toBe('INVALID_ITEM');
     }
+});
+
+it('a key fica cacheada criptografada, nunca em texto puro', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'super-secret-key']),
+        'api.pluggy.ai/items/*' => Http::response(pluggyFixture('item-updated.json')),
+    ]);
+
+    $this->provider->item('00000000-0000-0000-0000-000000000001');
+
+    $cached = Cache::get('pluggy.api_key');
+    expect($cached)->not->toBeNull()
+        ->and($cached)->not->toBe('super-secret-key')
+        ->and(Crypt::decryptString($cached))->toBe('super-secret-key');
+});
+
+it('cache antigo em texto puro (de antes da criptografia) é descartado e reautentica', function () {
+    Cache::put('pluggy.api_key', 'plaintext-key-from-before', now()->addMinutes(110));
+
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'fresh-key']),
+        'api.pluggy.ai/items/*' => Http::response(pluggyFixture('item-updated.json')),
+    ]);
+
+    $this->provider->item('00000000-0000-0000-0000-000000000001');
+
+    Http::assertSent(fn ($request) => $request->hasHeader('X-API-KEY', 'fresh-key'));
+});
+
+it('/auth respondendo 2xx sem apiKey vira ProviderUnavailable, sem cachear uma key vazia', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['message' => 'ok, mas sem apiKey']),
+    ]);
+
+    expect(fn () => $this->provider->item('item-1'))->toThrow(ProviderUnavailable::class);
+    expect(Cache::get('pluggy.api_key'))->toBeNull();
 });

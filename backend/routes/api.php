@@ -97,8 +97,8 @@ Route::prefix('v1')->group(function () {
             // agrupamento das rotas literais perto do topo, como em rules/
             // e import-batches/).
             Route::post('bank-connections/connect-token', [BankConnectionController::class, 'connectToken'])->middleware('throttle:10,1,bank-connect-token');
-            Route::post('bank-connections', [BankConnectionController::class, 'store']);
-            Route::post('bank-connections/{connection}/link-accounts', [BankConnectionController::class, 'linkAccounts'])->whereNumber('connection');
+            Route::post('bank-connections', [BankConnectionController::class, 'store'])->middleware('throttle:10,1,bank-connect');
+            Route::post('bank-connections/{connection}/link-accounts', [BankConnectionController::class, 'linkAccounts'])->whereNumber('connection')->middleware('throttle:20,1,bank-link');
             Route::post('bank-connections/{connection}/reconnected', [BankConnectionController::class, 'reconnected'])->whereNumber('connection');
             Route::post('bank-connections/{connection}/sync', [BankConnectionController::class, 'sync'])->whereNumber('connection')->middleware('throttle:6,1,bank-sync');
         });
