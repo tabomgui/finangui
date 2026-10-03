@@ -259,3 +259,49 @@ it('regra casa por uma condição dentro de um grupo', function () {
         ->assertJsonPath('data.category_id', $category->id)
         ->assertJsonPath('data.categorized_by', "rule:{$rule->id}");
 });
+
+it('handleImported aplica todas as ações de uma regra ativa num lançamento importado', function () {
+    $category = Category::factory()->create(['user_id' => $this->user->id]);
+    $tag = Tag::factory()->create(['user_id' => $this->user->id]);
+
+    $rule = Rule::factory()->create([
+        'user_id' => $this->user->id,
+        'conditions' => [['field' => 'description', 'op' => 'contains', 'value' => 'uber']],
+        'actions' => [
+            ['type' => 'set_category', 'category_id' => $category->id],
+            ['type' => 'set_description', 'value' => 'Uber'],
+            ['type' => 'add_tag', 'tag_id' => $tag->id],
+        ],
+    ]);
+
+    $transaction = Transaction::factory()->create([
+        'account_id' => $this->account->id, 'user_id' => $this->user->id,
+        'description' => 'Uber *trip 99', 'direction' => 'out', 'category_id' => null,
+    ]);
+
+    app(CategorizeTransaction::class)->handleImported($transaction);
+
+    expect($transaction->category_id)->toBe($category->id)
+        ->and($transaction->categorized_by)->toBe("rule:{$rule->id}")
+        ->and($transaction->description)->toBe('Uber')
+        ->and($transaction->tags->pluck('id')->all())->toBe([$tag->id]);
+});
+
+it('handleImported sem regra cai no histórico', function () {
+    $category = Category::factory()->create(['user_id' => $this->user->id]);
+
+    Transaction::factory()->count(2)->create([
+        'account_id' => $this->account->id, 'user_id' => $this->user->id,
+        'description' => 'Padaria do Joao', 'direction' => 'out', 'category_id' => $category->id,
+    ]);
+
+    $transaction = Transaction::factory()->create([
+        'account_id' => $this->account->id, 'user_id' => $this->user->id,
+        'description' => 'Padaria do Joao 99', 'direction' => 'out', 'category_id' => null,
+    ]);
+
+    app(CategorizeTransaction::class)->handleImported($transaction);
+
+    expect($transaction->category_id)->toBe($category->id)
+        ->and($transaction->categorized_by)->toBe('history');
+});

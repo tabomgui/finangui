@@ -18,8 +18,19 @@ use App\Domain\Transactions\Models\Transaction;
  */
 final class CategorizeTransaction
 {
+    /**
+     * Regras ativas carregadas por handleImported() quando nenhuma lista é
+     * passada: memoizadas na instância para um lote de importação (que
+     * reaproveita a mesma instância via o container) não reconsultar a
+     * cada linha.
+     *
+     * @var list<RuleDefinition>|null
+     */
+    private ?array $activeRules = null;
+
     public function __construct(
         private readonly HistoryCategorizer $history,
+        private readonly ApplyRuleOutcome $applyRuleOutcome,
     ) {}
 
     /**
@@ -72,5 +83,54 @@ final class CategorizeTransaction
 
         $transaction->category_id = $suggestion['category_id'];
         $transaction->categorized_by = $suggestion['categorized_by'];
+    }
+
+    /**
+     * Lançamento importado já salvo, sem categoria: regras ativas com todas
+     * as ações (via ApplyRuleOutcome) e, se nenhuma categorizar, o
+     * histórico. Pernas de transferência não existem na importação, mas o
+     * guard fica por simetria com handle().
+     *
+     * @param  list<RuleDefinition>|null  $rules  regras ativas já carregadas
+     *                                            (evita reconsultar por linha num lote); omitido, carrega e memoiza na instância.
+     */
+    public function handleImported(Transaction $transaction, ?array $rules = null): void
+    {
+        if ($transaction->category_id !== null || $transaction->isTransferLeg()) {
+            return;
+        }
+
+        $rules ??= $this->activeRuleDefinitions();
+
+        $context = RuleContext::forExisting($transaction, overwrite: false);
+        $outcome = RuleEngine::evaluate(RuleSubject::fromTransaction($transaction), $rules, $context);
+
+        $this->applyRuleOutcome->handle($transaction, $outcome);
+
+        // Lido de novo (não reaproveita a narrowing de category_id da guarda
+        // acima): ApplyRuleOutcome::handle() pode ter categorizado agora.
+        if ($transaction->categorized_by !== null) {
+            return;
+        }
+
+        $categoryId = $this->history->suggest(TextNormalizer::key($transaction->description), $transaction->direction);
+
+        if ($categoryId === null) {
+            return;
+        }
+
+        $transaction->category_id = $categoryId;
+        $transaction->categorized_by = 'history';
+        $transaction->save();
+    }
+
+    /**
+     * @return list<RuleDefinition>
+     */
+    private function activeRuleDefinitions(): array
+    {
+        return $this->activeRules ??= Rule::query()->where('is_active', true)->ordered()->get()
+            ->map(RuleDefinition::fromRule(...))
+            ->all();
     }
 }
