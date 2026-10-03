@@ -76,7 +76,7 @@ final class IngestTransactions
             // Decidido só agora, com a conta travada: a mesma leitura que a
             // prévia fez pode ter ficado desatualizada entre a prévia e a
             // confirmação.
-            $decisions = $this->planner->plan($account, $rows);
+            $decisions = $this->planner->plan($account, $rows, $locked->format);
 
             $rules = Rule::query()->where('is_active', true)->ordered()->get()
                 ->map(RuleDefinition::fromRule(...))

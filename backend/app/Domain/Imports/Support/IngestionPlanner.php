@@ -5,8 +5,10 @@ namespace App\Domain\Imports\Support;
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Imports\Data\ParsedRow;
 use App\Domain\Imports\Data\RowDecision;
+use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Enums\RowOutcome;
 use App\Domain\Transactions\Enums\Direction;
+use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use Carbon\CarbonImmutable;
@@ -34,9 +36,10 @@ final class IngestionPlanner
 
     /**
      * @param  list<ParsedRow>  $rows
+     * @param  ImportFormat|null  $format  formato do lote (ver Actions/IngestTransactions e Queries/ImportPreview); format Pluggy amplia a adoção (ver adoptionPool())
      * @return list<RowDecision>
      */
-    public function plan(Account $account, array $rows): array
+    public function plan(Account $account, array $rows, ?ImportFormat $format = null): array
     {
         if ($rows === []) {
             return [];
@@ -48,12 +51,9 @@ final class IngestionPlanner
 
         $byExternalId = $candidates->whereNotNull('external_id')->keyBy('external_id');
         $installmentPool = $candidates->whereNull('external_id')->whereNotNull('installment_plan_id')->values();
-        // Parcelas não são lançamentos manuais livres: têm seu próprio
-        // casamento (replace_installment) e não devem ser "adotadas" por
-        // engano só por também não terem external_id.
-        $adoptionPool = $candidates->whereNull('external_id')->whereNull('installment_plan_id')->values();
+        $adoptionPool = $this->adoptionPool($candidates, $format);
         $swapPool = $candidates->filter(
-            fn (Transaction $t) => $t->external_id !== null && $t->status === TransactionStatus::Pending
+            fn (Transaction $t) => $t->external_id !== null && $this->isStillOpen($t)
         )->values();
 
         /** @var array<int, RowDecision> $decisions */
@@ -77,7 +77,7 @@ final class IngestionPlanner
 
             if ($existing !== null) {
                 $usedIds[$existing->id] = true;
-                $decisions[$index] = $existing->status === TransactionStatus::Pending && ! $row->pending
+                $decisions[$index] = $this->isStillOpen($existing) && ! $row->pending
                     ? new RowDecision($row, RowOutcome::Update, $existing->id, $existing)
                     : new RowDecision($row, RowOutcome::Duplicate, $existing->id, $existing);
 
@@ -142,6 +142,49 @@ final class IngestionPlanner
         ksort($decisions);
 
         return array_values($decisions);
+    }
+
+    /**
+     * Parcelas não são lançamentos manuais livres: têm seu próprio
+     * casamento (replace_installment) e nunca entram aqui, mesmo sem
+     * external_id. Sem external_id, qualquer outro lançamento é candidato.
+     * Com external_id, só entra quando o lote é da sincronização bancária
+     * (Pluggy) e o lançamento já existente não veio do próprio banco —
+     * um lançamento manual, de CSV ou de OFX ainda não confirmado, com o
+     * seu próprio id sintético, que o banco agora está relatando com um id
+     * dele: mesmos limiares de valor/data/descrição de matchAdoption()
+     * (e matchCardPayment(), que usa o mesmo pool) decidem se de fato bate.
+     */
+    /**
+     * @param  Collection<int, Transaction>  $candidates
+     * @return Collection<int, Transaction>
+     */
+    private function adoptionPool(Collection $candidates, ?ImportFormat $format): Collection
+    {
+        return $candidates->filter(function (Transaction $t) use ($format) {
+            if ($t->installment_plan_id !== null) {
+                return false;
+            }
+
+            if ($t->external_id === null) {
+                return true;
+            }
+
+            return $format === ImportFormat::Pluggy && $t->source !== TransactionSource::Pluggy;
+        })->values();
+    }
+
+    /**
+     * Ainda pode virar `posted` de verdade: pendente (de qualquer fonte) ou
+     * projetada por data futura que não é parcela (`installment_plan_id`
+     * nulo) — uma parcela projetada tem seu próprio casamento
+     * (replace_installment) e nunca deve trocar de external_id ou virar
+     * "atualizada" por aqui.
+     */
+    private function isStillOpen(Transaction $t): bool
+    {
+        return $t->status === TransactionStatus::Pending
+            || ($t->status === TransactionStatus::Projected && $t->installment_plan_id === null);
     }
 
     /**

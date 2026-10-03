@@ -4,6 +4,7 @@ use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Imports\Data\ParsedRow;
 use App\Domain\Imports\Data\RowDecision;
+use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Enums\RowOutcome;
 use App\Domain\Imports\Support\IngestionPlanner;
 use App\Domain\Transactions\Enums\Direction;
@@ -735,4 +736,114 @@ it('fora de conta de cartão, a mesma perna de transferência só adota com desc
 
     expect($decisions[0]->outcome)->toBe(RowOutcome::New)
         ->and($paymentLeg)->not->toBeNull();
+});
+
+describe('sincronização bancária (format pluggy) amplia a adoção', function () {
+    it('adota um lançamento já importado de outro formato (csv/ofx), com external_id, ainda não confirmado pelo banco', function () {
+        $csvImported = Transaction::factory()->create([
+            'account_id' => $this->account->id, 'external_id' => 'csv-1', 'source' => 'csv',
+            'amount' => 4590, 'direction' => Direction::Out, 'date' => '2026-03-05', 'description' => 'Mercado',
+        ]);
+
+        $decisions = $this->planner->plan($this->account, [
+            importRow(['externalId' => 'pluggy-1', 'amount' => 4590, 'date' => '2026-03-07', 'description' => 'Mercado']),
+        ], ImportFormat::Pluggy);
+
+        $decision = decisionFor($decisions, 'pluggy-1');
+        expect($decision->outcome)->toBe(RowOutcome::Adopt)
+            ->and($decision->transactionId)->toBe($csvImported->id);
+    });
+
+    it('fora de um lote pluggy, um lançamento com external_id de outro formato nunca é adotado', function () {
+        Transaction::factory()->create([
+            'account_id' => $this->account->id, 'external_id' => 'csv-1', 'source' => 'csv',
+            'amount' => 4590, 'direction' => Direction::Out, 'date' => '2026-03-05', 'description' => 'Mercado',
+        ]);
+
+        $decisions = $this->planner->plan($this->account, [
+            importRow(['externalId' => 'ofx-1', 'amount' => 4590, 'date' => '2026-03-07', 'description' => 'Mercado']),
+        ], ImportFormat::Ofx);
+
+        expect(decisionFor($decisions, 'ofx-1')->outcome)->toBe(RowOutcome::New);
+    });
+
+    it('um lote pluggy nunca adota um lançamento que já veio do próprio banco (tem seu próprio casamento por external_id)', function () {
+        Transaction::factory()->create([
+            'account_id' => $this->account->id, 'external_id' => 'pluggy-old', 'source' => 'pluggy', 'status' => 'posted',
+            'amount' => 4590, 'direction' => Direction::Out, 'date' => '2026-03-05', 'description' => 'Mercado',
+        ]);
+
+        $decisions = $this->planner->plan($this->account, [
+            importRow(['externalId' => 'pluggy-new', 'amount' => 4590, 'date' => '2026-03-07', 'description' => 'Mercado']),
+        ], ImportFormat::Pluggy);
+
+        expect(decisionFor($decisions, 'pluggy-new')->outcome)->toBe(RowOutcome::New);
+    });
+
+    it('um lote pluggy nunca adota uma parcela (installment_plan_id), mesmo com external_id de outro formato', function () {
+        $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+        $plan = InstallmentPlan::factory()->create(['account_id' => $card->id]);
+        Transaction::factory()->create([
+            'account_id' => $card->id, 'external_id' => 'csv-parcel', 'source' => 'csv',
+            'installment_plan_id' => $plan->id, 'installment_number' => 2,
+            'amount' => 1000, 'direction' => Direction::Out, 'date' => '2026-03-05', 'description' => 'Compra parcelada',
+        ]);
+
+        $decisions = $this->planner->plan($card, [
+            importRow(['externalId' => 'pluggy-1', 'amount' => 1000, 'date' => '2026-03-07', 'description' => 'Compra parcelada']),
+        ], ImportFormat::Pluggy);
+
+        expect(decisionFor($decisions, 'pluggy-1')->outcome)->toBe(RowOutcome::New);
+    });
+});
+
+describe('transação projetada (pendente futura) não-parcela é tratada como pendente', function () {
+    it('vira update quando a linha chega não-pendente com o mesmo external_id', function () {
+        $projected = Transaction::factory()->create([
+            'account_id' => $this->account->id, 'external_id' => 'fut-1', 'status' => 'projected',
+            'amount' => 1000, 'direction' => Direction::Out, 'date' => '2026-03-10',
+        ]);
+
+        $decisions = $this->planner->plan($this->account, [
+            importRow(['externalId' => 'fut-1', 'amount' => 1000, 'date' => '2026-03-10', 'pending' => false]),
+        ]);
+
+        $decision = decisionFor($decisions, 'fut-1');
+        expect($decision->outcome)->toBe(RowOutcome::Update)
+            ->and($decision->transactionId)->toBe($projected->id);
+    });
+
+    it('troca de external_id (swap) quando o banco relata com um id novo', function () {
+        $projected = Transaction::factory()->create([
+            'account_id' => $this->account->id, 'external_id' => 'old-id', 'status' => 'projected',
+            'amount' => 1000, 'direction' => Direction::Out, 'date' => '2026-03-10', 'description' => 'Compra',
+        ]);
+
+        $decisions = $this->planner->plan($this->account, [
+            importRow(['externalId' => 'new-id', 'amount' => 1000, 'date' => '2026-03-10', 'description' => 'Compra', 'pending' => false]),
+        ]);
+
+        $decision = decisionFor($decisions, 'new-id');
+        expect($decision->outcome)->toBe(RowOutcome::SwapPending)
+            ->and($decision->transactionId)->toBe($projected->id);
+    });
+
+    it('parcela projetada (installment_plan_id) nunca troca de id por aqui — tem seu próprio casamento', function () {
+        $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
+        $plan = InstallmentPlan::factory()->create(['account_id' => $card->id]);
+        Transaction::factory()->create([
+            'account_id' => $card->id, 'external_id' => null, 'status' => 'projected',
+            'installment_plan_id' => $plan->id, 'installment_number' => 3,
+            'amount' => 1000, 'direction' => Direction::Out, 'date' => '2026-03-10', 'description' => 'Compra parcelada',
+        ]);
+
+        $decisions = $this->planner->plan($card, [
+            importRow(['externalId' => 'new-id', 'amount' => 1000, 'date' => '2026-03-10', 'description' => 'Compra parcelada', 'pending' => false]),
+        ]);
+
+        // Sem installment no ParsedRow (importRow() não define um), a linha
+        // não é tratada como parcela — mas o ponto deste teste é que a
+        // parcela projetada não entra no swapPool por ter installment_plan_id.
+        expect(decisionFor($decisions, 'new-id')->outcome)->toBe(RowOutcome::New);
+    });
 });
