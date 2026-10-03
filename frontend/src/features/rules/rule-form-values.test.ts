@@ -119,6 +119,14 @@ describe('ruleDefaultsFromTransaction', () => {
 
     expect(ruleDefaultsFromTransaction(transaction).name).toHaveLength(80)
   })
+
+  it('trunca o valor da condição em 200 caracteres (limite do backend)', () => {
+    const longDescription = 'x'.repeat(250)
+    const transaction = baseTransaction({ description: longDescription })
+
+    const condition = ruleDefaultsFromTransaction(transaction).conditions[0]
+    expect(condition.kind === 'condition' && condition.value).toHaveLength(200)
+  })
 })
 
 describe('toRuleBody', () => {

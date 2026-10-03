@@ -203,7 +203,9 @@ export function ruleDefaultsFromTransaction(transaction: Transaction): RuleFormV
     name: transaction.description.slice(0, 80),
     is_active: true,
     match: 'all',
-    conditions: [{ kind: 'condition', field: 'description', op: 'contains', value: transaction.description, uid: nextUid() }],
+    // O backend rejeita texto de condição com mais de 200 caracteres (RuleDefinitionValidator);
+    // a descrição de um lançamento pode ser mais longa que isso.
+    conditions: [{ kind: 'condition', field: 'description', op: 'contains', value: transaction.description.slice(0, 200), uid: nextUid() }],
     actions: [{ type: 'set_category', category_id: transaction.category_id, tag_id: null, value: '', uid: nextUid() }],
   }
 }
