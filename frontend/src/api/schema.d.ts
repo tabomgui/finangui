@@ -694,6 +694,10 @@ export interface components {
                 id: number;
                 name: string;
                 type: components["schemas"]["AccountType"];
+                currency: string;
+                color: string | null;
+                icon: string | null;
+                is_archived: boolean;
                 balance: number;
                 provider_balance: number | null;
             }[];
@@ -985,6 +989,15 @@ export interface components {
             currency: string;
             balance: number;
             suggested_account_id: number | null;
+        };
+        /**
+         * ReconnectedRequest
+         * @description `item_id` é o item devolvido pelo widget ao fim do fluxo de reconexão (modo atualização);
+         *     o controller confere contra `connection->external_id` antes de marcar como reconectada —
+         *     ver App\Http\Controllers\Api\V1\BankConnectionController::reconnected().
+         */
+        ReconnectedRequest: {
+            item_id: string;
         };
         /** RegisterRequest */
         RegisterRequest: {
@@ -1703,6 +1716,9 @@ export interface operations {
                     "application/json": {
                         data: {
                             connect_token: string;
+                            item_id: string;
+                        } | {
+                            connect_token: string;
                         };
                     };
                 };
@@ -1754,7 +1770,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconnectedRequest"];
+            };
+        };
         responses: {
             /** @description `BankConnectionResource` */
             200: {
@@ -1769,6 +1789,19 @@ export interface operations {
             };
             401: components["responses"]["AuthenticationException"];
             404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "connection_item_mismatch";
+                        message: string;
+                    };
+                };
+            };
+            422: components["responses"]["ValidationException"];
         };
     };
     "bankConnection.sync": {

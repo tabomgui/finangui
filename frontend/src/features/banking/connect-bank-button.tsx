@@ -6,6 +6,7 @@ import type { BankConnection } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { notifyError } from '@/lib/form-errors'
 import { LinkAccountsDialog } from './link-accounts-dialog'
+import { preloadPluggyWidget } from './pluggy-connect-sdk'
 import { PluggyWidget } from './pluggy-widget'
 
 type ConnectBankButtonProps = {
@@ -21,10 +22,14 @@ export function ConnectBankButton({ className }: ConnectBankButtonProps) {
   const [linking, setLinking] = useState<BankConnection | null>(null)
   const connectToken = useConnectToken()
   const createConnection = useCreateConnection()
+  const widgetOpen = widgetToken !== null
 
   async function handleClick() {
+    // Começa a baixar o chunk do widget junto do pedido do token, não depois: os dois terminam
+    // perto um do outro, em vez de empilhar o download atrás da espera da rede.
+    preloadPluggyWidget()
     try {
-      const token = await connectToken.mutateAsync({})
+      const { token } = await connectToken.mutateAsync({})
       setWidgetToken(token)
     } catch (error) {
       notifyError(error)
@@ -43,19 +48,19 @@ export function ConnectBankButton({ className }: ConnectBankButtonProps) {
 
   return (
     <>
-      <Button className={className} onClick={handleClick} disabled={connectToken.isPending}>
+      <Button className={className} onClick={handleClick} disabled={connectToken.isPending || widgetOpen}>
         <Landmark className="h-4 w-4" />
-        Conectar banco
+        <span className="sr-only sm:not-sr-only">Conectar banco</span>
       </Button>
       {widgetToken && (
         <PluggyWidget
+          key={widgetToken}
           connectToken={widgetToken}
           onSuccess={handleSuccess}
           onClose={() => setWidgetToken(null)}
-          onError={(message) => {
-            setWidgetToken(null)
-            toast.error(message)
-          }}
+          // Só avisa: o widget continua aberto (o usuário pode tentar outro banco/credencial);
+          // quem fecha é o próprio usuário (onClose) ou uma falha de carregamento do pacote.
+          onError={(message) => toast.error(message)}
         />
       )}
       {linking && <LinkAccountsDialog connection={linking} open onOpenChange={(open) => !open && setLinking(null)} />}

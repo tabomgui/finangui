@@ -49,4 +49,16 @@ describe('ReauthBanner', () => {
 
     expect(onReconnect).toHaveBeenCalledWith(target)
   })
+
+  it('tem role="status" para o leitor de tela anunciar sozinho', () => {
+    render(<ReauthBanner connections={[connection({ status: 'needs_reauth' })]} />)
+
+    expect(screen.getByRole('status')).toBeInTheDocument()
+  })
+
+  it('desabilita "Reconectar" quando reconnectDisabled', () => {
+    render(<ReauthBanner connections={[connection({ status: 'needs_reauth' })]} reconnectDisabled />)
+
+    expect(screen.getByRole('button', { name: 'Reconectar' })).toBeDisabled()
+  })
 })

@@ -1,7 +1,16 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BankConnection } from '@/api/types'
 import { ConnectBankButton } from './connect-bank-button'
+
+function renderButton() {
+  return render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ConnectBankButton />
+    </QueryClientProvider>,
+  )
+}
 
 const connectTokenMutateAsync = vi.fn()
 const createConnectionMutateAsync = vi.fn()
@@ -19,18 +28,30 @@ vi.mock('@/api/queries/accounts', () => ({
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
-vi.mock('react-pluggy-connect', () => ({
-  PluggyConnect: (props: {
-    onSuccess: (data: { item: { id: string } }) => void
-    onClose: () => void
-    onError: (error: { message: string }) => void
-  }) => (
-    <div>
-      <button onClick={() => props.onSuccess({ item: { id: 'item-123' } })}>mock-success</button>
-      <button onClick={() => props.onClose()}>mock-close</button>
-      <button onClick={() => props.onError({ message: 'Falha ao conectar.' })}>mock-error</button>
-    </div>
-  ),
+type MockProps = {
+  onSuccess: (data: { item: { id: string } }) => void
+  onClose: () => void
+  onError: (error: { message: string }) => void
+}
+
+const instances: MockProps[] = []
+
+vi.mock('pluggy-connect-sdk', () => ({
+  // Mock da classe real (sem iframe nem zoid): grava as props do construtor para os testes
+  // disparar cada callback na mão.
+  PluggyConnect: class {
+    props: MockProps
+    constructor(props: MockProps) {
+      this.props = props
+      instances.push(props)
+    }
+    init() {
+      return Promise.resolve()
+    }
+    destroy() {
+      return Promise.resolve()
+    }
+  },
 }))
 
 const { toast } = await import('sonner')
@@ -64,7 +85,8 @@ function connectionResult(): { connection: BankConnection; provider_accounts: Ba
 }
 
 beforeEach(() => {
-  connectTokenMutateAsync.mockReset().mockResolvedValue('connect-token-1')
+  instances.length = 0
+  connectTokenMutateAsync.mockReset().mockResolvedValue({ token: 'connect-token-1', itemId: undefined })
   createConnectionMutateAsync.mockReset().mockResolvedValue(connectionResult())
   linkAccountsMutateAsync.mockReset().mockResolvedValue(undefined)
   vi.mocked(toast.error).mockReset()
@@ -73,14 +95,14 @@ beforeEach(() => {
 
 describe('ConnectBankButton', () => {
   it('fluxo feliz: busca o token, abre o widget e, ao conectar, cria a conexão e abre o vínculo', async () => {
-    render(<ConnectBankButton />)
+    renderButton()
 
     fireEvent.click(screen.getByRole('button', { name: 'Conectar banco' }))
 
-    expect(await screen.findByText('mock-success')).toBeInTheDocument()
+    await vi.waitFor(() => expect(instances).toHaveLength(1))
     expect(connectTokenMutateAsync).toHaveBeenCalled()
 
-    fireEvent.click(screen.getByText('mock-success'))
+    instances[0].onSuccess({ item: { id: 'item-123' } })
 
     await vi.waitFor(() => expect(createConnectionMutateAsync).toHaveBeenCalledWith('item-123'))
     expect(await screen.findByText('Vincular contas')).toBeInTheDocument()
@@ -88,22 +110,42 @@ describe('ConnectBankButton', () => {
   })
 
   it('fechar o widget sem sucesso não chama a API de criar conexão', async () => {
-    render(<ConnectBankButton />)
+    renderButton()
 
     fireEvent.click(screen.getByRole('button', { name: 'Conectar banco' }))
-    fireEvent.click(await screen.findByText('mock-close'))
+    await vi.waitFor(() => expect(instances).toHaveLength(1))
+
+    instances[0].onClose()
 
     expect(createConnectionMutateAsync).not.toHaveBeenCalled()
-    expect(screen.queryByText('mock-success')).not.toBeInTheDocument()
   })
 
-  it('erro do widget mostra toast e não chama a API de criar conexão', async () => {
-    render(<ConnectBankButton />)
+  it('erro do widget mostra toast, mantém o widget aberto e não chama a API de criar conexão', async () => {
+    renderButton()
 
     fireEvent.click(screen.getByRole('button', { name: 'Conectar banco' }))
-    fireEvent.click(await screen.findByText('mock-error'))
+    await vi.waitFor(() => expect(instances).toHaveLength(1))
+
+    instances[0].onError({ message: 'Falha ao conectar.' })
 
     expect(createConnectionMutateAsync).not.toHaveBeenCalled()
     expect(toast.error).toHaveBeenCalledWith('Falha ao conectar.')
+    // só mais uma instância apareceria se o widget tivesse fechado e reaberto; onError não fecha.
+    expect(instances).toHaveLength(1)
+  })
+
+  it('desabilita o botão enquanto o widget está aberto', async () => {
+    renderButton()
+
+    const button = screen.getByRole('button', { name: 'Conectar banco' })
+    expect(button).not.toBeDisabled()
+
+    fireEvent.click(button)
+    await vi.waitFor(() => expect(instances).toHaveLength(1))
+
+    expect(button).toBeDisabled()
+
+    instances[0].onClose()
+    await vi.waitFor(() => expect(button).not.toBeDisabled())
   })
 })

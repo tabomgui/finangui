@@ -54,6 +54,7 @@ describe('query keys', () => {
     await invalidateLedger(client)
     expect(invalidated(client)).toEqual([
       'accounts',
+      'bank-connections',
       'card-statements',
       'cards',
       'dashboard',

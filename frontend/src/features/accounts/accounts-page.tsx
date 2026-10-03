@@ -1,97 +1,65 @@
-import { Archive, ArchiveRestore, EllipsisVertical, FileUp, Landmark, Pencil, Plus, Trash2, TriangleAlert } from 'lucide-react'
+import { Landmark, Plus, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { toast } from 'sonner'
-import { useAccounts, useDeleteAccount, useUpdateAccount } from '@/api/queries/accounts'
+import { useAccounts } from '@/api/queries/accounts'
 import { useMe } from '@/api/queries/auth'
-import { useBankConnections, useConnectToken, useMarkReconnected } from '@/api/queries/bank-connections'
+import { useBankConnections } from '@/api/queries/bank-connections'
 import type { Account, BankConnection } from '@/api/types'
 import { PageBody } from '@/components/layout/page-body'
 import { headerButton, PageHeader } from '@/components/layout/page-header'
-import { CategoryIcon } from '@/components/shared/category-icon'
-import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { EmptyState } from '@/components/shared/empty-state'
-import { MoneyText } from '@/components/shared/money-text'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
-import { notifyError } from '@/lib/form-errors'
 import { ConnectBankButton } from '../banking/connect-bank-button'
 import { ConnectionCard } from '../banking/connection-card'
 import { LinkAccountsDialog } from '../banking/link-accounts-dialog'
-import { PluggyWidget } from '../banking/pluggy-widget'
 import { ReauthBanner } from '../banking/reauth-banner'
+import { useReconnectFlow } from '../banking/use-reconnect-flow'
 import { AccountFormDialog } from './account-form-dialog'
-import { ACCOUNT_TYPE_LABELS } from './account-labels'
+import { AccountRow } from './account-row'
 
 export function AccountsPage() {
-  const navigate = useNavigate()
   const [showArchived, setShowArchived] = useState(false)
   const { data: accounts, isPending, isError, refetch } = useAccounts(showArchived)
   const { data: me } = useMe()
-  const { data: connections } = useBankConnections()
-  const update = useUpdateAccount()
-  const remove = useDeleteAccount()
-  const connectToken = useConnectToken()
-  const markReconnected = useMarkReconnected()
+  const {
+    data: connections,
+    isPending: connectionsPending,
+    isError: connectionsError,
+    refetch: refetchConnections,
+  } = useBankConnections()
+  const reconnectFlow = useReconnectFlow()
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Account | undefined>()
-  const [deleting, setDeleting] = useState<Account | null>(null)
-  // Reconectar (menu do ConnectionCard ou botão da ReauthBanner): busca o connect token com
-  // connection_id e só então monta o widget em modo de atualização.
-  const [reconnecting, setReconnecting] = useState<{ connection: BankConnection; token: string } | null>(null)
   // Retomar o vínculo de uma conexão pending_link (ex.: o usuário fechou o widget antes de
   // terminar); as contas pendentes já vêm em connection.pending_accounts.
   const [resuming, setResuming] = useState<BankConnection | null>(null)
-
-  async function handleReconnect(connection: BankConnection) {
-    try {
-      const token = await connectToken.mutateAsync({ connection_id: connection.id })
-      setReconnecting({ connection, token })
-    } catch (error) {
-      notifyError(error)
-    }
-  }
-
-  async function handleReconnectSuccess() {
-    if (!reconnecting) return
-    const { connection } = reconnecting
-    setReconnecting(null)
-    try {
-      await markReconnected.mutateAsync(connection.id)
-      toast.success('Banco reconectado.')
-    } catch (error) {
-      notifyError(error)
-    }
-  }
 
   const openCreate = () => {
     setEditing(undefined)
     setFormOpen(true)
   }
 
+  const openEdit = (account: Account) => {
+    setEditing(account)
+    setFormOpen(true)
+  }
+
   const manualAccounts = accounts?.filter((account) => account.connection_id === null)
+  const connectedAccounts = accounts?.filter((account) => account.connection_id !== null) ?? []
   const hasConnections = (connections?.length ?? 0) > 0
 
-  const toggleArchive = async (account: Account) => {
-    try {
-      await update.mutateAsync({ id: account.id, body: { is_archived: !account.is_archived } })
-      toast.success(account.is_archived ? 'Conta desarquivada.' : 'Conta arquivada.')
-    } catch (error) {
-      notifyError(error)
-    }
-  }
+  // As linhas de conta do ConnectionCard vêm de `useAccounts()` (não do resumo embutido no
+  // recurso da conexão): assim a conta completa está à mão para editar sem perder campos como
+  // limite/dias do cartão, e o alternador "Mostrar arquivadas" já vale pra elas também, de graça.
+  // Por isso as duas seções (conexões e contas manuais) só decidem o que mostrar depois que as
+  // duas listas (contas e conexões) estiverem resolvidas — ver `bothSettled`.
+  const accountsSettled = !isPending && !isError
+  const connectionsSettled = !connectionsPending && !connectionsError
+  const bothSettled = accountsSettled && connectionsSettled
 
   return (
     <>
@@ -103,24 +71,42 @@ export function AccountsPage() {
             {me?.banking_enabled && <ConnectBankButton className={headerButton} />}
             <Button className={headerButton} onClick={openCreate}>
               <Plus className="h-4 w-4" />
-              Nova conta
+              <span className="sr-only sm:not-sr-only">Nova conta</span>
             </Button>
           </>
         }
       />
       <PageBody>
-        <ReauthBanner connections={connections ?? []} onReconnect={handleReconnect} />
+        <ReauthBanner connections={connections ?? []} onReconnect={reconnectFlow.reconnect} reconnectDisabled={reconnectFlow.isPending} />
 
-        {connections?.map((connection) => (
-          <ConnectionCard
-            key={connection.id}
-            connection={connection}
-            onReconnect={handleReconnect}
-            onLinkAccounts={setResuming}
+        {connectionsError ? (
+          <EmptyState
+            icon={TriangleAlert}
+            title="Não foi possível carregar os bancos conectados."
+            action={
+              <Button variant="outline" onClick={() => refetchConnections()}>
+                Tentar de novo
+              </Button>
+            }
           />
-        ))}
+        ) : !bothSettled ? (
+          <Skeleton className="h-28 w-full rounded-2xl" />
+        ) : (
+          connections?.map((connection) => (
+            <ConnectionCard
+              key={connection.id}
+              connection={connection}
+              accounts={connectedAccounts.filter((account) => account.connection_id === connection.id)}
+              onReconnect={reconnectFlow.reconnect}
+              onLinkAccounts={setResuming}
+              onEditAccount={openEdit}
+              bankingEnabled={me?.banking_enabled}
+              reconnectDisabled={reconnectFlow.isPending}
+            />
+          ))
+        )}
 
-        {hasConnections && <h2 className="px-1 text-sm font-medium text-muted-foreground">Contas manuais</h2>}
+        {bothSettled && hasConnections && <h2 className="px-1 text-sm font-medium text-muted-foreground">Contas manuais</h2>}
 
         <Card className="rounded-2xl p-2 shadow-card">
           {isError ? (
@@ -133,7 +119,7 @@ export function AccountsPage() {
                 </Button>
               }
             />
-          ) : isPending ? (
+          ) : !bothSettled ? (
             <div className="space-y-2 p-2">
               {[0, 1, 2].map((i) => (
                 <Skeleton key={i} className="h-14 w-full rounded-xl" />
@@ -142,52 +128,8 @@ export function AccountsPage() {
           ) : manualAccounts && manualAccounts.length > 0 ? (
             <ul className="divide-y divide-border">
               {manualAccounts.map((account) => (
-                <li key={account.id} className="flex items-center gap-3 px-3 py-3">
-                  <CategoryIcon icon={account.icon} color={account.color} />
-                  <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-2 truncate font-medium">
-                      {account.name}
-                      {account.is_archived && <Badge variant="secondary">Arquivada</Badge>}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {ACCOUNT_TYPE_LABELS[account.type]}
-                      {account.currency !== (me?.primary_currency ?? account.currency) && ` · ${account.currency}`}
-                    </p>
-                  </div>
-                  <MoneyText cents={account.balance} currency={account.currency} className="font-semibold" />
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" aria-label={`Ações da conta ${account.name}`}>
-                        <EllipsisVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onSelect={() => {
-                          setEditing(account)
-                          setFormOpen(true)
-                        }}
-                      >
-                        <Pencil className="h-4 w-4" />
-                        Editar
-                      </DropdownMenuItem>
-                      {!account.is_archived && (
-                        <DropdownMenuItem onSelect={() => navigate(`/importar?conta=${account.id}`)}>
-                          <FileUp className="h-4 w-4" />
-                          Importar extrato
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuItem onSelect={() => toggleArchive(account)}>
-                        {account.is_archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-                        {account.is_archived ? 'Desarquivar' : 'Arquivar'}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-destructive" onSelect={() => setDeleting(account)}>
-                        <Trash2 className="h-4 w-4" />
-                        Excluir
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                <li key={account.id}>
+                  <AccountRow account={account} onEdit={() => openEdit(account)} primaryCurrency={me?.primary_currency} showImport />
                 </li>
               ))}
             </ul>
@@ -217,33 +159,9 @@ export function AccountsPage() {
       </PageBody>
 
       <AccountFormDialog open={formOpen} onOpenChange={setFormOpen} account={editing} />
-      <ConfirmDialog
-        open={deleting !== null}
-        onOpenChange={(open) => !open && setDeleting(null)}
-        title={`Excluir ${deleting?.name ?? 'conta'}?`}
-        description="Só contas sem lançamentos podem ser excluídas. Para guardar o histórico, arquive."
-        confirmLabel="Excluir"
-        destructive
-        onConfirm={async () => {
-          if (deleting) await remove.mutateAsync(deleting.id)
-          toast.success('Conta excluída.')
-        }}
-      />
 
-      {reconnecting && (
-        <PluggyWidget
-          connectToken={reconnecting.token}
-          onSuccess={handleReconnectSuccess}
-          onClose={() => setReconnecting(null)}
-          onError={(message) => {
-            setReconnecting(null)
-            toast.error(message)
-          }}
-        />
-      )}
-      {resuming && (
-        <LinkAccountsDialog connection={resuming} open onOpenChange={(open) => !open && setResuming(null)} />
-      )}
+      {reconnectFlow.widget}
+      {resuming && <LinkAccountsDialog connection={resuming} open onOpenChange={(open) => !open && setResuming(null)} />}
     </>
   )
 }

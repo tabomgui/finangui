@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { monthKey } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import { ReauthBanner } from '../banking/reauth-banner'
+import { useReconnectFlow } from '../banking/use-reconnect-flow'
 import { AccountsCard } from './accounts-card'
 import { BalanceHero } from './balance-hero'
 import { MonthNav } from './month-nav'
@@ -28,6 +29,7 @@ export function DashboardPage() {
   const month = monthFromParam(params.get('mes'), currentMonth)
   const { data, isPending, isError, isPlaceholderData, refetch } = useDashboard(month)
   const { data: connections } = useBankConnections()
+  const reconnectFlow = useReconnectFlow()
 
   const setMonth = (next: string) => setParams({ mes: next }, { replace: true })
 
@@ -50,7 +52,7 @@ export function DashboardPage() {
         </div>
       </PageHeader>
       <PageBody>
-        <ReauthBanner connections={connections ?? []} />
+        <ReauthBanner connections={connections ?? []} onReconnect={reconnectFlow.reconnect} reconnectDisabled={reconnectFlow.isPending} />
         {isError ? (
           <Card className="rounded-2xl p-0 shadow-card">
             <EmptyState
@@ -94,6 +96,8 @@ export function DashboardPage() {
           </div>
         )}
       </PageBody>
+
+      {reconnectFlow.widget}
     </>
   )
 }

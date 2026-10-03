@@ -9,7 +9,8 @@ const refetch = vi.fn()
 
 let accountsState: { data: Account[] | undefined; isPending: boolean; isError: boolean }
 let meState: { data: { banking_enabled: boolean; primary_currency: string } | undefined }
-let connectionsState: { data: BankConnection[] | undefined }
+let connectionsState: { data: BankConnection[] | undefined; isPending?: boolean; isError?: boolean }
+const refetchConnections = vi.fn()
 
 vi.mock('@/api/queries/accounts', () => ({
   useAccounts: () => ({ ...accountsState, refetch }),
@@ -25,13 +26,32 @@ vi.mock('@/api/queries/auth', () => ({
 const connectTokenMutateAsync = vi.fn()
 
 vi.mock('@/api/queries/bank-connections', () => ({
-  useBankConnections: () => connectionsState,
+  useBankConnections: () => ({ ...connectionsState, refetch: refetchConnections }),
   useSyncConnection: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDisconnect: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useConnectToken: () => ({ mutateAsync: connectTokenMutateAsync, isPending: false }),
   useCreateConnection: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMarkReconnected: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useLinkAccounts: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}))
+
+type MockPluggyProps = { onSuccess: (data: { item: { id: string } }) => void; onClose: () => void; onError: () => void }
+const pluggyInstances: MockPluggyProps[] = []
+
+vi.mock('pluggy-connect-sdk', () => ({
+  PluggyConnect: class {
+    props: MockPluggyProps
+    constructor(props: MockPluggyProps) {
+      this.props = props
+      pluggyInstances.push(props)
+    }
+    init() {
+      return Promise.resolve()
+    }
+    destroy() {
+      return Promise.resolve()
+    }
+  },
 }))
 
 function renderPage(initialEntry = '/contas') {
@@ -90,6 +110,9 @@ describe('AccountsPage', () => {
   beforeEach(() => {
     meState = { data: undefined }
     connectionsState = { data: undefined }
+    connectTokenMutateAsync.mockReset().mockResolvedValue({ token: 'tok-1', itemId: 'item-9' })
+    refetchConnections.mockReset()
+    pluggyInstances.length = 0
   })
 
   it('mostra erro com opção de tentar de novo quando a busca falha', () => {
@@ -169,5 +192,47 @@ describe('AccountsPage', () => {
     renderPage()
 
     expect(screen.getByText('O C6 pediu para reconectar.')).toBeInTheDocument()
+  })
+
+  it('reconectar pela faixa busca o token com connection_id e abre o widget', async () => {
+    accountsState = { data: [], isPending: false, isError: false }
+    connectionsState = { data: [connection({ id: 11, institution_name: 'C6', status: 'needs_reauth' })] }
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reconectar' }))
+
+    await vi.waitFor(() => expect(connectTokenMutateAsync).toHaveBeenCalledWith({ connection_id: 11 }))
+    await vi.waitFor(() => expect(pluggyInstances).toHaveLength(1))
+  })
+
+  it('mostra skeleton na seção de bancos enquanto as conexões ainda carregam', () => {
+    accountsState = { data: [], isPending: false, isError: false }
+    connectionsState = { data: undefined, isPending: true }
+    const { container } = renderPage()
+
+    expect(container.querySelectorAll('[data-slot="skeleton"]').length).toBeGreaterThan(0)
+  })
+
+  it('mostra erro com "Tentar de novo" quando as conexões falham, sem afetar as contas manuais', () => {
+    accountsState = { data: [account({ id: 1, name: 'Conta manual' })], isPending: false, isError: false }
+    connectionsState = { data: undefined, isError: true }
+    renderPage()
+
+    expect(screen.getByText('Não foi possível carregar os bancos conectados.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
+
+    expect(refetchConnections).toHaveBeenCalled()
+  })
+
+  it('não decide o estado vazio das contas manuais antes das conexões carregarem (evita o "flash" errado)', () => {
+    accountsState = { data: [], isPending: false, isError: false }
+    connectionsState = { data: undefined, isPending: true }
+    renderPage()
+
+    // Nem "Nenhuma conta ainda" nem "Nenhuma conta manual": as conexões ainda não resolveram, não
+    // dá pra saber qual das duas é a correta.
+    expect(screen.queryByText('Nenhuma conta ainda')).not.toBeInTheDocument()
+    expect(screen.queryByText('Nenhuma conta manual')).not.toBeInTheDocument()
   })
 })

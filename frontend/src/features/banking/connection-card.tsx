@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { ApiError } from '@/api/errors'
 import { useDisconnect, useSyncConnection } from '@/api/queries/bank-connections'
-import type { BankConnection, ConnectionStatus } from '@/api/types'
+import type { Account, BankConnection, ConnectionStatus } from '@/api/types'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { MoneyText } from '@/components/shared/money-text'
 import { Badge } from '@/components/ui/badge'
@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { notifyError } from '@/lib/form-errors'
+import { AccountRow } from '../accounts/account-row'
 import { CONNECTION_STATUS_LABELS, syncedLabel } from './connection-labels'
 
 const STATUS_BADGE_VARIANT: Record<ConnectionStatus, 'secondary' | 'destructive'> = {
@@ -28,19 +29,39 @@ const STATUS_BADGE_VARIANT: Record<ConnectionStatus, 'secondary' | 'destructive'
 
 type ConnectionCardProps = {
   connection: BankConnection
+  /** Contas vinculadas a esta conexão (objeto completo de `/accounts` — `account.connection_id === connection.id` —, não o resumo embutido no recurso da conexão): editar sem perder campos que só existem na conta de verdade, como limite e dias do cartão. */
+  accounts: Account[]
   /** Abre o widget em modo de atualização; sem a prop, o item do menu não faz nada. */
   onReconnect?: (connection: BankConnection) => void
   /** Reabre o diálogo de vínculo (ex.: o usuário fechou o widget antes de terminar); sem a prop, o botão não faz nada. */
   onLinkAccounts?: (connection: BankConnection) => void
+  onEditAccount: (account: Account) => void
+  /** Sem provedor configurado, sincronizar e reconectar não fazem sentido (a API responde 409 banking_disabled) — escondidos nesse caso. */
+  bankingEnabled?: boolean
+  /** Desabilita "Reconectar" enquanto um pedido de token/o widget de reconexão já está em andamento (ver `useReconnectFlow`). */
+  reconnectDisabled?: boolean
 }
 
-export function ConnectionCard({ connection, onReconnect, onLinkAccounts }: ConnectionCardProps) {
+export function ConnectionCard({
+  connection,
+  accounts,
+  onReconnect,
+  onLinkAccounts,
+  onEditAccount,
+  bankingEnabled = true,
+  reconnectDisabled = false,
+}: ConnectionCardProps) {
   const [logoFailed, setLogoFailed] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
   const sync = useSyncConnection()
   const disconnect = useDisconnect()
 
   const name = connection.institution_name ?? 'Banco'
+  const isPendingLink = connection.status === 'pending_link'
+  // Enquanto pending_link não há nada ativo para sincronizar/reconectar (a conexão ainda nem
+  // escolheu as contas); sem provedor configurado, as próprias rotas respondem 409
+  // banking_disabled — esconder os dois de propósito, não só desabilitar.
+  const showProviderActions = bankingEnabled && !isPendingLink
 
   async function handleSync() {
     try {
@@ -60,9 +81,10 @@ export function ConnectionCard({ connection, onReconnect, onLinkAccounts }: Conn
       <CardHeader className="flex flex-row items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           {connection.institution_logo_url && !logoFailed ? (
+            // alt="": decorativo — o nome do banco já está em texto ao lado.
             <img
               src={connection.institution_logo_url}
-              alt={name}
+              alt=""
               className="h-10 w-10 shrink-0 rounded-full object-contain"
               onError={() => setLogoFailed(true)}
             />
@@ -80,31 +102,33 @@ export function ConnectionCard({ connection, onReconnect, onLinkAccounts }: Conn
             {connection.last_error && <p className="truncate text-xs text-destructive">{connection.last_error}</p>}
           </div>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label={`Ações da conexão ${name}`}>
-              <EllipsisVertical className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={handleSync}>
-              <RefreshCw className="h-4 w-4" />
-              Sincronizar agora
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onReconnect?.(connection)}>
-              <Link2 className="h-4 w-4" />
-              Reconectar
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive" onSelect={() => setDisconnecting(true)}>
-              <Unlink className="h-4 w-4" />
-              Desconectar
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {showProviderActions && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label={`Ações da conexão ${name}`}>
+                <EllipsisVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={handleSync}>
+                <RefreshCw className="h-4 w-4" />
+                Sincronizar agora
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={reconnectDisabled} onSelect={() => onReconnect?.(connection)}>
+                <Link2 className="h-4 w-4" />
+                Reconectar
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-destructive" onSelect={() => setDisconnecting(true)}>
+                <Unlink className="h-4 w-4" />
+                Desconectar
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </CardHeader>
 
-      {connection.status === 'pending_link' && (
+      {isPendingLink && connection.pending_accounts.length > 0 && (
         <CardContent className="pt-0">
           <Button size="sm" onClick={() => onLinkAccounts?.(connection)}>
             <Link2 className="h-4 w-4" />
@@ -113,24 +137,30 @@ export function ConnectionCard({ connection, onReconnect, onLinkAccounts }: Conn
         </CardContent>
       )}
 
-      {connection.accounts.length > 0 && (
+      {accounts.length > 0 && (
         <CardContent className="space-y-1 p-2 pt-0">
-          {connection.accounts.map((account) => {
+          {accounts.map((account) => {
+            // Cartão fica de fora: o "saldo informado pelo banco" de um cartão é a fatura em
+            // aberto na hora (inclui autorizações e parcelas que o banco já conta, mas nosso
+            // lançamento só lança no fechamento/compra) — ele quase sempre diverge um pouco do
+            // nosso, sem isso ser sinal de nada errado. Numa conta corrente/poupança, divergir é
+            // raro e vale avisar (pode ser um lançamento manual duplicado ou que falta).
             const showProviderBalance =
               account.type !== 'credit_card' && account.provider_balance !== null && account.provider_balance !== account.balance
 
             return (
-              <div key={account.id} className="flex items-center justify-between gap-3 rounded-xl px-2 py-2">
-                <p className="min-w-0 truncate text-sm">{account.name}</p>
-                <div className="text-right">
-                  <MoneyText cents={account.balance} className="block font-semibold" />
-                  {showProviderBalance && (
+              <AccountRow
+                key={account.id}
+                account={account}
+                onEdit={() => onEditAccount(account)}
+                extra={
+                  showProviderBalance ? (
                     <p className="text-xs text-muted-foreground">
                       Banco informa <MoneyText cents={account.provider_balance ?? 0} colored={false} />
                     </p>
-                  )}
-                </div>
-              </div>
+                  ) : undefined
+                }
+              />
             )
           })}
         </CardContent>
