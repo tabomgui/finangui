@@ -13,10 +13,12 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
- * Decide o destino de cada linha sem gravar nada (cascata de dedup, spec
- * 5.1/5.8): usado tanto pela prévia quanto pela confirmação, para garantir
- * que as duas vejam os mesmos números. Consulta só a conta de destino e uma
- * janela de datas em volta das linhas do arquivo.
+ * Decide o destino de cada linha sem gravar nada: duplicada/atualizada por
+ * external_id, substituição de parcela projetada ou já lançada, adoção de
+ * lançamento manual e troca de id de uma pendente — na ordem em que a
+ * primeira regra que casar vence. Usado tanto pela prévia quanto pela
+ * confirmação, para garantir que as duas vejam os mesmos números. Consulta
+ * só a conta de destino e janelas de datas em volta das linhas do arquivo.
  */
 final class IngestionPlanner
 {
@@ -31,34 +33,46 @@ final class IngestionPlanner
         }
 
         $dates = array_map(fn (ParsedRow $row) => $row->date, $rows);
-        $minDate = CarbonImmutable::parse(min($dates))->subDays(7)->toDateString();
-        $maxDate = CarbonImmutable::parse(max($dates))->addDays(7)->toDateString();
+        $minDate = CarbonImmutable::parse(min($dates));
+        $maxDate = CarbonImmutable::parse(max($dates));
         $externalIds = array_values(array_unique(array_map(fn (ParsedRow $row) => $row->externalId, $rows)));
+        $externalIdsInFile = array_fill_keys($externalIds, true);
 
         $windowed = Transaction::query()
             ->where('account_id', $account->id)
             ->where(function (Builder $query) use ($minDate, $maxDate, $externalIds) {
-                $query->whereBetween('date', [$minDate, $maxDate])
+                $query->whereBetween('date', [$minDate->subDays(7)->toDateString(), $maxDate->addDays(7)->toDateString()])
                     ->orWhereIn('external_id', $externalIds);
             })
             ->get();
 
-        $projectedInstallments = Transaction::query()
+        // Parcela de plano do cartão sem external_id, em qualquer status: a
+        // parcela 1 de uma compra manual nasce lançada e o job diário lança
+        // as demais, então tanto posted quanto projected podem ser a mesma
+        // parcela que o banco está relatando agora.
+        $installmentCandidates = Transaction::query()
             ->where('account_id', $account->id)
-            ->where('status', TransactionStatus::Projected->value)
+            ->whereNull('external_id')
             ->whereNotNull('installment_plan_id')
-            ->with('installmentPlan')
+            ->where(function (Builder $query) use ($minDate, $maxDate) {
+                $query->whereBetween('date', [$minDate->subDays(35)->toDateString(), $maxDate->addDays(35)->toDateString()])
+                    ->orWhereHas('installmentPlan', fn (Builder $plan) => $plan->whereBetween(
+                        'purchase_date',
+                        [$minDate->subDays(5)->toDateString(), $maxDate->addDays(5)->toDateString()],
+                    ));
+            })
             ->get();
 
-        $candidates = $windowed->concat($projectedInstallments)->unique('id')->sortBy('id')->values();
+        $candidates = $windowed->concat($installmentCandidates)->unique('id')->values();
+        // Garante installmentPlan carregado em todos (quem só veio de $windowed
+        // não tinha a relação), sem N+1: uma única query extra para o lote.
+        $candidates->load('installmentPlan');
 
         $byExternalId = $candidates->whereNotNull('external_id')->keyBy('external_id');
-        $installmentPool = $candidates->filter(
-            fn (Transaction $t) => $t->status === TransactionStatus::Projected && $t->installment_plan_id !== null
-        )->values();
-        // Parcelas (postadas ou projetadas) não são lançamentos manuais livres:
-        // têm seu próprio casamento (replace_installment) e não devem ser
-        // "adotadas" por engano só por também não terem external_id.
+        $installmentPool = $candidates->whereNull('external_id')->whereNotNull('installment_plan_id')->values();
+        // Parcelas não são lançamentos manuais livres: têm seu próprio
+        // casamento (replace_installment) e não devem ser "adotadas" por
+        // engano só por também não terem external_id.
         $adoptionPool = $candidates->whereNull('external_id')->whereNull('installment_plan_id')->values();
         $swapPool = $candidates->filter(
             fn (Transaction $t) => $t->external_id !== null && $t->status === TransactionStatus::Pending
@@ -79,6 +93,7 @@ final class IngestionPlanner
             $existing = $byExternalId->get($row->externalId);
 
             if ($existing !== null) {
+                $usedIds[$existing->id] = true;
                 $decisions[] = $existing->status === TransactionStatus::Pending && ! $row->pending
                     ? new RowDecision($row, RowOutcome::Update, $existing->id)
                     : new RowDecision($row, RowOutcome::Duplicate, $existing->id);
@@ -106,7 +121,7 @@ final class IngestionPlanner
                 continue;
             }
 
-            $swapped = $this->matchSwap($swapPool, $usedIds, $row);
+            $swapped = $this->matchSwap($swapPool, $usedIds, $externalIdsInFile, $row);
 
             if ($swapped !== null) {
                 $usedIds[$swapped->id] = true;
@@ -122,6 +137,14 @@ final class IngestionPlanner
     }
 
     /**
+     * Parcela de plano do mesmo cartão sem external_id, mesma direção,
+     * installments do plano = total, installment_number = N, valor com
+     * diferença menor que N centavos (o resto da divisão pode cair na
+     * primeira ou na última parcela) e descrição do plano parecida; data da
+     * parcela a até 35 dias da linha, ou data da compra do plano a até 5
+     * dias (alguns bancos datam a parcela com a data da compra). Empate:
+     * data mais próxima, depois menor id.
+     *
      * @param  Collection<int, Transaction>  $pool
      * @param  array<int, true>  $usedIds
      */
@@ -129,9 +152,12 @@ final class IngestionPlanner
     {
         /** @var array{number: int, total: int} $installment */
         $installment = $row->installment;
+        $rowDate = CarbonImmutable::parse($row->date)->startOfDay();
+        $best = null;
+        $bestRank = null;
 
         foreach ($pool as $candidate) {
-            if (isset($usedIds[$candidate->id])) {
+            if (isset($usedIds[$candidate->id]) || $candidate->direction !== $row->direction) {
                 continue;
             }
 
@@ -145,7 +171,7 @@ final class IngestionPlanner
                 continue;
             }
 
-            if (abs($candidate->amount->cents - $row->amount) > 1) {
+            if (abs($candidate->amount->cents - $row->amount) >= $installment['number']) {
                 continue;
             }
 
@@ -153,10 +179,22 @@ final class IngestionPlanner
                 continue;
             }
 
-            return $candidate;
+            $parcelDiff = abs(self::dateDiffInDays($candidate->date, $rowDate));
+            $purchaseDiff = abs(self::dateDiffInDays($plan->purchase_date, $rowDate));
+
+            if ($parcelDiff > 35 && $purchaseDiff > 5) {
+                continue;
+            }
+
+            $rank = [$parcelDiff, $candidate->id];
+
+            if ($bestRank === null || $rank < $bestRank) {
+                $bestRank = $rank;
+                $best = $candidate;
+            }
         }
 
-        return null;
+        return $best;
     }
 
     /**
@@ -207,15 +245,23 @@ final class IngestionPlanner
 
     /**
      * Candidata pending com external_id diferente, mesma data/valor/direção
-     * e descrição bem parecida (≥ 0.7): troca de id ao virar posted.
+     * e descrição bem parecida (≥ 0.7): troca de id ao virar posted. Só para
+     * linha posted; candidatas cujo external_id aparece em qualquer linha do
+     * próprio arquivo ficam de fora (já estão reservadas para o casamento
+     * exato por external_id de outra linha, em qualquer ordem).
      *
      * @param  Collection<int, Transaction>  $pool
      * @param  array<int, true>  $usedIds
+     * @param  array<string, true>  $externalIdsInFile
      */
-    private function matchSwap(Collection $pool, array $usedIds, ParsedRow $row): ?Transaction
+    private function matchSwap(Collection $pool, array $usedIds, array $externalIdsInFile, ParsedRow $row): ?Transaction
     {
+        if ($row->pending) {
+            return null;
+        }
+
         foreach ($pool as $candidate) {
-            if (isset($usedIds[$candidate->id]) || $candidate->external_id === $row->externalId) {
+            if (isset($usedIds[$candidate->id]) || isset($externalIdsInFile[$candidate->external_id])) {
                 continue;
             }
 
@@ -245,8 +291,12 @@ final class IngestionPlanner
         );
     }
 
+    /**
+     * Dias inteiros entre as duas datas (sem hora): positivo quando $existing
+     * é depois de $row, negativo quando é antes.
+     */
     private static function dateDiffInDays(CarbonImmutable $existing, CarbonImmutable $row): int
     {
-        return (int) round(($existing->startOfDay()->getTimestamp() - $row->getTimestamp()) / 86400);
+        return (int) $row->startOfDay()->diffInDays($existing->startOfDay(), false);
     }
 }
