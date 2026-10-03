@@ -15,6 +15,7 @@ use App\Domain\Imports\Models\ImportBatch;
 use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
+use App\Domain\Transfers\Actions\UnlinkTransfer;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Log;
@@ -41,10 +42,15 @@ use Throwable;
  * contam como "veio no sync" para decidir o que excluir. Sem conseguir essa
  * listagem (o provedor falhou), a limpeza é pulada por completo — melhor não
  * excluir nada do que excluir com base numa janela incompleta. Nunca exclui
- * em lote uma parcela (`installment_plan_id`) ou perna de transferência
- * (`transfer_id`): mesmo pendente e antiga, fica de fora da exclusão — quem
- * decide o destino dessas é App\Domain\Transactions\Actions\DeleteTransaction,
- * não uma limpeza automática.
+ * em lote uma parcela (`installment_plan_id`), mesmo pendente e antiga, que
+ * fica de fora da exclusão — quem decide o destino dela é
+ * App\Domain\Transactions\Actions\DeleteTransaction, não uma limpeza
+ * automática. Uma perna de transferência (`transfer_id`) pendente antiga e
+ * ausente pode ser excluída normalmente, mas é desligada primeiro
+ * (App\Domain\Transfers\Actions\UnlinkTransfer, sem lembrar o par como
+ * descartado): a outra perna é sempre de outra conta — nunca desta mesma
+ * limpeza, escopada por conta — e volta a ser um lançamento comum em vez de
+ * ficar apontando para um par que não existe mais.
  */
 final class SyncTransactions
 {
@@ -53,6 +59,7 @@ final class SyncTransactions
     public function __construct(
         private readonly BankProvider $provider,
         private readonly IngestTransactions $ingest,
+        private readonly UnlinkTransfer $unlinkTransfer,
     ) {}
 
     /**
@@ -195,13 +202,25 @@ final class SyncTransactions
     }
 
     /**
+     * Desliga (sem lembrar como descartado) qualquer perna de transferência
+     * entre as que serão excluídas antes do delete em lote: a outra perna,
+     * de outra conta, sobrevive como lançamento comum em vez de ficar com
+     * um transfer_id para um par que não existe mais.
+     *
      * @param  list<string>  $receivedIds  ids da listagem completa (ver cleanupStalePending()) — o que não está aqui o banco não reportou mais
      */
     private function deleteStalePending(Account $account, array $receivedIds, string $threshold): void
     {
-        $this->stalePendingQuery($account, $threshold)
-            ->whereRaw('external_id <> ALL(?::text[])', [self::pgTextArray($receivedIds)])
-            ->delete();
+        $query = fn () => $this->stalePendingQuery($account, $threshold)
+            ->whereRaw('external_id <> ALL(?::text[])', [self::pgTextArray($receivedIds)]);
+
+        $transferIds = $query()->whereNotNull('transfer_id')->pluck('transfer_id');
+
+        foreach ($transferIds as $transferId) {
+            $this->unlinkTransfer->handle($transferId, remember: false);
+        }
+
+        $query()->delete();
     }
 
     /**
@@ -211,11 +230,11 @@ final class SyncTransactions
      * conjuntos diferentes. `status` inclui Projected (não só Pending): uma
      * pendente futura que nunca chegou a lançar (ver
      * App\Domain\Imports\Data\ParsedRow::status()) também pode ter sido
-     * cancelada pelo banco. Parcela (`installment_plan_id`) e perna de
-     * transferência (`transfer_id`) nunca entram aqui, mesmo antigas e
-     * pendentes: quem decide o destino delas é
+     * cancelada pelo banco. Parcela (`installment_plan_id`) nunca entra
+     * aqui, mesmo antiga e pendente: quem decide o destino dela é
      * App\Domain\Transactions\Actions\DeleteTransaction, não uma limpeza
-     * automática.
+     * automática. Perna de transferência (`transfer_id`) entra normalmente
+     * — ver deleteStalePending(), que a desliga antes de excluir.
      *
      * @return Builder<Transaction>
      */
@@ -226,8 +245,7 @@ final class SyncTransactions
             ->where('source', TransactionSource::Pluggy->value)
             ->whereIn('status', [TransactionStatus::Pending->value, TransactionStatus::Projected->value])
             ->where('date', '<', $threshold)
-            ->whereNull('installment_plan_id')
-            ->whereNull('transfer_id');
+            ->whereNull('installment_plan_id');
     }
 
     /**

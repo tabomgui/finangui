@@ -21,6 +21,7 @@ use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Models\Rule;
 use App\Domain\Rules\Support\HistoryCategorizer;
 use App\Domain\Transactions\Models\Transaction;
+use App\Domain\Transfers\Actions\DetectTransfers;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -41,6 +42,7 @@ final class IngestTransactions
         private readonly HistoryCategorizer $history,
         private readonly ProjectInstallments $projectInstallments,
         private readonly MatchedTransactionOutcomes $matchedOutcomes,
+        private readonly DetectTransfers $detectTransfers,
     ) {}
 
     /**
@@ -92,7 +94,15 @@ final class IngestTransactions
             $billStatementMemo = ImportPreloads::billStatements($account, $decisions);
             $usableCategoriesByName = ImportPreloads::usableCategoriesByName($decisions);
 
-            [$stats, $undo] = $this->applyDecisions($locked, $account, $decisions, $rules, $historyMemo, $billStatementMemo, $usableCategoriesByName);
+            [$stats, $undo, $insertedIds] = $this->applyDecisions($locked, $account, $decisions, $rules, $historyMemo, $billStatementMemo, $usableCategoriesByName);
+
+            // Detecção de transferência só sobre as transações que este
+            // lote de fato inseriu (RowOutcome::New) — ainda dentro da
+            // trava da conta e do lote, depois de categorizar: ligar ou
+            // sugerir usa a categoria/descrição já resolvidas.
+            $detection = $insertedIds !== [] ? $this->detectTransfers->handle($insertedIds) : ['linked' => 0, 'suggested' => 0];
+            $stats['transfers_linked'] = $detection['linked'];
+            $stats['transfer_suggestions'] = $detection['suggested'];
 
             $createdStatementIds = CardStatement::query()
                 ->where('account_id', $account->id)
@@ -125,7 +135,7 @@ final class IngestTransactions
      * @param  array<string, int>  $historyMemo
      * @param  array<string, int>  $billStatementMemo  external_id da fatura → id do CardStatement (ver preloadBillStatements())
      * @param  array<string, list<array{id: int, kind: string, is_transfer: bool, has_parent: bool}>>  $usableCategoriesByName  categorias ativas do usuário por nome normalizado (ver preloadUsableCategoriesByName())
-     * @return array{0: array<string, int>, 1: list<array{transaction_id: int, attributes: array<string, mixed>}>}
+     * @return array{0: array<string, int>, 1: list<array{transaction_id: int, attributes: array<string, mixed>}>, 2: list<int>}
      */
     private function applyDecisions(
         ImportBatch $batch,
@@ -149,10 +159,12 @@ final class IngestTransactions
         $plansBySeedIndex = [];
         /** @var list<RowDecision> $deferred */
         $deferred = [];
+        /** @var list<int> $insertedIds */
+        $insertedIds = [];
 
         foreach ($decisions as $index => $decision) {
             match ($decision->outcome) {
-                RowOutcome::New => $this->insertNew($batch, $account, $decision->row, $rules, $historyMemo, $billStatementMemo, $usableCategoriesByName, $stats, $plansBySeedIndex, $index),
+                RowOutcome::New => $this->insertNew($batch, $account, $decision->row, $rules, $historyMemo, $billStatementMemo, $usableCategoriesByName, $stats, $plansBySeedIndex, $index, $insertedIds),
                 RowOutcome::Duplicate => $stats['duplicates']++,
                 RowOutcome::Update => $this->matchedOutcomes->update($decision, $undo, $stats),
                 RowOutcome::ReplaceInstallment => $decision->transactionId !== null
@@ -167,7 +179,7 @@ final class IngestTransactions
             $this->replaceSeededParcel($decision, $batch, $plansBySeedIndex, $undo, $stats);
         }
 
-        return [$stats, $undo];
+        return [$stats, $undo, $insertedIds];
     }
 
     /**
@@ -183,6 +195,7 @@ final class IngestTransactions
      * @param  array<string, list<array{id: int, kind: string, is_transfer: bool, has_parent: bool}>>  $usableCategoriesByName  ver preloadUsableCategoriesByName()
      * @param  array<string, int>  $stats
      * @param  array<int, InstallmentPlan>  $plansBySeedIndex
+     * @param  list<int>  $insertedIds
      */
     private function insertNew(
         ImportBatch $batch,
@@ -195,6 +208,7 @@ final class IngestTransactions
         array &$stats,
         array &$plansBySeedIndex,
         int $index,
+        array &$insertedIds,
     ): void {
         $isInstallment = ImportedInstallments::isInstallmentRow($account, $row);
         $plan = $isInstallment ? $this->projectInstallments->createPlan($batch, $account, $row) : null;
@@ -241,6 +255,7 @@ final class IngestTransactions
         }
 
         $stats['inserted']++;
+        $insertedIds[] = $transaction->id;
     }
 
     /**

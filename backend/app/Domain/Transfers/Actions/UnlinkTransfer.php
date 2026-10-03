@@ -20,11 +20,17 @@ final class UnlinkTransfer
     public function __construct(private readonly AssignStatement $assignStatement) {}
 
     /**
+     * $remember = false pula a sugestão "dismissed": usado pelas limpezas
+     * automáticas (RevertImportBatch, limpeza de pendentes do
+     * SyncTransactions) que desligam uma perna só para preservar a outra
+     * antes de excluir — ali não houve decisão do usuário sobre o par, e
+     * uma futura detecção deve poder religá-lo normalmente.
+     *
      * @throws ModelNotFoundException<Transaction>
      */
-    public function handle(string $transferId): void
+    public function handle(string $transferId, bool $remember = true): void
     {
-        DB::transaction(function () use ($transferId) {
+        DB::transaction(function () use ($transferId, $remember) {
             ['out' => $out, 'in' => $in] = TransferLegs::load($transferId, lock: true);
 
             $out->transfer_id = null;
@@ -38,10 +44,12 @@ final class UnlinkTransfer
             $this->assignStatement->handle($in);
             $in->save();
 
-            TransferSuggestion::query()->updateOrCreate(
-                ['out_transaction_id' => $out->id, 'in_transaction_id' => $in->id],
-                ['score' => 0, 'status' => TransferSuggestionStatus::Dismissed],
-            );
+            if ($remember) {
+                TransferSuggestion::query()->updateOrCreate(
+                    ['out_transaction_id' => $out->id, 'in_transaction_id' => $in->id],
+                    ['score' => 0, 'status' => TransferSuggestionStatus::Dismissed],
+                );
+            }
         });
     }
 }

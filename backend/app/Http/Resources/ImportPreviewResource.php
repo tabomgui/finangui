@@ -97,7 +97,7 @@ final class ImportPreviewResource extends JsonResource
      * confirmação, que usa outra nomenclatura (ex.: `inserted` em vez de
      * `new` — é o que de fato mudou no banco, não um desfecho de linha).
      *
-     * @return array{new: int, duplicate: int, update: int, replace_installment: int, adopt: int, swap_pending: int, failed: int}
+     * @return array{new: int, duplicate: int, update: int, replace_installment: int, adopt: int, swap_pending: int, failed: int, transfers_linked: int, transfer_suggestions: int}
      */
     private function summary(ImportPreviewData $data): array
     {
@@ -111,6 +111,9 @@ final class ImportPreviewResource extends JsonResource
         /** @var list<array{line: int, reason: string}> $failed */
         $failed = $stats['failed'] ?? [];
 
+        // A prévia nunca detecta transferência (DetectTransfers só roda na
+        // confirmação de verdade, ver IngestTransactions): sempre zero
+        // enquanto o lote está pendente.
         $summary = [
             'new' => 0,
             'duplicate' => 0,
@@ -119,6 +122,8 @@ final class ImportPreviewResource extends JsonResource
             'adopt' => 0,
             'swap_pending' => 0,
             'failed' => count($failed),
+            'transfers_linked' => 0,
+            'transfer_suggestions' => 0,
         ];
 
         foreach ($data->decisions as $decision) {

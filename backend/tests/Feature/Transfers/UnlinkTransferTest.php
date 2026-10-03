@@ -67,6 +67,18 @@ it('entrada no cartão recalcula a fatura pela data normal (AssignStatement comu
     expect($in->refresh()->statement_id)->toBe($open->id);
 });
 
+it('remember: false desfaz sem gravar sugestão dismissed para o par', function () {
+    $out = Transaction::factory()->create(['account_id' => $this->checking->id, 'direction' => Direction::Out, 'amount' => 5000, 'date' => '2026-03-15']);
+    $in = Transaction::factory()->create(['account_id' => $this->savings->id, 'direction' => Direction::In, 'amount' => 5000, 'date' => '2026-03-15']);
+    $transferId = app(LinkTransfer::class)->handle($out, $in);
+
+    app(UnlinkTransfer::class)->handle($transferId, remember: false);
+
+    expect($out->refresh()->transfer_id)->toBeNull()
+        ->and($in->refresh()->transfer_id)->toBeNull()
+        ->and(TransferSuggestion::query()->where('out_transaction_id', $out->id)->where('in_transaction_id', $in->id)->exists())->toBeFalse();
+});
+
 it('saída de cartão mantém o statement_id como estava ao desfazer', function () {
     $card = Account::factory()->creditCard(closingDay: 10, dueDay: 20)->create(['user_id' => $this->user->id]);
     $statement = CardStatement::factory()->create(['account_id' => $card->id, 'closing_date' => '2026-03-10', 'due_date' => '2026-03-20']);

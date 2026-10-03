@@ -284,17 +284,26 @@ describe('limpeza de pendentes antigos (listagem completa)', function () {
         expect(Transaction::query()->whereKey($projected->id)->exists())->toBeTrue();
     });
 
-    it('nunca exclui em lote uma perna de transferência pendente, mesmo antiga e ausente', function () {
+    it('exclui em lote uma perna de transferência pendente antiga e ausente, mas desliga o par antes: o outro lado sobrevive sem transfer_id', function () {
         $account = Account::factory()->create(['external_id' => 'acc-1']);
+        $otherAccount = Account::factory()->create();
+        $transferId = (string) Str::uuid();
         $transferLeg = Transaction::factory()->create([
             'account_id' => $account->id, 'external_id' => 'old-transfer', 'status' => TransactionStatus::Pending,
-            'source' => TransactionSource::Pluggy, 'date' => '2026-09-01', 'transfer_id' => Str::uuid(),
+            'source' => TransactionSource::Pluggy, 'date' => '2026-09-01', 'transfer_id' => $transferId,
+            'direction' => Direction::Out, 'amount' => 5000,
+        ]);
+        $otherLeg = Transaction::factory()->create([
+            'account_id' => $otherAccount->id, 'status' => TransactionStatus::Posted,
+            'date' => '2026-09-01', 'transfer_id' => $transferId,
+            'direction' => Direction::In, 'amount' => 5000,
         ]);
         $this->fake->transactionsByAccount['acc-1'] = [];
 
         $this->action->handle($account, [], $this->now, []);
 
-        expect(Transaction::query()->whereKey($transferLeg->id)->exists())->toBeTrue();
+        expect(Transaction::query()->whereKey($transferLeg->id)->exists())->toBeFalse()
+            ->and($otherLeg->refresh()->transfer_id)->toBeNull();
     });
 
     it('também considera pendente futura (projected, não parcela) antiga e ausente na limpeza', function () {

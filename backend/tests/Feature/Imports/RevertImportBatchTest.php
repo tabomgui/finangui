@@ -228,6 +228,31 @@ it('revert exclui os vínculos de tag das transações inseridas pelo lote', fun
     expect(DB::table('tag_transaction')->where('transaction_id', $transaction->id)->count())->toBe(0);
 });
 
+it('reverter um lote cujo lançamento foi ligado a um manual mantém o manual, sem transfer_id', function () {
+    $savings = Account::factory()->create(['user_id' => $this->user->id]);
+    $manualIn = Transaction::factory()->create([
+        'account_id' => $savings->id, 'direction' => Direction::In, 'amount' => 20000, 'date' => '2026-03-10',
+        'description' => 'Lancamento comum', 'original_description' => 'Lancamento comum',
+    ]);
+
+    $batch = $this->ingest->handle(
+        ImportBatch::factory()->create(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Nubank]),
+        [revertRow(['description' => 'Lancamento comum', 'amount' => 20000, 'direction' => Direction::Out, 'date' => '2026-03-10', 'externalId' => 'out-link-1'])],
+    );
+
+    expect($batch->stats['transfers_linked'])->toBe(1);
+
+    $manualIn->refresh();
+    expect($manualIn->transfer_id)->not->toBeNull();
+
+    $this->revert->handle($batch);
+
+    $manualIn->refresh();
+    expect($manualIn->transfer_id)->toBeNull()
+        ->and(Transaction::query()->whereKey($manualIn->id)->exists())->toBeTrue()
+        ->and(Transaction::where('external_id', 'out-link-1')->exists())->toBeFalse();
+});
+
 it('só permite reverter o lote mais recente concluído da conta', function () {
     $batch1 = $this->ingest->handle(
         ImportBatch::factory()->create(['account_id' => $this->account->id, 'user_id' => $this->user->id]),

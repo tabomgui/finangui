@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\V1\RuleController;
 use App\Http\Controllers\Api\V1\TagController;
 use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Controllers\Api\V1\TransferController;
+use App\Http\Controllers\Api\V1\TransferSuggestionController;
 use App\Http\Middleware\EnsureBankingEnabled;
 use App\Http\Middleware\EnsureRegistrationAllowed;
 use Illuminate\Support\Facades\Route;
@@ -44,9 +45,21 @@ Route::prefix('v1')->group(function () {
         Route::apiResource('transactions', TransactionController::class)->except('update');
         Route::patch('transactions/{transaction}', [TransactionController::class, 'update']);
         Route::post('transfers', [TransferController::class, 'store']);
+        // link antes de {transfer}, por clareza (mesma convenção de
+        // rules/order e import-batches/{batch}/revert): "link" não é um
+        // uuid, então whereUuid já evitaria a colisão, mas o agrupamento
+        // deixa a leitura mais direta.
+        Route::post('transfers/link', [TransferController::class, 'link']);
         Route::get('transfers/{transfer}', [TransferController::class, 'show'])->whereUuid('transfer');
         Route::patch('transfers/{transfer}', [TransferController::class, 'update'])->whereUuid('transfer');
         Route::delete('transfers/{transfer}', [TransferController::class, 'destroy'])->whereUuid('transfer');
+        Route::post('transfers/{transfer}/unlink', [TransferController::class, 'unlink'])->whereUuid('transfer');
+
+        Route::get('transfer-suggestions', [TransferSuggestionController::class, 'index']);
+        // Prefixo próprio no throttle: mesmo motivo do rules/preview acima.
+        Route::post('transfer-suggestions/detect', [TransferSuggestionController::class, 'detect'])->middleware('throttle:6,1,transfer-detect');
+        Route::post('transfer-suggestions/{suggestion}/accept', [TransferSuggestionController::class, 'accept'])->whereNumber('suggestion');
+        Route::post('transfer-suggestions/{suggestion}/dismiss', [TransferSuggestionController::class, 'dismiss'])->whereNumber('suggestion');
 
         Route::get('cards', [CardController::class, 'index']);
         Route::get('cards/{account}', [CardController::class, 'show'])->whereNumber('account');

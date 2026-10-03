@@ -55,3 +55,13 @@ it('bank-connections (store) e link-accounts têm limites próprios, isolados de
     }
     $this->postJson("/api/v1/bank-connections/{$connection->id}/link-accounts", ['links' => []])->assertStatus(429);
 });
+
+it('transfer-suggestions/detect tem limite próprio (6/min), isolado de rules/preview', function () {
+    actingAsUser();
+
+    for ($i = 0; $i < 10; $i++) {
+        $this->postJson('/api/v1/rules/preview', []);
+    }
+
+    $this->postJson('/api/v1/transfer-suggestions/detect')->assertStatus(200);
+});

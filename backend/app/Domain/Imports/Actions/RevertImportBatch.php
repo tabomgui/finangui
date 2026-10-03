@@ -11,6 +11,7 @@ use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Errors\ImportBatchNotRevertible;
 use App\Domain\Imports\Models\ImportBatch;
 use App\Domain\Transactions\Models\Transaction;
+use App\Domain\Transfers\Actions\UnlinkTransfer;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
@@ -30,11 +31,18 @@ use Illuminate\Support\Facades\DB;
  * Só o lote mais recente concluído de uma conta pode ser revertido: um
  * lote mais antigo pode ter sido a base de adoções/substituições de lotes
  * posteriores, e reverter fora de ordem bagunçaria esse histórico.
+ *
+ * Transação inserida pelo lote que foi ligada como perna de transferência
+ * (automaticamente por App\Domain\Transfers\Actions\DetectTransfers) é
+ * desligada antes de excluída: a outra perna é de outra conta (nunca deste
+ * mesmo lote) e volta a ser um lançamento comum em vez de ficar apontando
+ * para um par que não existe mais.
  */
 final class RevertImportBatch
 {
     public function __construct(
         private readonly AssignStatement $assignStatement,
+        private readonly UnlinkTransfer $unlinkTransfer,
     ) {}
 
     /**
@@ -65,6 +73,23 @@ final class RevertImportBatch
 
             if ($mostRecentId !== $locked->id) {
                 throw new ImportBatchNotRevertible('Reverta antes as importações mais recentes desta conta.');
+            }
+
+            // Uma perna de transferência ligada automaticamente por este
+            // lote: a outra perna pertence a outra conta, por definição
+            // (ver App\Domain\Transfers\Support\TransferMatcher), então
+            // nunca está entre as transações deste lote — desliga antes de
+            // apagar, para ela voltar a ser um lançamento comum em vez de
+            // ficar com transfer_id apontando para um par que não existe
+            // mais. Sem remember: não houve decisão do usuário sobre o
+            // par, então uma futura detecção pode religá-lo normalmente.
+            $linkedTransferIds = Transaction::query()
+                ->where('import_batch_id', $locked->id)
+                ->whereNotNull('transfer_id')
+                ->pluck('transfer_id');
+
+            foreach ($linkedTransferIds as $transferId) {
+                $this->unlinkTransfer->handle($transferId, remember: false);
             }
 
             Transaction::query()->where('import_batch_id', $locked->id)->delete();
