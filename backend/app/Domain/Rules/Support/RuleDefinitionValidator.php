@@ -2,7 +2,6 @@
 
 namespace App\Domain\Rules\Support;
 
-use App\Domain\Rules\Enums\RuleActionType;
 use App\Domain\Rules\Enums\RuleField;
 use App\Domain\Rules\Enums\RuleOperator;
 use DateTimeImmutable;
@@ -15,16 +14,15 @@ use DateTimeImmutable;
  *
  * Entrada malformada (tipo errado em field/op/type/value, lista que na
  * verdade é um array associativo) nunca lança: só gera um erro no caminho
- * certo. As contagens (máximo de condições/ações/regex) saem antes de
- * validar cada item, para uma lista enorme não ser percorrida em vão.
+ * certo. As contagens (máximo de condições/regex) saem antes de validar
+ * cada item, para uma lista enorme não ser percorrida em vão. A validação
+ * de `actions` fica em RuleActionsValidator (mesmas regras de entrada
+ * malformada), separada por tamanho: as duas listas não compartilham
+ * estado nem precisam uma da outra.
  */
 final class RuleDefinitionValidator
 {
     private const MAX_CONDITIONS = 20;
-
-    private const MAX_ACTIONS = 10;
-
-    private const MAX_TAGS = 5;
 
     private const MAX_REGEX_CONDITIONS = 5;
 
@@ -43,7 +41,7 @@ final class RuleDefinitionValidator
         }
 
         $errors += self::conditionsErrors($input['conditions'] ?? null);
-        $errors += self::actionsErrors($input['actions'] ?? null);
+        $errors += RuleActionsValidator::errors($input['actions'] ?? null);
 
         return $errors;
     }
@@ -232,104 +230,6 @@ final class RuleDefinitionValidator
         return $date !== false && $date->format('Y-m-d') === $value
             ? null
             : 'Informe uma data válida no formato AAAA-MM-DD.';
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private static function actionsErrors(mixed $actions): array
-    {
-        if (! is_array($actions) || $actions === []) {
-            return ['actions' => 'Inclua pelo menos uma ação.'];
-        }
-
-        if (! array_is_list($actions)) {
-            return ['actions' => 'A lista de ações está mal formada.'];
-        }
-
-        if (count($actions) > self::MAX_ACTIONS) {
-            return ['actions' => 'No máximo '.self::MAX_ACTIONS.' ações.'];
-        }
-
-        $errors = [];
-        $seenTypes = [];
-        $seenTags = [];
-
-        foreach ($actions as $i => $action) {
-            $errors += self::action($action, "actions.{$i}", $seenTypes, $seenTags);
-        }
-
-        return $errors;
-    }
-
-    /**
-     * @param  list<RuleActionType>  $seenTypes
-     * @param  list<int>  $seenTags
-     * @return array<string, string>
-     */
-    private static function action(mixed $action, string $path, array &$seenTypes, array &$seenTags): array
-    {
-        if (! is_array($action)) {
-            return [$path => 'Ação inválida.'];
-        }
-
-        $type = RuleActionType::tryFrom(self::str($action['type'] ?? ''));
-
-        if ($type === null) {
-            return ["{$path}.type" => 'Tipo de ação desconhecido.'];
-        }
-
-        if ($type !== RuleActionType::AddTag) {
-            if (in_array($type, $seenTypes, true)) {
-                return ["{$path}.type" => 'Use no máximo uma ação deste tipo.'];
-            }
-            $seenTypes[] = $type;
-        }
-
-        return match ($type) {
-            RuleActionType::SetCategory => is_int($action['category_id'] ?? null) ? [] : ["{$path}.category_id" => 'Informe a categoria.'],
-            RuleActionType::SetDescription => self::textAction($action['value'] ?? null, $path, 255),
-            RuleActionType::SetPayee => self::textAction($action['value'] ?? null, $path, 120),
-            RuleActionType::AddTag => self::tagAction($action['tag_id'] ?? null, $path, $seenTags),
-            RuleActionType::Ignore => [],
-        };
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private static function textAction(mixed $value, string $path, int $maxLength): array
-    {
-        if (! is_string($value) || trim($value) === '') {
-            return ["{$path}.value" => 'Informe um texto.'];
-        }
-
-        return mb_strlen($value) > $maxLength
-            ? ["{$path}.value" => "Texto muito longo (máximo {$maxLength} caracteres)."]
-            : [];
-    }
-
-    /**
-     * @param  list<int>  $seenTags
-     * @return array<string, string>
-     */
-    private static function tagAction(mixed $tagId, string $path, array &$seenTags): array
-    {
-        if (! is_int($tagId)) {
-            return ["{$path}.tag_id" => 'Informe a tag.'];
-        }
-
-        if (in_array($tagId, $seenTags, true)) {
-            return ["{$path}.tag_id" => 'Tag repetida.'];
-        }
-
-        if (count($seenTags) >= self::MAX_TAGS) {
-            return ["{$path}.tag_id" => 'No máximo '.self::MAX_TAGS.' tags por regra.'];
-        }
-
-        $seenTags[] = $tagId;
-
-        return [];
     }
 
     /**
