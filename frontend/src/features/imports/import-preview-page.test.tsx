@@ -208,7 +208,7 @@ describe('ImportPreviewPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
 
     await waitFor(() => expect(cancelMutateAsync).toHaveBeenCalledWith(1))
-    expect(screen.getByText('Lista de importações')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Lista de importações')).toBeInTheDocument())
   })
 
   it('409 ao cancelar (lote já confirmado por outra aba) mostra toast de erro e recarrega', async () => {
