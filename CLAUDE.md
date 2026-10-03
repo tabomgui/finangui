@@ -18,6 +18,8 @@ Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`;
 - Worker de dev usa `queue:listen` (reflete mudança de código sem reiniciar o container); não usar `queue:work` no Docker Compose de desenvolvimento.
 - Cartão de crédito é uma conta `credit_card`. A fatura de qualquer transação de cartão é decidida só por `App\Domain\Cards\Actions\AssignStatement` (criar/editar transação e transferência chamam ela); datas nominais vêm de `InvoiceCycle` (puro) e faturas já gravadas têm prioridade (`StatementResolver`). Total, pago, restante, status e limite são derivados (`CardStatement::scopeWithTotals`, `Account::scopeWithCardUsage`), nunca gravados.
 - Pagar fatura é transferência (`PayStatement`), nunca despesa. Parcelas: conta/valor/data/tipo travados; excluir uma parcela exclui o parcelamento; cancelar exclui só as projetadas.
+- Regras de categorização: núcleo puro e sem banco em `app/Domain/Rules/Support` (`TextNormalizer`, `RuleMatcher` — limita `pcre.backtrack_limit` ao avaliar `regex`, contra ReDoS —, `RuleEngine`, `RuleDefinitionValidator`, `RuleDefinitionCleaner`). Toda escrita do resultado de uma regra numa transação passa por `App\Domain\Rules\Actions\ApplyRuleOutcome` (prévia e aplicação retroativa reaproveitam a mesma instância, que memoiza categoria/tag). Pernas de transferência (`transfer_id` não nulo) nunca são tocadas por regra nem por histórico. `categorized_by` guarda `manual`, `history`, `pluggy` ou `rule:{id}`. O hook em `Transaction::booted()` mantém `description_key` ao salvar pelo model — uma atualização em massa de `description` fora desse caminho (query builder direto, sem `save()`) precisa atualizar `description_key` (`TextNormalizer::key()`) manualmente, senão o histórico desalinha.
+- Resposta de API: nunca tipar uma propriedade só como `null` — o `Readable<T>` do `openapi-fetch` remove do tipo do cliente qualquer chave cujo tipo seja exatamente `null` (`NonNullable<null>` vira `never`). Quando o valor pode estar ausente, omita a chave em vez de mandar `null` (ex.: `rule_id` em `TransactionResource` só aparece quando `source` é `'rule'`).
 
 ## Frontend
 
@@ -52,6 +54,9 @@ Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`;
 - Antes de commit: `make front-check`.
 - Cartões em `features/cards`. Status e "vence em N dias" vêm prontos da API (`status`, `days_until_due`); `statement-labels.ts` só traduz para texto.
 - Linha de transação: subtítulo montado por `transactionSubtitle`; o tipo de um lançamento em edição sai de `editKind` (entry/transfer/installment).
+- Regras em `features/rules` (lista arrastável com `@dnd-kit`, editor, prévia ao vivo). `OPERATORS_BY_FIELD` (`rule-labels.ts`) é só configuração de formulário — quais operadores oferecer por campo —, não regra de negócio: o backend valida de novo na gravação.
+- `applyFieldErrors` aceita `'*'` no lugar da lista de campos para formulários com caminhos dinâmicos/aninhados (ex.: `conditions.0.value`); o quarto argumento (`isCoverable`) diz quais caminhos têm de fato um campo visível na tela, para só cair no toast genérico quando nenhum erro aplicado apareceu em lugar nenhum (ver `rule-editor-page.tsx`).
+- `TooltipProvider` fica uma única vez na raiz (`main.tsx`), não por componente; teste que renderiza um componente com `Tooltip` isolado precisa envolver manualmente com `TooltipProvider` (ver `categorization-badge.test.tsx`).
 
 ## UI
 

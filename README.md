@@ -2,7 +2,7 @@
 
 Gerenciador financeiro pessoal, self-hosted. Backend Laravel 13 + Postgres; frontend React em `frontend/`.
 
-Telas disponíveis: Início (dashboard do mês), Transações (com filtros e edição em massa), Cartões (faturas com datas reais e editáveis, pagamento como transferência, parcelamentos e limite disponível), Contas, Categorias, Tags e Configurações.
+Telas disponíveis: Início (dashboard do mês), Transações (com filtros e edição em massa), Regras (condições e grupos para categorizar automaticamente, com prévia ao vivo, aplicação retroativa às transações já existentes e sugestão por histórico quando nenhuma regra casa), Cartões (faturas com datas reais e editáveis, pagamento como transferência, parcelamentos e limite disponível), Contas, Categorias, Tags e Configurações.
 
 ## Desenvolvimento
 
@@ -144,7 +144,9 @@ Pontos de atenção específicos de produção:
   `accounts.google.com`, e o `state` se perde).
 - **Worker**: em produção o worker roda `queue:work` (processo único, reinicia só em deploy),
   nunca `queue:listen` (que existe só pro Compose de dev, pra refletir mudança de código sem
-  reiniciar o container).
+  reiniciar o container). O `--timeout=600` cobre o maior job (`ApplyRuleRetroactively`, até 10
+  minutos), sempre abaixo do `retry_after` da fila (`DB_QUEUE_RETRY_AFTER=660`), senão outro
+  worker pega o mesmo job de novo antes do primeiro terminar.
 - **Scheduler**: `schedule:work`, igual ao Compose de dev — não precisa de cron do sistema.
   Ele roda diariamente às 00:10 o `PostDueInstallments`, que vira parcela projetada em lançada
   quando a data chega; sem o scheduler no ar, parcelas projetadas nunca são lançadas.
