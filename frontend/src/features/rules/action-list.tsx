@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { rootErrorMessage } from '@/lib/form-errors'
 import { ACTION_LABELS } from './rule-labels'
-import { emptyAction, type ActionValues, type RuleFormValues } from './rule-form-values'
+import { ACTION_TYPES, emptyAction, type ActionValues, type RuleFormValues } from './rule-form-values'
 
 type ActionListProps = {
   form: UseFormReturn<RuleFormValues>
@@ -23,8 +23,6 @@ type ActionErrors = {
   tag_id?: ActionFieldError
   value?: ActionFieldError
 }
-
-const ACTION_TYPES: RuleActionTypeName[] = ['set_category', 'set_description', 'set_payee', 'add_tag', 'ignore']
 
 // Só `add_tag` pode se repetir numa regra (até 5 tags); os outros tipos ficam desabilitados
 // no menu depois de usados uma vez. O limite exato é validado de novo pelo backend.

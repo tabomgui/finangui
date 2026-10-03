@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { cn } from '@/lib/utils'
-import { pluralize } from './rule-labels'
+import { LOADING_PLACEHOLDER, pluralize } from './rule-labels'
 import { rulePreviewSchema, toRuleBody, type RuleFormValues } from './rule-form-values'
 
 type RulePreviewCardProps = {
@@ -22,7 +22,6 @@ type RulePreviewCardProps = {
 
 const EMPTY_BODY: PreviewRuleBody = { match: 'all', conditions: [], actions: [] }
 const DEBOUNCE_MS = 800
-const LOADING_PLACEHOLDER = '…'
 const TOO_MANY_REQUESTS_MESSAGE = 'Muitas prévias seguidas; aguarde um instante.'
 
 type SampleChanges = RulePreview['sample'][number]['changes']
@@ -90,10 +89,15 @@ export function RulePreviewCard({ form, overwrite, onOverwriteChange }: RulePrev
 
   const invalid = error instanceof ApiError && error.status === 422
   const tooManyRequests = error instanceof ApiError && error.status === 429
+  const hasIgnoreAction = values.actions.some((action) => action.type === 'ignore')
 
   return (
     <div className="space-y-3 rounded-xl border border-border p-3">
       <p className="text-sm font-medium">Prévia</p>
+
+      {hasIgnoreAction && (
+        <p className="text-xs text-muted-foreground">Lançamentos ignorados saem do saldo, dos relatórios e do total das faturas.</p>
+      )}
 
       <div className="flex items-start gap-3">
         <Switch id="rule-preview-overwrite" checked={overwrite} onCheckedChange={onOverwriteChange} />

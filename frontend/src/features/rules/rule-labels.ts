@@ -76,7 +76,7 @@ const DIRECTION_VALUE_LABELS: Record<string, string> = { in: 'Entrada', out: 'Sa
 // Enquanto as listas de categorias/tags/contas ainda não carregaram, um id sem nome não significa
 // "excluído" — significa "ainda não sabemos". `loading` distingue os dois casos; sem ele, toda regra
 // mostraria "categoria excluída" por um instante a cada carregamento da tela.
-const LOADING_PLACEHOLDER = '…'
+export const LOADING_PLACEHOLDER = '…'
 
 export type RuleLookups = {
   categoryName: (id: number) => string | undefined

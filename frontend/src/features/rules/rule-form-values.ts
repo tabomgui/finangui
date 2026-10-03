@@ -41,7 +41,7 @@ const OPERATOR_NAMES = [
   'lte',
 ] as const satisfies readonly RuleOperatorName[]
 
-const ACTION_TYPES = ['set_category', 'set_description', 'set_payee', 'add_tag', 'ignore'] as const satisfies readonly RuleActionTypeName[]
+export const ACTION_TYPES = ['set_category', 'set_description', 'set_payee', 'add_tag', 'ignore'] as const satisfies readonly RuleActionTypeName[]
 
 // Valor sempre string no formulário: texto, centavos (via MoneyInput) convertidos para string,
 // "in"/"out", id de conta como string e data ISO. `toRuleBody` converte para número onde a API espera.
