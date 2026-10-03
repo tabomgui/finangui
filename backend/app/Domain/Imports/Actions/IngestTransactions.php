@@ -7,7 +7,6 @@ use App\Domain\Banking\Support\ProviderCategoryMatcher;
 use App\Domain\Cards\Actions\AssignStatement;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
-use App\Domain\Categories\Models\Category;
 use App\Domain\Imports\Data\ParsedRow;
 use App\Domain\Imports\Data\RowDecision;
 use App\Domain\Imports\Enums\ImportBatchStatus;
@@ -15,12 +14,12 @@ use App\Domain\Imports\Enums\RowOutcome;
 use App\Domain\Imports\Errors\ImportBatchNotPending;
 use App\Domain\Imports\Models\ImportBatch;
 use App\Domain\Imports\Support\ImportedInstallments;
+use App\Domain\Imports\Support\ImportPreloads;
 use App\Domain\Imports\Support\IngestionPlanner;
 use App\Domain\Rules\Actions\CategorizeTransaction;
 use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Models\Rule;
 use App\Domain\Rules\Support\HistoryCategorizer;
-use App\Domain\Rules\Support\TextNormalizer;
 use App\Domain\Transactions\Models\Transaction;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -85,13 +84,13 @@ final class IngestTransactions
             // Uma consulta (ou poucas, em lotes de até 1000 chaves) para todo
             // o histórico das linhas novas deste lote, em vez de uma consulta
             // por transação inserida (ver HistoryCategorizer::suggestMany()).
-            $historyMemo = $this->history->suggestMany($this->newRowHistoryPairs($decisions));
+            $historyMemo = $this->history->suggestMany(ImportPreloads::historyPairs($decisions));
 
             // Idem para a fatura do banco (meta.bill_id) e para a categoria
             // do provedor (meta.provider_category): uma consulta para o
             // lote inteiro, não uma por linha nova.
-            $billStatementMemo = $this->preloadBillStatements($account, $decisions);
-            $usableCategoriesByName = $this->preloadUsableCategoriesByName($decisions);
+            $billStatementMemo = ImportPreloads::billStatements($account, $decisions);
+            $usableCategoriesByName = ImportPreloads::usableCategoriesByName($decisions);
 
             [$stats, $undo] = $this->applyDecisions($locked, $account, $decisions, $rules, $historyMemo, $billStatementMemo, $usableCategoriesByName);
 
@@ -279,88 +278,6 @@ final class IngestTransactions
     }
 
     /**
-     * Uma consulta para toda fatura local (CardStatement) cujo external_id
-     * aparece em meta.bill_id de alguma linha nova deste lote — em vez de
-     * uma consulta por linha. Contas que não são cartão nunca têm fatura,
-     * então nem tenta.
-     *
-     * @param  list<RowDecision>  $decisions
-     * @return array<string, int> external_id → id do CardStatement
-     */
-    private function preloadBillStatements(Account $account, array $decisions): array
-    {
-        if (! $account->isCreditCard()) {
-            return [];
-        }
-
-        $billIds = [];
-
-        foreach ($decisions as $decision) {
-            if ($decision->outcome !== RowOutcome::New) {
-                continue;
-            }
-
-            $billId = $decision->row->meta['bill_id'] ?? null;
-
-            if (is_string($billId)) {
-                $billIds[$billId] = true;
-            }
-        }
-
-        if ($billIds === []) {
-            return [];
-        }
-
-        return CardStatement::query()
-            ->where('account_id', $account->id)
-            ->whereIn('external_id', array_keys($billIds))
-            ->pluck('id', 'external_id')
-            ->all();
-    }
-
-    /**
-     * Uma consulta para toda categoria ativa do usuário, agrupada pelo nome
-     * normalizado (ver TextNormalizer::key()) — em vez de uma consulta por
-     * linha, e sem tentar adivinhar de antemão quais nomes o
-     * ProviderCategoryMatcher vai precisar (ele tenta sinônimo da folha, do
-     * pai, e os nomes exatos — filtrar a consulta por nome arriscaria
-     * perder um match por diferença de acento/caixa entre o nome do
-     * provedor e o nome que o usuário deu à categoria). Só consulta quando
-     * alguma linha nova do lote de fato carrega meta.provider_category.
-     *
-     * @param  list<RowDecision>  $decisions
-     * @return array<string, list<array{id: int, kind: string, is_transfer: bool, has_parent: bool}>>
-     */
-    private function preloadUsableCategoriesByName(array $decisions): array
-    {
-        $needsLookup = false;
-
-        foreach ($decisions as $decision) {
-            if ($decision->outcome === RowOutcome::New && isset($decision->row->meta['provider_category'])) {
-                $needsLookup = true;
-                break;
-            }
-        }
-
-        if (! $needsLookup) {
-            return [];
-        }
-
-        $byName = [];
-
-        foreach (Category::query()->usable()->get() as $category) {
-            $byName[TextNormalizer::key($category->name)][] = [
-                'id' => $category->id,
-                'kind' => $category->kind->value,
-                'is_transfer' => $category->is_transfer,
-                'has_parent' => $category->parent_id !== null,
-            ];
-        }
-
-        return $byName;
-    }
-
-    /**
      * Parcela de uma compra nova cuja primeira ocorrência (a de menor
      * número, ver ImportedInstallments::classify()), neste mesmo arquivo,
      * já criou o plano: substitui a parcela projetada que insertNew() já
@@ -390,27 +307,5 @@ final class IngestTransactions
 
         $this->matchedOutcomes->replaceParcel($parcel, $decision->row, $batch, $undo);
         $stats['replaced']++;
-    }
-
-    /**
-     * @param  list<RowDecision>  $decisions
-     * @return list<array{description_key: string, direction: string}>
-     */
-    private function newRowHistoryPairs(array $decisions): array
-    {
-        $pairs = [];
-
-        foreach ($decisions as $decision) {
-            if ($decision->outcome !== RowOutcome::New) {
-                continue;
-            }
-
-            $pairs[] = [
-                'description_key' => TextNormalizer::key($decision->row->description),
-                'direction' => $decision->row->direction->value,
-            ];
-        }
-
-        return $pairs;
     }
 }

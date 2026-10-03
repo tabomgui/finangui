@@ -9,13 +9,13 @@ use App\Domain\Banking\Actions\SyncTransactions;
 use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Data\ProviderCategory;
-use App\Domain\Banking\Data\ProviderItem;
 use App\Domain\Banking\Enums\ConnectionStatus;
 use App\Domain\Banking\Errors\ProviderAuthFailed;
 use App\Domain\Banking\Errors\ProviderRequestFailed;
 use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Support\AccountMapper;
+use App\Domain\Banking\Support\ItemRefresher;
 use App\Models\User;
 use App\Support\UserContext;
 use Carbon\CarbonImmutable;
@@ -24,7 +24,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Sleep;
 use Throwable;
 
 /**
@@ -86,6 +85,7 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
     public function handle(
         BankProvider $provider,
         AccountMapper $accountMapper,
+        ItemRefresher $itemRefresher,
         SyncAccounts $syncAccounts,
         SyncBills $syncBills,
         SyncTransactions $syncTransactions,
@@ -104,12 +104,13 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        UserContext::run($user, fn () => $this->sync($provider, $accountMapper, $syncAccounts, $syncBills, $syncTransactions));
+        UserContext::run($user, fn () => $this->sync($provider, $accountMapper, $itemRefresher, $syncAccounts, $syncBills, $syncTransactions));
     }
 
     private function sync(
         BankProvider $provider,
         AccountMapper $accountMapper,
+        ItemRefresher $itemRefresher,
         SyncAccounts $syncAccounts,
         SyncBills $syncBills,
         SyncTransactions $syncTransactions,
@@ -125,7 +126,7 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
 
         try {
             $item = $provider->item($connection->external_id);
-            $item = $this->refreshAndWait($provider, $connection, $item, $syncStartedAt);
+            $item = $itemRefresher->refreshAndWait($provider, $connection, $item, $syncStartedAt);
 
             if ($item->needsReauth()) {
                 $this->writeStatus(
@@ -200,33 +201,6 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
         }
 
         $this->writeStatus(ConnectionStatus::Active, null, $syncStartedAt);
-    }
-
-    /**
-     * Item já em UPDATING (de um refresh anterior, deste sync ou de fora)
-     * só espera, sem pedir outro; sem lastUpdatedAt (nunca atualizado) não
-     * há como saber se está velho, então também só espera (nunca refresca
-     * "no escuro" — refreshItem tem limite de uso pela Pluggy). Pede
-     * atualização só quando lastUpdatedAt existe e já tem 20h ou mais.
-     * Falha do provedor ao pedir ou esperar a atualização (indisponível ou
-     * recusado) não derruba o sync inteiro: loga e segue com o último item
-     * que conseguiu buscar.
-     */
-    private function refreshAndWait(BankProvider $provider, BankConnection $connection, ProviderItem $item, CarbonImmutable $syncStartedAt): ProviderItem
-    {
-        $shouldRefresh = ! $item->isUpdating()
-            && $item->lastUpdatedAt !== null
-            && $item->lastUpdatedAt->lessThanOrEqualTo($syncStartedAt->subHours(20));
-
-        if ($shouldRefresh) {
-            try {
-                $provider->refreshItem($connection->external_id);
-            } catch (ProviderUnavailable|ProviderRequestFailed $e) {
-                $this->logProviderWarning('Pluggy: falha ao pedir atualização do item; seguindo com o item já buscado.', $connection, $e);
-            }
-        }
-
-        return $this->waitForUpdate($provider, $connection, $item);
     }
 
     /**
@@ -323,32 +297,6 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
         }
 
         return $byId;
-    }
-
-    private function waitForUpdate(BankProvider $provider, BankConnection $connection, ProviderItem $item): ProviderItem
-    {
-        for ($attempt = 0; $attempt < 30 && $item->isUpdating(); $attempt++) {
-            Sleep::for(3)->seconds();
-
-            try {
-                $item = $provider->item($connection->external_id);
-            } catch (ProviderUnavailable|ProviderRequestFailed $e) {
-                $this->logProviderWarning('Pluggy: falha ao consultar o item enquanto esperava a atualização; seguindo com o último item buscado.', $connection, $e);
-
-                break;
-            }
-        }
-
-        return $item;
-    }
-
-    private function logProviderWarning(string $message, BankConnection $connection, Throwable $e): void
-    {
-        Log::warning($message, [
-            'connection_id' => $connection->id,
-            'exception' => $e::class,
-            'message' => $e->getMessage(),
-        ]);
     }
 
     private function messageFor(ProviderRequestFailed $e): string
