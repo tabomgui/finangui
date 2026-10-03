@@ -3,10 +3,17 @@
 namespace App\Http\Resources;
 
 use App\Domain\Banking\Data\ProviderAccountSuggestion;
+use App\Domain\Banking\Support\AccountMapper;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
+ * Uma conta do banco ainda não vinculada, com a sugestão de vínculo
+ * calculada por App\Domain\Banking\Support\PendingProviderAccounts.
+ * Recebe um ProviderAccountSuggestion (a conta do provedor mais o id
+ * sugerido) em vez de só a ProviderAccount, como ImportBatchResource faz
+ * com um model: suggested_account_id não é um dado do provedor.
+ *
  * @mixin ProviderAccountSuggestion
  */
 final class ProviderAccountResource extends JsonResource
@@ -29,7 +36,9 @@ final class ProviderAccountResource extends JsonResource
             'external_id' => $account->id,
             'name' => $account->name,
             'number' => $account->number,
-            'kind' => $account->kind,
+            // Mesmo enum de Account::$type (não a string crua do
+            // provedor): o frontend já sabe lidar com AccountType.
+            'kind' => AccountMapper::accountTypeFor($account->kind),
             'currency' => $account->currency,
             'balance' => $account->balanceCents,
             'suggested_account_id' => $suggestion->suggestedAccountId,

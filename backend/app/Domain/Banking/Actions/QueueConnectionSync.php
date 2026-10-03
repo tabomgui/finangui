@@ -3,7 +3,8 @@
 namespace App\Domain\Banking\Actions;
 
 use App\Domain\Banking\Enums\ConnectionStatus;
-use App\Domain\Banking\Errors\ConnectionNotPendingLink;
+use App\Domain\Banking\Errors\ConnectionNeedsReauth;
+use App\Domain\Banking\Errors\ConnectionNotLinked;
 use App\Domain\Banking\Errors\ConnectionSyncInProgress;
 use App\Domain\Banking\Jobs\SyncConnection;
 use App\Domain\Banking\Models\BankConnection;
@@ -23,13 +24,17 @@ use Illuminate\Support\Facades\Cache;
  */
 final class QueueConnectionSync
 {
-    public function handle(BankConnection $connection, int $userId): void
+    public function handle(BankConnection $connection): void
     {
         if ($connection->status === ConnectionStatus::PendingLink) {
-            throw new ConnectionNotPendingLink('Vincule as contas desta conexão antes de sincronizar.');
+            throw new ConnectionNotLinked;
         }
 
-        $probe = new SyncConnection($connection->id, $userId);
+        if ($connection->status === ConnectionStatus::NeedsReauth) {
+            throw new ConnectionNeedsReauth;
+        }
+
+        $probe = new SyncConnection($connection->id);
         $lock = Cache::lock(UniqueLock::getKey($probe));
 
         if (! $lock->get()) {
@@ -38,6 +43,6 @@ final class QueueConnectionSync
 
         $lock->release();
 
-        SyncConnection::dispatch($connection->id, $userId);
+        SyncConnection::dispatch($connection->id);
     }
 }

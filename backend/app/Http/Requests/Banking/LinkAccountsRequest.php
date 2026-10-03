@@ -3,9 +3,11 @@
 namespace App\Http\Requests\Banking;
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Enums\ConnectionStatus;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Support\AccountMapper;
+use App\Domain\Banking\Support\PendingProviderAccounts;
 use App\Http\Requests\ApiRequest;
 use Closure;
 use Illuminate\Support\Collection;
@@ -45,8 +47,12 @@ final class LinkAccountsRequest extends ApiRequest
         $externalIds = $pendingByExternalId->keys()->all();
 
         return [
-            'links' => ['required', 'array', $this->coversAllAccounts($externalIds)],
-            'links.*.external_id' => ['required', 'string', Rule::in($externalIds)],
+            'links' => [
+                'required', 'array', 'max:'.count($externalIds),
+                $this->coversAllAccounts($externalIds),
+                self::accountIdsAreDistinct(),
+            ],
+            'links.*.external_id' => ['required', 'string', Rule::in($externalIds), 'distinct'],
             'links.*.account_id' => ['nullable', 'integer', $this->accountIsLinkable($pendingByExternalId)],
         ];
     }
@@ -71,14 +77,14 @@ final class LinkAccountsRequest extends ApiRequest
     }
 
     /**
-     * @return Collection<string, array<string, mixed>>
+     * @return Collection<string, ProviderAccount>
      */
     private static function pendingByExternalId(BankConnection $connection): Collection
     {
-        /** @var list<array<string, mixed>> $pending */
-        $pending = $connection->settings['pending_accounts'] ?? [];
+        /** @var list<array<string, mixed>> $rows */
+        $rows = $connection->settings['pending_accounts'] ?? [];
 
-        return collect($pending)->keyBy(fn (array $row) => (string) $row['id']);
+        return collect(PendingProviderAccounts::fromSettings($rows))->keyBy(fn (ProviderAccount $account) => $account->id);
     }
 
     /**
@@ -97,7 +103,24 @@ final class LinkAccountsRequest extends ApiRequest
     }
 
     /**
-     * @param  Collection<string, array<string, mixed>>  $pendingByExternalId
+     * `distinct` (a regra nativa do Laravel) não serve aqui: para ela,
+     * `in_array(null, [null, null])` é `true` (comparação não estrita), e
+     * marcaria duas linhas "criar conta nova" (account_id null) como
+     * duplicadas — exatamente o caso comum que precisa ser permitido.
+     */
+    private static function accountIdsAreDistinct(): Closure
+    {
+        return function (string $attribute, mixed $value, Closure $fail): void {
+            $ids = collect(is_array($value) ? $value : [])->pluck('account_id')->filter(fn ($id) => $id !== null)->all();
+
+            if (count($ids) !== count(array_unique($ids))) {
+                $fail('Cada conta só pode ser vinculada a uma conta do banco.');
+            }
+        };
+    }
+
+    /**
+     * @param  Collection<string, ProviderAccount>  $pendingByExternalId
      */
     private function accountIsLinkable(Collection $pendingByExternalId): Closure
     {
@@ -135,28 +158,21 @@ final class LinkAccountsRequest extends ApiRequest
                 return;
             }
 
-            if ($account->type !== AccountMapper::accountTypeFor(self::kindOf($pending))) {
+            if ($account->is_archived) {
+                $fail('Esta conta está arquivada.');
+
+                return;
+            }
+
+            if ($account->type !== AccountMapper::accountTypeFor($pending->kind)) {
                 $fail('O tipo da conta não corresponde ao da conta do banco.');
 
                 return;
             }
 
-            if ($account->currency !== $pending['currency']) {
+            if ($account->currency !== $pending->currency) {
                 $fail('A moeda da conta não corresponde à da conta do banco.');
             }
-        };
-    }
-
-    /**
-     * @param  array<string, mixed>  $pending
-     * @return 'checking'|'savings'|'credit_card'
-     */
-    private static function kindOf(array $pending): string
-    {
-        return match ($pending['kind']) {
-            'savings' => 'savings',
-            'credit_card' => 'credit_card',
-            default => 'checking',
         };
     }
 }

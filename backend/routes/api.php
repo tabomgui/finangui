@@ -62,7 +62,11 @@ Route::prefix('v1')->group(function () {
         // rules/order e rules/preview antes de rules/{rule}, por clareza (o
         // whereNumber já evita a colisão com esses literais).
         Route::put('rules/order', [RuleController::class, 'reorder']);
-        Route::post('rules/preview', [RuleController::class, 'preview'])->middleware('throttle:60,1');
+        // Prefixo próprio no throttle: sem ele, a chave do limite genérico
+        // (throttle:max,min) é só o id do usuário — toda rota autenticada
+        // sem prefixo compartilharia o mesmo contador, e martelar uma
+        // derrubaria as outras bem antes do seu próprio limite.
+        Route::post('rules/preview', [RuleController::class, 'preview'])->middleware('throttle:60,1,rules-preview');
         Route::get('rules', [RuleController::class, 'index']);
         Route::post('rules', [RuleController::class, 'store']);
         Route::get('rules/{rule}', [RuleController::class, 'show'])->whereNumber('rule');
@@ -71,11 +75,18 @@ Route::prefix('v1')->group(function () {
         Route::post('rules/{rule}/apply', [RuleController::class, 'apply'])->whereNumber('rule');
 
         Route::get('import-batches', [ImportBatchController::class, 'index']);
-        Route::post('import-batches', [ImportBatchController::class, 'store'])->middleware('throttle:20,1');
+        Route::post('import-batches', [ImportBatchController::class, 'store'])->middleware('throttle:20,1,import-batches-store');
         Route::get('import-batches/{batch}', [ImportBatchController::class, 'show'])->whereNumber('batch');
         Route::post('import-batches/{batch}/confirm', [ImportBatchController::class, 'confirm'])->whereNumber('batch');
         Route::delete('import-batches/{batch}', [ImportBatchController::class, 'destroy'])->whereNumber('batch');
         Route::post('import-batches/{batch}/revert', [ImportBatchController::class, 'revert'])->whereNumber('batch');
+
+        // index e destroy ficam fora do EnsureBankingEnabled: listar
+        // conexões já existentes e desconectar (que só limpa o lado local,
+        // ver DisconnectConnection) continuam funcionando mesmo sem o
+        // provedor configurado.
+        Route::get('bank-connections', [BankConnectionController::class, 'index']);
+        Route::delete('bank-connections/{connection}', [BankConnectionController::class, 'destroy'])->whereNumber('connection');
 
         // EnsureBankingEnabled antes de qualquer FormRequest: sem provedor
         // configurado, a rota responde 409 banking_disabled mesmo que o
@@ -85,13 +96,11 @@ Route::prefix('v1')->group(function () {
             // colisão de verbo/profundidade entre os dois, mas mantém o
             // agrupamento das rotas literais perto do topo, como em rules/
             // e import-batches/).
-            Route::post('bank-connections/connect-token', [BankConnectionController::class, 'connectToken'])->middleware('throttle:10,1');
-            Route::get('bank-connections', [BankConnectionController::class, 'index']);
+            Route::post('bank-connections/connect-token', [BankConnectionController::class, 'connectToken'])->middleware('throttle:10,1,bank-connect-token');
             Route::post('bank-connections', [BankConnectionController::class, 'store']);
             Route::post('bank-connections/{connection}/link-accounts', [BankConnectionController::class, 'linkAccounts'])->whereNumber('connection');
             Route::post('bank-connections/{connection}/reconnected', [BankConnectionController::class, 'reconnected'])->whereNumber('connection');
-            Route::post('bank-connections/{connection}/sync', [BankConnectionController::class, 'sync'])->whereNumber('connection')->middleware('throttle:6,1');
-            Route::delete('bank-connections/{connection}', [BankConnectionController::class, 'destroy'])->whereNumber('connection');
+            Route::post('bank-connections/{connection}/sync', [BankConnectionController::class, 'sync'])->whereNumber('connection')->middleware('throttle:6,1,bank-sync');
         });
     });
 });

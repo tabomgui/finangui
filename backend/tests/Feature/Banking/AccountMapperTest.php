@@ -12,13 +12,19 @@ beforeEach(function () {
     $this->connection = BankConnection::factory()->create();
 });
 
+/**
+ * array_key_exists (não ??): number precisa aceitar null explícito nos
+ * testes que confirmam o comportamento sem número do banco — "??" trataria
+ * a chave presente com valor null do mesmo jeito que ausente, e sempre
+ * cairia no default '1234'.
+ */
 function mapperAccount(array $overrides = []): ProviderAccount
 {
     return new ProviderAccount(
         id: $overrides['id'] ?? 'acc-1',
         kind: $overrides['kind'] ?? 'checking',
         name: $overrides['name'] ?? 'Conta Corrente',
-        number: $overrides['number'] ?? '1234',
+        number: array_key_exists('number', $overrides) ? $overrides['number'] : '1234',
         currency: $overrides['currency'] ?? 'BRL',
         balanceCents: $overrides['balanceCents'] ?? 10000,
         creditLimitCents: $overrides['creditLimitCents'] ?? null,
@@ -49,7 +55,23 @@ it('cria um cartão novo com limite e dias (fallback 1/10 sem os dias do banco)'
         ->and($account->icon)->toBe('credit-card')
         ->and($account->credit_limit->cents)->toBe(500000)
         ->and($account->closing_day)->toBe(1)
-        ->and($account->due_day)->toBe(10);
+        ->and($account->due_day)->toBe(10)
+        ->and($account->last_four)->toBe('1234');
+});
+
+it('cartão novo sem número do banco fica sem last_four', function () {
+    $account = $this->mapper->createLinked($this->connection, mapperAccount([
+        'kind' => 'credit_card',
+        'number' => null,
+    ]));
+
+    expect($account->last_four)->toBeNull();
+});
+
+it('conta corrente nova nunca recebe last_four', function () {
+    $account = $this->mapper->createLinked($this->connection, mapperAccount(['kind' => 'checking']));
+
+    expect($account->last_four)->toBeNull();
 });
 
 it('cria um cartão usando os dias do banco quando informados', function () {
@@ -73,6 +95,30 @@ it('vincula uma conta existente sem alterar nome, cor ou ícone', function () {
         ->and($linked->connection_id)->toBe($this->connection->id)
         ->and($linked->external_id)->toBe('acc-9')
         ->and($linked->provider_balance->cents)->toBe(77700);
+});
+
+it('preenche last_four ao vincular um cartão existente que ainda não tinha', function () {
+    $existing = Account::factory()->creditCard()->create(['last_four' => null]);
+
+    $linked = $this->mapper->linkExisting($existing, $this->connection, mapperAccount(['kind' => 'credit_card', 'number' => '98765']));
+
+    expect($linked->last_four)->toBe('8765');
+});
+
+it('não sobrescreve last_four já preenchido ao vincular', function () {
+    $existing = Account::factory()->creditCard()->create(['last_four' => '9999']);
+
+    $linked = $this->mapper->linkExisting($existing, $this->connection, mapperAccount(['kind' => 'credit_card', 'number' => '1234']));
+
+    expect($linked->last_four)->toBe('9999');
+});
+
+it('conta corrente vinculada nunca recebe last_four', function () {
+    $existing = Account::factory()->create(['last_four' => null]);
+
+    $linked = $this->mapper->linkExisting($existing, $this->connection, mapperAccount(['kind' => 'checking']));
+
+    expect($linked->last_four)->toBeNull();
 });
 
 it('atualiza saldo e limite de uma conta já vinculada, sem tocar em nome/dias', function () {

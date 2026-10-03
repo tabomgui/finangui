@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Banking\Models\BankConnection;
+use App\Domain\Banking\Support\PendingProviderAccounts;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -11,6 +12,14 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * `accounts` espera a relação já carregada com o saldo calculado (ver
  * Account::scopeWithBalance()) — quem monta este resource carrega
  * `connection->load(['accounts' => fn ($q) => $q->withBalance()])` antes.
+ *
+ * `pending_accounts` é sempre uma lista (nunca omitida nem null): vazia
+ * fora de `pending_link` (settings.pending_accounts não existe mais depois
+ * do vínculo — PendingProviderAccounts::suggestionsFor() já devolve lista
+ * vazia nesse caso, sem precisar checar o status aqui), com as contas do
+ * banco (e a sugestão de vínculo recalculada na hora) enquanto a conexão
+ * ainda espera o vínculo — permite a tela retomar o fluxo sem recriar a
+ * conexão.
  *
  * @mixin BankConnection
  */
@@ -36,6 +45,7 @@ final class BankConnectionResource extends JsonResource
                 'balance' => $account->balance()->cents,
                 'provider_balance' => $account->provider_balance?->cents,
             ])->all(),
+            'pending_accounts' => ProviderAccountResource::collection(PendingProviderAccounts::suggestionsFor($this->resource)),
         ];
     }
 }

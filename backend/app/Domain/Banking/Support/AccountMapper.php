@@ -40,6 +40,7 @@ final class AccountMapper
             'credit_limit' => $isCreditCard ? $account->creditLimitCents : null,
             'closing_day' => $isCreditCard ? ($account->closingDay ?? self::DEFAULT_CLOSING_DAY) : null,
             'due_day' => $isCreditCard ? ($account->dueDay ?? self::DEFAULT_DUE_DAY) : null,
+            'last_four' => $isCreditCard ? self::last4($account->number) : null,
             'connection_id' => $connection->id,
             'external_id' => $account->id,
             'provider_balance' => $account->balanceCents,
@@ -50,16 +51,25 @@ final class AccountMapper
     /**
      * Vincula uma conta manual já existente: só o que vem do banco
      * (vínculo e saldo informado) é gravado; nome, cor, ícone e dias do
-     * cartão ficam exatamente como o usuário já definiu.
+     * cartão ficam exatamente como o usuário já definiu. `last_four` só é
+     * preenchido quando a conta manual ainda não tinha um (criada antes de
+     * vincular, sem os últimos dígitos) — nunca sobrescreve o que o
+     * usuário já informou.
      */
     public function linkExisting(Account $existing, BankConnection $connection, ProviderAccount $account): Account
     {
-        $existing->update([
+        $attributes = [
             'connection_id' => $connection->id,
             'external_id' => $account->id,
             'provider_balance' => $account->balanceCents,
             'provider_synced_at' => Carbon::now(),
-        ]);
+        ];
+
+        if ($account->kind === 'credit_card' && blank($existing->last_four)) {
+            $attributes['last_four'] = self::last4($account->number);
+        }
+
+        $existing->update($attributes);
 
         return $existing;
     }
@@ -90,5 +100,22 @@ final class AccountMapper
             'savings' => AccountType::Savings,
             'credit_card' => AccountType::CreditCard,
         };
+    }
+
+    /**
+     * Últimos 4 dígitos do número da conta do provedor (já pode chegar com
+     * só 4 — ver App\Domain\Banking\Support\PendingProviderAccounts, que
+     * mascara antes de gravar em settings). Null quando não há dígitos
+     * suficientes, em vez de gravar algo mais curto que `last_four` (char(4)).
+     */
+    private static function last4(?string $number): ?string
+    {
+        if ($number === null) {
+            return null;
+        }
+
+        $digits = preg_replace('/\D/', '', $number) ?? '';
+
+        return strlen($digits) >= 4 ? substr($digits, -4) : null;
     }
 }

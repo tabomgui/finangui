@@ -2,16 +2,21 @@
 
 use App\Domain\Accounts\Enums\AccountType;
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Banking\Actions\LinkAccounts;
 use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Data\ProviderItem;
 use App\Domain\Banking\Enums\ConnectionStatus;
+use App\Domain\Banking\Errors\AccountNoLongerLinkable;
 use App\Domain\Banking\Jobs\SyncConnection;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Providers\FakeBankProvider;
 use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
+use Illuminate\Bus\UniqueLock;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 
@@ -110,6 +115,18 @@ describe('criar conexão', function () {
             ->assertJsonValidationErrors('item_id');
     });
 
+    it('item sem contas → 409 connection_without_accounts', function () {
+        $itemId = '00000000-0000-0000-0000-000000000c03';
+        $this->fake->items[$itemId] = providerItem(['id' => $itemId, 'clientUserId' => 'user:'.$this->user->id]);
+        $this->fake->accountsByItem[$itemId] = [];
+
+        $this->postJson('/api/v1/bank-connections', ['item_id' => $itemId])
+            ->assertStatus(409)
+            ->assertJsonPath('code', 'connection_without_accounts');
+
+        expect(BankConnection::query()->where('external_id', $itemId)->exists())->toBeFalse();
+    });
+
     it('sucesso: 201, conexão pending_link com nome/logo e provider_accounts com sugestão de vínculo', function () {
         $itemId = '00000000-0000-0000-0000-0000000000a1';
         $this->fake->items[$itemId] = providerItem(['id' => $itemId, 'clientUserId' => 'user:'.$this->user->id, 'institutionName' => 'Banco Exemplo']);
@@ -126,6 +143,7 @@ describe('criar conexão', function () {
             ->assertJsonPath('data.connection.institution_name', 'Banco Exemplo')
             ->assertJsonPath('data.connection.institution_logo_url', 'https://cdn.example.com/logo.png')
             ->assertJsonPath('data.provider_accounts.0.external_id', 'acc-1')
+            ->assertJsonPath('data.provider_accounts.0.kind', AccountType::Checking->value)
             ->assertJsonPath('data.provider_accounts.0.suggested_account_id', $manual->id);
 
         expect(BankConnection::query()->where('external_id', $itemId)->first())
@@ -140,6 +158,59 @@ describe('criar conexão', function () {
         $this->postJson('/api/v1/bank-connections', ['item_id' => $itemId])
             ->assertCreated()
             ->assertJsonPath('data.provider_accounts.0.suggested_account_id', null);
+    });
+
+    it('cada conta manual só é sugerida a uma conta do banco (sugestão exclusiva)', function () {
+        $itemId = '00000000-0000-0000-0000-0000000000a3';
+        $this->fake->items[$itemId] = providerItem(['id' => $itemId, 'clientUserId' => 'user:'.$this->user->id, 'institutionName' => 'Banco Exemplo']);
+        $this->fake->accountsByItem[$itemId] = [
+            providerAccount(['id' => 'acc-1', 'name' => 'Conta 1']),
+            providerAccount(['id' => 'acc-2', 'name' => 'Conta 2']),
+        ];
+
+        $manual = Account::factory()->create(['name' => 'Banco Exemplo', 'type' => AccountType::Checking, 'currency' => 'BRL']);
+
+        $this->postJson('/api/v1/bank-connections', ['item_id' => $itemId])
+            ->assertCreated()
+            ->assertJsonPath('data.provider_accounts.0.suggested_account_id', $manual->id)
+            ->assertJsonPath('data.provider_accounts.1.suggested_account_id', null);
+    });
+
+    it('conta manual arquivada não entra na sugestão', function () {
+        $itemId = '00000000-0000-0000-0000-0000000000a4';
+        $this->fake->items[$itemId] = providerItem(['id' => $itemId, 'clientUserId' => 'user:'.$this->user->id, 'institutionName' => 'Banco Exemplo']);
+        $this->fake->accountsByItem[$itemId] = [providerAccount(['id' => 'acc-1'])];
+
+        Account::factory()->archived()->create(['name' => 'Banco Exemplo', 'type' => AccountType::Checking, 'currency' => 'BRL']);
+
+        $this->postJson('/api/v1/bank-connections', ['item_id' => $itemId])
+            ->assertCreated()
+            ->assertJsonPath('data.provider_accounts.0.suggested_account_id', null);
+    });
+
+    it('settings.pending_accounts guarda só os últimos 4 dígitos do número da conta', function () {
+        $itemId = '00000000-0000-0000-0000-0000000000a5';
+        $this->fake->items[$itemId] = providerItem(['id' => $itemId, 'clientUserId' => 'user:'.$this->user->id]);
+        $this->fake->accountsByItem[$itemId] = [providerAccount(['id' => 'acc-1', 'number' => '00112233445566'])];
+
+        $this->postJson('/api/v1/bank-connections', ['item_id' => $itemId])->assertCreated();
+
+        $connection = BankConnection::query()->where('external_id', $itemId)->first();
+        expect($connection->settings['pending_accounts'][0]['number'])->toBe('5566');
+    });
+
+    it('o unique de (provider, external_id) lança UniqueConstraintViolationException — o tipo que o catch de CreateConnection espera', function () {
+        // CreateConnection intercepta especificamente este tipo (não só
+        // QueryException) para converter a corrida rara entre o exists()
+        // e o create() em 409 connection_item_mismatch. Reproduzir a
+        // corrida de verdade exigiria duas requisições concorrentes de
+        // fato; este teste confirma a premissa (o tipo de exceção que o
+        // driver do Postgres lança para esse unique), não o caminho
+        // ponta a ponta.
+        BankConnection::factory()->create(['external_id' => 'dup-item']);
+
+        expect(fn () => BankConnection::factory()->create(['external_id' => 'dup-item']))
+            ->toThrow(UniqueConstraintViolationException::class);
     });
 });
 
@@ -160,6 +231,56 @@ describe('vincular contas', function () {
         $this->postJson("/api/v1/bank-connections/{$this->connectionId}/link-accounts", [
             'links' => [['external_id' => 'acc-1', 'account_id' => null]],
         ])->assertUnprocessable()->assertJsonValidationErrors('links');
+    });
+
+    it('links com external_id repetido → 422', function () {
+        $this->postJson("/api/v1/bank-connections/{$this->connectionId}/link-accounts", [
+            'links' => [
+                ['external_id' => 'acc-1', 'account_id' => null],
+                ['external_id' => 'acc-1', 'account_id' => null],
+            ],
+        ])->assertUnprocessable()->assertJsonValidationErrors('links.0.external_id');
+    });
+
+    it('links com mais linhas do que contas pendentes → 422', function () {
+        $this->postJson("/api/v1/bank-connections/{$this->connectionId}/link-accounts", [
+            'links' => [
+                ['external_id' => 'acc-1', 'account_id' => null],
+                ['external_id' => 'acc-2', 'account_id' => null],
+                ['external_id' => 'acc-2', 'account_id' => null],
+            ],
+        ])->assertUnprocessable()->assertJsonValidationErrors('links');
+    });
+
+    it('account_id repetido em duas linhas → 422', function () {
+        $manual = Account::factory()->create();
+
+        $this->postJson("/api/v1/bank-connections/{$this->connectionId}/link-accounts", [
+            'links' => [
+                ['external_id' => 'acc-1', 'account_id' => $manual->id],
+                ['external_id' => 'acc-2', 'account_id' => $manual->id],
+            ],
+        ])->assertUnprocessable()->assertJsonValidationErrors('links');
+    });
+
+    it('duas linhas com account_id nulo não são tratadas como repetidas', function () {
+        $this->postJson("/api/v1/bank-connections/{$this->connectionId}/link-accounts", [
+            'links' => [
+                ['external_id' => 'acc-1', 'account_id' => null],
+                ['external_id' => 'acc-2', 'account_id' => null],
+            ],
+        ])->assertOk();
+    });
+
+    it('account_id pode ser omitido (não só null) para criar conta nova', function () {
+        $this->postJson("/api/v1/bank-connections/{$this->connectionId}/link-accounts", [
+            'links' => [
+                ['external_id' => 'acc-1'],
+                ['external_id' => 'acc-2'],
+            ],
+        ])->assertOk();
+
+        expect(Account::query()->where('external_id', 'acc-1')->exists())->toBeTrue();
     });
 
     it('account_id de conta de outro usuário → 422 em links.1.account_id', function () {
@@ -208,6 +329,17 @@ describe('vincular contas', function () {
         ])->assertUnprocessable()->assertJsonValidationErrors('links.1.account_id');
     });
 
+    it('account_id de conta arquivada → 422 em links.1.account_id', function () {
+        $archived = Account::factory()->creditCard()->archived()->create();
+
+        $this->postJson("/api/v1/bank-connections/{$this->connectionId}/link-accounts", [
+            'links' => [
+                ['external_id' => 'acc-1', 'account_id' => null],
+                ['external_id' => 'acc-2', 'account_id' => $archived->id],
+            ],
+        ])->assertUnprocessable()->assertJsonValidationErrors('links.1.account_id');
+    });
+
     it('sem account_id cria conta nova e enfileira o sync', function () {
         Queue::fake();
 
@@ -232,17 +364,18 @@ describe('vincular contas', function () {
             ->and($card->credit_limit->cents)->toBe(500000)
             ->and($card->closing_day)->toBe(5)
             ->and($card->due_day)->toBe(15)
+            ->and($card->last_four)->toBe('2222')
             ->and($card->provider_balance->cents)->toBe(30000);
 
         expect(BankConnection::find($this->connectionId)->settings)->toBeNull();
 
-        Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $this->connectionId && $job->userId === $this->user->id);
+        Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $this->connectionId);
     });
 
     it('vincula a uma conta existente sem mudar nome, cor ou ícone', function () {
         Queue::fake();
         $manual = Account::factory()->create(['name' => 'Minha conta', 'color' => '#123456', 'icon' => 'piggy-bank']);
-        $card = Account::factory()->creditCard()->create(['name' => 'Meu cartão', 'color' => '#654321', 'icon' => 'wallet']);
+        $card = Account::factory()->creditCard()->create(['name' => 'Meu cartão', 'color' => '#654321', 'icon' => 'wallet', 'last_four' => null]);
 
         $this->postJson("/api/v1/bank-connections/{$this->connectionId}/link-accounts", [
             'links' => [
@@ -262,7 +395,23 @@ describe('vincular contas', function () {
         $card->refresh();
         expect($card->name)->toBe('Meu cartão')
             ->and($card->connection_id)->toBe($this->connectionId)
-            ->and($card->external_id)->toBe('acc-2');
+            ->and($card->external_id)->toBe('acc-2')
+            ->and($card->last_four)->toBe('2222');
+    });
+
+    it('o vínculo remove só settings.pending_accounts, preservando outras chaves de settings', function () {
+        Queue::fake();
+        $connection = BankConnection::find($this->connectionId);
+        $connection->update(['settings' => array_merge($connection->settings, ['foo' => 'bar'])]);
+
+        $this->postJson("/api/v1/bank-connections/{$this->connectionId}/link-accounts", [
+            'links' => [
+                ['external_id' => 'acc-1', 'account_id' => null],
+                ['external_id' => 'acc-2', 'account_id' => null],
+            ],
+        ])->assertOk();
+
+        expect(BankConnection::find($this->connectionId)->settings)->toBe(['foo' => 'bar']);
     });
 
     it('vincular de novo → 409 connection_not_pending_link', function () {
@@ -278,6 +427,50 @@ describe('vincular contas', function () {
         $this->postJson("/api/v1/bank-connections/{$this->connectionId}/link-accounts", ['links' => $links])
             ->assertStatus(409)
             ->assertJsonPath('code', 'connection_not_pending_link');
+    });
+
+    it('vincula mesmo com um sync já a caminho (ConnectionSyncInProgress é engolido)', function () {
+        $lock = Cache::lock(UniqueLock::getKey(new SyncConnection($this->connectionId)));
+        $lock->get();
+
+        try {
+            $this->postJson("/api/v1/bank-connections/{$this->connectionId}/link-accounts", [
+                'links' => [
+                    ['external_id' => 'acc-1', 'account_id' => null],
+                    ['external_id' => 'acc-2', 'account_id' => null],
+                ],
+            ])->assertOk();
+        } finally {
+            $lock->release();
+        }
+    });
+
+    it('a trava da conta detecta, sob lock, quando ela deixou de estar disponível (corrida)', function () {
+        $manual = Account::factory()->create();
+        $elsewhere = BankConnection::factory()->create(['user_id' => $this->user->id]);
+        $manual->update(['connection_id' => $elsewhere->id, 'external_id' => 'grabbed-elsewhere']);
+
+        $connection = BankConnection::find($this->connectionId);
+        $links = [
+            ['external_id' => 'acc-1', 'account_id' => $manual->id],
+            ['external_id' => 'acc-2', 'account_id' => null],
+        ];
+
+        expect(fn () => app(LinkAccounts::class)->handle($connection, $links))
+            ->toThrow(AccountNoLongerLinkable::class);
+    });
+
+    it('a trava da conta detecta, sob lock, quando ela foi arquivada (corrida)', function () {
+        $manual = Account::factory()->archived()->create();
+
+        $connection = BankConnection::find($this->connectionId);
+        $links = [
+            ['external_id' => 'acc-1', 'account_id' => $manual->id],
+            ['external_id' => 'acc-2', 'account_id' => null],
+        ];
+
+        expect(fn () => app(LinkAccounts::class)->handle($connection, $links))
+            ->toThrow(AccountNoLongerLinkable::class);
     });
 
     it('conexão de outro usuário → 404', function () {
@@ -318,12 +511,20 @@ describe('sincronizar manualmente', function () {
             ->assertJsonPath('code', 'connection_sync_in_progress');
     });
 
-    it('conexão pending_link → 409', function () {
+    it('conexão pending_link → 409 connection_not_linked', function () {
         $connection = BankConnection::factory()->create(['user_id' => $this->user->id]);
 
         $this->postJson("/api/v1/bank-connections/{$connection->id}/sync")
             ->assertStatus(409)
-            ->assertJsonPath('code', 'connection_not_pending_link');
+            ->assertJsonPath('code', 'connection_not_linked');
+    });
+
+    it('conexão needs_reauth → 409 connection_needs_reauth', function () {
+        $connection = BankConnection::factory()->needsReauth()->create(['user_id' => $this->user->id]);
+
+        $this->postJson("/api/v1/bank-connections/{$connection->id}/sync")
+            ->assertStatus(409)
+            ->assertJsonPath('code', 'connection_needs_reauth');
     });
 });
 
@@ -342,12 +543,37 @@ describe('reconectado', function () {
 
         Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $connection->id);
     });
+
+    it('reconectado numa conexão pending_link → 409 connection_not_linked', function () {
+        $connection = BankConnection::factory()->create(['user_id' => $this->user->id]);
+
+        $this->postJson("/api/v1/bank-connections/{$connection->id}/reconnected")
+            ->assertStatus(409)
+            ->assertJsonPath('code', 'connection_not_linked');
+    });
+
+    it('reconecta mesmo com um sync já a caminho (ConnectionSyncInProgress é engolido)', function () {
+        $connection = BankConnection::factory()->needsReauth()->create(['user_id' => $this->user->id]);
+        $lock = Cache::lock(UniqueLock::getKey(new SyncConnection($connection->id)));
+        $lock->get();
+
+        try {
+            $this->postJson("/api/v1/bank-connections/{$connection->id}/reconnected")->assertOk();
+        } finally {
+            $lock->release();
+        }
+    });
 });
 
 describe('desconectar', function () {
     it('chama deleteItem, exclui a conexão e as contas ficam manuais com o histórico intacto', function () {
         $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => 'item-x']);
-        $account = Account::factory()->create(['connection_id' => $connection->id, 'external_id' => 'acc-1']);
+        $account = Account::factory()->create([
+            'connection_id' => $connection->id,
+            'external_id' => 'acc-1',
+            'provider_balance' => 12345,
+            'provider_synced_at' => now(),
+        ]);
         $transaction = Transaction::factory()->create(['account_id' => $account->id, 'source' => TransactionSource::Pluggy]);
 
         $this->deleteJson("/api/v1/bank-connections/{$connection->id}")->assertNoContent();
@@ -356,7 +582,9 @@ describe('desconectar', function () {
 
         $account->refresh();
         expect($account->connection_id)->toBeNull()
-            ->and($account->external_id)->toBeNull();
+            ->and($account->external_id)->toBeNull()
+            ->and($account->provider_balance)->toBeNull()
+            ->and($account->provider_synced_at)->toBeNull();
 
         expect(Transaction::find($transaction->id))->not->toBeNull();
 
@@ -387,16 +615,23 @@ describe('banking_disabled', function () {
         $this->fake->setEnabled(false);
     });
 
-    it('bloqueia todas as rotas quando o provedor não está configurado', function () {
+    it('bloqueia as rotas que falam com o provedor', function () {
         $connection = BankConnection::factory()->create(['user_id' => $this->user->id]);
 
-        $this->getJson('/api/v1/bank-connections')->assertStatus(409)->assertJsonPath('code', 'banking_disabled');
         $this->postJson('/api/v1/bank-connections/connect-token')->assertStatus(409)->assertJsonPath('code', 'banking_disabled');
         $this->postJson('/api/v1/bank-connections', ['item_id' => '00000000-0000-0000-0000-0000000000a1'])->assertStatus(409)->assertJsonPath('code', 'banking_disabled');
         $this->postJson("/api/v1/bank-connections/{$connection->id}/link-accounts", ['links' => []])->assertStatus(409)->assertJsonPath('code', 'banking_disabled');
         $this->postJson("/api/v1/bank-connections/{$connection->id}/reconnected")->assertStatus(409)->assertJsonPath('code', 'banking_disabled');
         $this->postJson("/api/v1/bank-connections/{$connection->id}/sync")->assertStatus(409)->assertJsonPath('code', 'banking_disabled');
-        $this->deleteJson("/api/v1/bank-connections/{$connection->id}")->assertStatus(409)->assertJsonPath('code', 'banking_disabled');
+    });
+
+    it('index e destroy continuam funcionando (destroy pula a chamada ao provedor)', function () {
+        $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => 'item-x']);
+
+        $this->getJson('/api/v1/bank-connections')->assertOk();
+        $this->deleteJson("/api/v1/bank-connections/{$connection->id}")->assertNoContent();
+
+        expect($this->fake->calls)->not->toContain(['method' => 'deleteItem', 'args' => ['itemId' => 'item-x']]);
     });
 });
 
@@ -409,7 +644,8 @@ describe('listar', function () {
             ->assertOk()
             ->assertJsonPath('data.0.id', $connection->id)
             ->assertJsonPath('data.0.accounts.0.name', 'Conta')
-            ->assertJsonPath('data.0.accounts.0.balance', 0);
+            ->assertJsonPath('data.0.accounts.0.balance', 0)
+            ->assertJsonPath('data.0.pending_accounts', []);
     });
 
     it('é isolado por usuário', function () {
@@ -417,5 +653,21 @@ describe('listar', function () {
         BankConnection::factory()->create(['user_id' => $other->id]);
 
         $this->getJson('/api/v1/bank-connections')->assertOk()->assertJsonCount(0, 'data');
+    });
+
+    it('conexão pending_link aparece com pending_accounts para retomar o vínculo', function () {
+        $itemId = '00000000-0000-0000-0000-0000000000a6';
+        $this->fake->items[$itemId] = providerItem(['id' => $itemId, 'clientUserId' => 'user:'.$this->user->id, 'institutionName' => 'Banco Exemplo']);
+        $this->fake->accountsByItem[$itemId] = [providerAccount(['id' => 'acc-1', 'number' => '5678'])];
+
+        $manual = Account::factory()->create(['name' => 'Banco Exemplo', 'type' => AccountType::Checking, 'currency' => 'BRL']);
+
+        $this->postJson('/api/v1/bank-connections', ['item_id' => $itemId])->assertCreated();
+
+        $this->getJson('/api/v1/bank-connections')
+            ->assertOk()
+            ->assertJsonPath('data.0.status', ConnectionStatus::PendingLink->value)
+            ->assertJsonPath('data.0.pending_accounts.0.external_id', 'acc-1')
+            ->assertJsonPath('data.0.pending_accounts.0.suggested_account_id', $manual->id);
     });
 });

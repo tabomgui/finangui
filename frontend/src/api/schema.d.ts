@@ -52,22 +52,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/bank-connections/connect-token": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["bankConnection.connectToken"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/bank-connections": {
         parameters: {
             query?: never;
@@ -78,6 +62,38 @@ export interface paths {
         get: operations["bankConnection.index"];
         put?: never;
         post: operations["bankConnection.store"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/{connection}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["bankConnection.destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/connect-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["bankConnection.connectToken"];
         delete?: never;
         options?: never;
         head?: never;
@@ -127,22 +143,6 @@ export interface paths {
         put?: never;
         post: operations["bankConnection.sync"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/bank-connections/{connection}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["bankConnection.destroy"];
         options?: never;
         head?: never;
         patch?: never;
@@ -697,6 +697,7 @@ export interface components {
                 balance: number;
                 provider_balance: number | null;
             }[];
+            pending_accounts: components["schemas"]["ProviderAccountResource"][];
         };
         /**
          * BankProviderName
@@ -976,7 +977,11 @@ export interface components {
             external_id: string;
             name: string;
             number: string | null;
-            kind: string;
+            /**
+             * @description Mesmo enum de Account::$type (não a string crua do
+             *     provedor): o frontend já sabe lidar com AccountType.
+             */
+            kind: components["schemas"]["AccountType"];
             currency: string;
             balance: number;
             suggested_account_id: number | null;
@@ -1601,36 +1606,6 @@ export interface operations {
             };
         };
     };
-    "bankConnection.connectToken": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["ConnectTokenRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: {
-                            connect_token: string;
-                        };
-                    };
-                };
-            };
-            401: components["responses"]["AuthenticationException"];
-            404: components["responses"]["ModelNotFoundException"];
-            422: components["responses"]["ValidationException"];
-        };
-    };
     "bankConnection.index": {
         parameters: {
             query?: never;
@@ -1681,6 +1656,59 @@ export interface operations {
                 };
             };
             401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "bankConnection.destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connection ID */
+                connection: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "bankConnection.connectToken": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConnectTokenRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            connect_token: string;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
             422: components["responses"]["ValidationException"];
         };
     };
@@ -1766,29 +1794,6 @@ export interface operations {
                         };
                     };
                 };
-            };
-            401: components["responses"]["AuthenticationException"];
-            404: components["responses"]["ModelNotFoundException"];
-        };
-    };
-    "bankConnection.destroy": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The connection ID */
-                connection: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No content */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             401: components["responses"]["AuthenticationException"];
             404: components["responses"]["ModelNotFoundException"];

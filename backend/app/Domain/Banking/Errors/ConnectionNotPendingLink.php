@@ -5,18 +5,15 @@ namespace App\Domain\Banking\Errors;
 use App\Domain\Shared\DomainError;
 
 /**
- * Guarda de status em torno do vínculo de contas: lançado tanto quando uma
- * ação exige a conexão em `pending_link` e ela já saiu desse estado
- * (vincular de novo numa conexão já `active`) quanto no sentido contrário
- * (sincronizar antes do vínculo terminar) — a mensagem muda por chamada,
- * o código de erro (usado pelo frontend para o toast) é o mesmo nos dois
- * casos.
+ * A conexão já saiu de `pending_link` (contas já vinculadas antes): não dá
+ * para vincular de novo. Ver App\Domain\Banking\Errors\ConnectionNotLinked
+ * para o sentido contrário (ação que exige a conexão já vinculada).
  */
 final class ConnectionNotPendingLink extends DomainError
 {
-    public function __construct(string $message = 'Esta conexão já foi vinculada.')
+    public function __construct()
     {
-        parent::__construct($message);
+        parent::__construct('Esta conexão já foi vinculada.');
     }
 
     public function errorCode(): string
