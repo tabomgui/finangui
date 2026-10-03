@@ -5,6 +5,7 @@ namespace App\Domain\Categories\Models;
 use App\Domain\Categories\Enums\CategoryKind;
 use App\Models\Concerns\BelongsToUser;
 use Database\Factories\CategoryFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -61,5 +62,18 @@ class Category extends Model
     public function children(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id');
+    }
+
+    /**
+     * Categoria que uma regra/histórico ainda pode atribuir: não arquivada.
+     * Compartilhado por CategorizeTransaction e ApplyRuleOutcome — as duas
+     * conferem se a categoria apontada por uma regra ainda é usável antes
+     * de gravá-la numa transação.
+     *
+     * @param  Builder<Category>  $query
+     */
+    public function scopeUsable(Builder $query): void
+    {
+        $query->where('is_archived', false);
     }
 }

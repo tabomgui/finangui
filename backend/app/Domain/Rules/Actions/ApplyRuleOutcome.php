@@ -128,7 +128,7 @@ final class ApplyRuleOutcome
 
     private function categoryUsable(int $categoryId): bool
     {
-        return $this->categoryUsable[$categoryId] ??= Category::query()->whereKey($categoryId)->where('is_archived', false)->exists();
+        return $this->categoryUsable[$categoryId] ??= Category::query()->whereKey($categoryId)->usable()->exists();
     }
 
     private function tagExists(int $tagId): bool
