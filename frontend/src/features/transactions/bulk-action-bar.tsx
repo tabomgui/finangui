@@ -1,16 +1,13 @@
-import { useQueryClient } from '@tanstack/react-query'
 import { LoaderCircle, Tags, X } from 'lucide-react'
-import { useState } from 'react'
 import { toast } from 'sonner'
-import { api, unwrap } from '@/api/client'
-import { invalidateLedger } from '@/api/query-keys'
+import { useBulkUpdateTransactions } from '@/api/queries/transactions'
 import { useTags } from '@/api/queries/tags'
 import type { components } from '@/api/schema'
 import type { Transaction } from '@/api/types'
 import { CategoryPicker } from '@/components/shared/category-picker'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { mergeTagIds, runInBatches, selectionKind, transacaoCount } from './bulk'
+import { mergeTagIds, selectionKind, transacaoCount } from './bulk'
 
 type UpdateTransactionRequest = components['schemas']['UpdateTransactionRequest']
 
@@ -20,26 +17,19 @@ type BulkActionBarProps = {
 }
 
 export function BulkActionBar({ selected, onDone }: BulkActionBarProps) {
-  const queryClient = useQueryClient()
   const { data: tags = [] } = useTags()
-  const [pending, setPending] = useState(false)
+  const bulkUpdate = useBulkUpdateTransactions()
+  const pending = bulkUpdate.isPending
   // Entradas e saídas têm árvores de categoria diferentes; conta pernas de transferência pela
   // própria direction. Seleção mista desabilita a categoria em vez de adivinhar qual árvore mostrar.
   const kind = selectionKind(selected)
 
   const apply = async (label: string, update: (transaction: Transaction) => UpdateTransactionRequest) => {
-    setPending(true)
     const byId = new Map(selected.map((transaction) => [transaction.id, transaction]))
-    const result = await runInBatches([...byId.keys()], (id) =>
-      unwrap(
-        api.PATCH('/transactions/{transaction}', {
-          params: { path: { transaction: id } },
-          body: update(byId.get(id) as Transaction),
-        }),
-      ),
-    )
-    await invalidateLedger(queryClient)
-    setPending(false)
+    const result = await bulkUpdate.mutateAsync({
+      ids: [...byId.keys()],
+      body: (id) => update(byId.get(id) as Transaction),
+    })
 
     if (result.failed.length === 0) {
       toast.success(`${label}: ${transacaoCount(result.succeeded.length)} atualizada${result.succeeded.length === 1 ? '' : 's'}.`)

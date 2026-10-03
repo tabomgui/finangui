@@ -14,6 +14,7 @@ final readonly class TransferData
         public Money $amount,
         public string $description,
         public ?string $notes = null,
+        public ?int $toStatementId = null,
     ) {}
 
     /**

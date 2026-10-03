@@ -4,8 +4,11 @@ use App\Http\Controllers\Api\V1\AccountController;
 use App\Http\Controllers\Api\V1\Auth\AuthStatusController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\SessionController;
+use App\Http\Controllers\Api\V1\CardController;
+use App\Http\Controllers\Api\V1\CardStatementController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\InstallmentPlanController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\TagController;
 use App\Http\Controllers\Api\V1\TransactionController;
@@ -40,5 +43,16 @@ Route::prefix('v1')->group(function () {
         Route::get('transfers/{transfer}', [TransferController::class, 'show'])->whereUuid('transfer');
         Route::patch('transfers/{transfer}', [TransferController::class, 'update'])->whereUuid('transfer');
         Route::delete('transfers/{transfer}', [TransferController::class, 'destroy'])->whereUuid('transfer');
+
+        Route::get('cards', [CardController::class, 'index']);
+        Route::get('cards/{account}', [CardController::class, 'show'])->whereNumber('account');
+        Route::get('cards/{account}/statements', [CardController::class, 'statements'])->whereNumber('account');
+        Route::get('cards/{account}/statement-preview', [CardController::class, 'statementPreview'])->whereNumber('account');
+        Route::get('cards/{account}/installment-plans', [CardController::class, 'installmentPlans'])->whereNumber('account');
+        Route::get('card-statements/{statement}', [CardStatementController::class, 'show'])->whereNumber('statement');
+        Route::patch('card-statements/{statement}', [CardStatementController::class, 'update'])->whereNumber('statement');
+        Route::post('card-statements/{statement}/payments', [CardStatementController::class, 'pay'])->whereNumber('statement');
+        Route::patch('installment-plans/{plan}', [InstallmentPlanController::class, 'update'])->whereNumber('plan');
+        Route::post('installment-plans/{plan}/cancel', [InstallmentPlanController::class, 'cancel'])->whereNumber('plan');
     });
 });

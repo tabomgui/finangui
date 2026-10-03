@@ -15,8 +15,9 @@ final class TransactionQuery
     public static function filtered(array $filters): Builder
     {
         return Transaction::query()
-            ->with(['account', 'category.parent', 'tags'])
+            ->with(['account', 'category.parent', 'tags', 'installmentPlan'])
             ->when($filters['account_id'] ?? null, fn (Builder $q, $id) => $q->where('account_id', $id))
+            ->when($filters['statement_id'] ?? null, fn (Builder $q, $id) => $q->where('statement_id', $id))
             ->when($filters['category_id'] ?? null, fn (Builder $q, $id) => $q->whereIn(
                 'category_id',
                 Category::query()->where(fn ($w) => $w->where('id', $id)->orWhere('parent_id', $id))->select('id'),

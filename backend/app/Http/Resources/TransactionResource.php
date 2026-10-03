@@ -52,6 +52,12 @@ final class TransactionResource extends JsonResource
             'categorized_by' => $this->categorized_by,
             'is_ignored' => $this->is_ignored,
             'transfer_id' => $this->transfer_id,
+            'statement_id' => $this->statement_id,
+            'installment' => $this->relationLoaded('installmentPlan') && $this->installmentPlan ? [
+                'plan_id' => $this->installmentPlan->id,
+                'number' => (int) $this->installment_number,
+                'total' => $this->installmentPlan->installments,
+            ] : null,
         ];
     }
 }

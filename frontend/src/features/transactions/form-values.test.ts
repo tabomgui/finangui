@@ -21,6 +21,8 @@ const transaction = {
   categorized_by: 'manual',
   is_ignored: false,
   transfer_id: null,
+  statement_id: null,
+  installment: null,
 } as Transaction
 
 describe('lançamento', () => {
@@ -35,6 +37,8 @@ describe('lançamento', () => {
       tag_ids: [2],
       notes: '',
       is_ignored: false,
+      installments: 1,
+      statement_id: null,
     })
   })
 
@@ -70,6 +74,32 @@ describe('lançamento', () => {
       notes: null,
       is_ignored: false,
     })
+  })
+})
+
+describe('parcelas e fatura', () => {
+  it('não inclui installments no corpo quando é 1', () => {
+    const body = toTransactionBody({ ...entryDefaults({ transaction }), installments: 1 })
+
+    expect(body).not.toHaveProperty('installments')
+  })
+
+  it('inclui installments no corpo quando maior que 1', () => {
+    const body = toTransactionBody({ ...entryDefaults({ transaction }), installments: 3 })
+
+    expect(body.installments).toBe(3)
+  })
+
+  it('não inclui statement_id quando não mudou', () => {
+    const values = { ...entryDefaults({ transaction }), statement_id: 10 }
+
+    expect(toTransactionBody(values, { initialStatementId: 10 })).not.toHaveProperty('statement_id')
+  })
+
+  it('inclui statement_id quando mudou', () => {
+    const values = { ...entryDefaults({ transaction }), statement_id: 11 }
+
+    expect(toTransactionBody(values, { initialStatementId: 10 }).statement_id).toBe(11)
   })
 })
 

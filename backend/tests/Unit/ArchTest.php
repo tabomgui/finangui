@@ -26,3 +26,13 @@ it('todo model de domínio usa BelongsToUser', function () {
             ->toBeTrue("{$class} precisa usar BelongsToUser");
     }
 });
+
+it('todo job de domínio roda dentro de UserContext', function () {
+    $files = glob(app_path('Domain/*/Jobs/*.php'));
+
+    expect($files)->toBeArray();
+
+    foreach ($files as $file) {
+        $this->assertStringContainsString('UserContext::run(', file_get_contents($file), basename($file).' precisa usar UserContext::run()');
+    }
+});

@@ -32,7 +32,7 @@ export function TransactionFilters({ filters }: { filters: Filters }) {
     if (urlSearch !== debouncedSearch.trim()) setSearch(urlSearch)
   }
 
-  const setFilter = <K extends keyof Filters>(key: K, value: Filters[K] | undefined) =>
+  const setFilter = <K extends keyof Omit<Filters, 'statement_id'>>(key: K, value: Filters[K] | undefined) =>
     setParams((current) => paramsWithFilter(current, key, value), { replace: true })
 
   useEffect(() => {

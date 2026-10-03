@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { formatDate, formatDayLabel, formatMonth, monthKey, monthRange, parseDateOnly, shiftMonth, toDateOnly } from './date'
+import { formatDate, formatDayLabel, formatMonth, isDateOnly, monthKey, monthRange, parseDateOnly, shiftMonth, toDateOnly } from './date'
+
+describe('isDateOnly', () => {
+  it('só reconhece o formato "YYYY-MM-DD", sem validar o calendário', () => {
+    expect(isDateOnly('2026-10-01')).toBe(true)
+    expect(isDateOnly('2026-13-40')).toBe(true)
+    expect(isDateOnly('01/10/2026')).toBe(false)
+    expect(isDateOnly('2026-10-01T00:00:00')).toBe(false)
+    expect(isDateOnly('')).toBe(false)
+  })
+})
 
 describe('parseDateOnly', () => {
   it('interpreta em horário local, sem deslocar o dia', () => {

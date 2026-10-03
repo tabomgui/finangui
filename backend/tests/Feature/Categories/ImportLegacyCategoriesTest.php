@@ -11,7 +11,7 @@ it('importa categorias legadas achatando para um nível', function () {
         'email' => 'gui@example.com',
     ])->assertSuccessful();
 
-    $categories = Category::query()->where('user_id', $user->id)->get()->keyBy('name');
+    $categories = Category::query()->withoutGlobalScopes()->where('user_id', $user->id)->get()->keyBy('name');
 
     expect($categories)->toHaveCount(5)
         ->and($categories['Mercado']->parent_id)->toBe($categories['Alimentação']->id)
@@ -29,7 +29,7 @@ it('é idempotente', function () {
     $this->artisan('legacy:import-categories', $args)->assertSuccessful();
     $this->artisan('legacy:import-categories', $args)->assertSuccessful();
 
-    expect(Category::query()->where('user_id', $user->id)->count())->toBe(5);
+    expect(Category::query()->withoutGlobalScopes()->where('user_id', $user->id)->count())->toBe(5);
 });
 
 it('ignora linhas com formato inválido e importa as válidas', function () {
@@ -51,7 +51,7 @@ it('ignora linhas com formato inválido e importa as válidas', function () {
 
     unlink($path);
 
-    $categories = Category::query()->where('user_id', $user->id)->get()->keyBy('name');
+    $categories = Category::query()->withoutGlobalScopes()->where('user_id', $user->id)->get()->keyBy('name');
 
     expect($categories)->toHaveCount(1)
         ->and($categories->has('NULL'))->toBeFalse()

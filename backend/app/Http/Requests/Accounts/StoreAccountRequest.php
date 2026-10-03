@@ -20,6 +20,10 @@ final class StoreAccountRequest extends ApiRequest
             'opening_balance' => ['sometimes', 'integer', 'between:-1000000000000000,1000000000000000'],
             'color' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'icon' => ['nullable', 'string', 'max:50'],
+            'credit_limit' => ['required_if:type,credit_card', 'prohibited_unless:type,credit_card', 'nullable', 'integer', 'between:0,1000000000000000'],
+            'closing_day' => ['required_if:type,credit_card', 'prohibited_unless:type,credit_card', 'nullable', 'integer', 'between:1,31'],
+            'due_day' => ['required_if:type,credit_card', 'prohibited_unless:type,credit_card', 'nullable', 'integer', 'between:1,31'],
+            'last_four' => ['prohibited_unless:type,credit_card', 'nullable', 'string', 'regex:/^\d{4}$/'],
         ];
     }
 }

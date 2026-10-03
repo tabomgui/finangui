@@ -6,7 +6,7 @@ Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`;
 
 - Pastas por domínio em `app/Domain/<Domínio>/{Models,Actions,Data,Enums,Queries,Errors,Support}`.
 - Controllers finos (`app/Http/Controllers/Api/V1`): FormRequest valida, Action executa regra de negócio, JsonResource responde. CRUD trivial pode usar Eloquent direto no controller; qualquer regra vai para uma Action.
-- Todo model de domínio usa `App\Models\Concerns\BelongsToUser`. Toda rota de recurso fica atrás de `auth:sanctum`. `tests/Feature/RouteAuthenticationTest.php` garante isso automaticamente para toda rota `api/*`, exceto as da allowlist no próprio teste — rota pública nova precisa entrar nessa lista.
+- Todo model de domínio usa `App\Models\Concerns\BelongsToUser`. O global scope falha fechado: sem usuário autenticado lança `MissingUserContext`. Fora de request (job, comando, scheduler), rode o trabalho dentro de `App\Support\UserContext::run($user, fn () => ...)`; acesso global legítimo (seeders, factories, importação) usa `withoutGlobalScopes()` explicitamente. Qualquer código enfileirado/agendado (jobs, listeners, notifications, closures do scheduler) que toque model de domínio também precisa rodar dentro de `UserContext::run()`. Jobs em `app/Domain/*/Jobs` precisam usar `UserContext::run(` (arch test). Toda rota de recurso fica atrás de `auth:sanctum`. `tests/Feature/RouteAuthenticationTest.php` garante isso automaticamente para toda rota `api/*`, exceto as da allowlist no próprio teste — rota pública nova precisa entrar nessa lista.
 - Regras `exists`/`unique` que referenciam recursos do usuário são escopadas por `user_id`.
 - Dinheiro: `bigint` em centavos, `App\Support\Money\Money` + `MoneyCast`. `amount` sempre positivo; sentido em `direction` (`in`/`out`). Nunca float.
 - Valores derivados (saldos, totais) são calculados no backend, nunca gravados e nunca calculados no frontend.
@@ -16,6 +16,8 @@ Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`;
 - Projeto novo: altere migrations só enquanto não houver deploy; depois disso, sempre migration nova.
 - `make lint` roda Larastan em nível 6. Quando o apontamento é falso positivo e justificado, use `@phpstan-ignore <id> (motivo)` na linha, nunca um baseline.
 - Worker de dev usa `queue:listen` (reflete mudança de código sem reiniciar o container); não usar `queue:work` no Docker Compose de desenvolvimento.
+- Cartão de crédito é uma conta `credit_card`. A fatura de qualquer transação de cartão é decidida só por `App\Domain\Cards\Actions\AssignStatement` (criar/editar transação e transferência chamam ela); datas nominais vêm de `InvoiceCycle` (puro) e faturas já gravadas têm prioridade (`StatementResolver`). Total, pago, restante, status e limite são derivados (`CardStatement::scopeWithTotals`, `Account::scopeWithCardUsage`), nunca gravados.
+- Pagar fatura é transferência (`PayStatement`), nunca despesa. Parcelas: conta/valor/data/tipo travados; excluir uma parcela exclui o parcelamento; cancelar exclui só as projetadas.
 
 ## Frontend
 
@@ -46,8 +48,10 @@ Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`;
 - Toda página com dados mostra um estado de erro com botão "Tentar de novo" (refetch), não só um alerta.
 - Qualquer superfície no topo do `PageBody` fica sobre a faixa esmeralda do `PageHeader`: precisa ser opaca (ex.: `bg-card` no input), senão a faixa verde aparece atrás.
 - `CardHeader` do shadcn é um grid (pensado pra `CardAction`); quando o conteúdo é só título + algo à direita em linha, declare `flex flex-row items-center justify-between` explicitamente na própria instância.
-- jsdom não implementa `ResizeObserver` nem `scrollIntoView` (usados por componentes radix-ui/cmdk); os stubs ficam em `src/test/setup.ts`, não devem ser duplicados em testes individuais.
+- jsdom não implementa `ResizeObserver`, `scrollIntoView` nem a Pointer Capture API (`hasPointerCapture`/`setPointerCapture`/`releasePointerCapture`), usados por componentes radix-ui/cmdk (ex.: `Select` precisa da Pointer Capture API no trigger); os stubs ficam em `src/test/setup.ts`, não devem ser duplicados em testes individuais.
 - Antes de commit: `make front-check`.
+- Cartões em `features/cards`. Status e "vence em N dias" vêm prontos da API (`status`, `days_until_due`); `statement-labels.ts` só traduz para texto.
+- Linha de transação: subtítulo montado por `transactionSubtitle`; o tipo de um lançamento em edição sai de `editKind` (entry/transfer/installment).
 
 ## UI
 

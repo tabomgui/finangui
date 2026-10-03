@@ -1,11 +1,12 @@
 import { PieChart } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import type { TopCategory } from '@/api/types'
 import { CategoryIcon } from '@/components/shared/category-icon'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { monthRange } from '@/lib/date'
 import { formatMoney } from '@/lib/money'
-import { categoryShares, type TopCategory } from './shares'
+import { categoryShares } from './shares'
 
 type TopCategoriesCardProps = { categories: TopCategory[]; expense: number; currency: string; month: string }
 

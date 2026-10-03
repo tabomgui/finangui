@@ -22,6 +22,8 @@ final readonly class TransactionData
         public ?string $payee = null,
         public bool $isIgnored = false,
         public array $tagIds = [],
+        public ?int $statementId = null,
+        public int $installments = 1,
     ) {}
 
     /**
@@ -40,6 +42,8 @@ final readonly class TransactionData
             payee: $data['payee'] ?? null,
             isIgnored: (bool) ($data['is_ignored'] ?? false),
             tagIds: array_map('intval', $data['tag_ids'] ?? []),
+            statementId: isset($data['statement_id']) ? (int) $data['statement_id'] : null,
+            installments: (int) ($data['installments'] ?? 1),
         );
     }
 }

@@ -52,6 +52,118 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["card.index"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/{account}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["card.show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/{account}/statements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["card.statements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/{account}/statement-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["card.statementPreview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cards/{account}/installment-plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["card.installmentPlans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/card-statements/{statement}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["cardStatement.show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["cardStatement.update"];
+        trace?: never;
+    };
+    "/card-statements/{statement}/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cardStatement.pay"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/categories": {
         parameters: {
             query?: never;
@@ -94,6 +206,38 @@ export interface paths {
         get: operations["v1.dashboard"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/installment-plans/{plan}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["installmentPlan.update"];
+        trace?: never;
+    };
+    "/installment-plans/{plan}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["installmentPlan.cancel"];
         delete?: never;
         options?: never;
         head?: never;
@@ -277,6 +421,10 @@ export interface components {
             currency: string;
             opening_balance: number;
             balance: number;
+            credit_limit: number | null;
+            closing_day: number | null;
+            due_day: number | null;
+            last_four: string | null;
             color: string | null;
             icon: string | null;
             is_archived: boolean;
@@ -285,7 +433,42 @@ export interface components {
          * AccountType
          * @enum {string}
          */
-        AccountType: "checking" | "savings" | "cash";
+        AccountType: "checking" | "savings" | "cash" | "credit_card";
+        /** CardResource */
+        CardResource: {
+            id: number;
+            name: string;
+            currency: string;
+            color: string | null;
+            icon: string | null;
+            is_archived: boolean;
+            last_four: string | null;
+            credit_limit: number;
+            closing_day: number;
+            due_day: number;
+            balance: number;
+            limit: {
+                used: number;
+                projected: number;
+                available: number;
+            };
+            current_statement: components["schemas"]["CardStatementResource"] | null;
+        };
+        /** CardStatementResource */
+        CardStatementResource: {
+            id: number;
+            account_id: number;
+            closing_date: string;
+            due_date: string;
+            reported_total: number | null;
+            total: number;
+            paid: number;
+            remaining: number;
+            status: components["schemas"]["StatementStatus"];
+            days_until_due: number;
+            is_overdue: boolean;
+            has_divergence: boolean;
+        };
         /**
          * CategoryKind
          * @enum {string}
@@ -308,11 +491,35 @@ export interface components {
          * @enum {string}
          */
         Direction: "in" | "out";
+        /** InstallmentPlanResource */
+        InstallmentPlanResource: {
+            id: number;
+            account_id: number;
+            description: string;
+            total_amount: number;
+            installments: number;
+            installment_amount: number;
+            purchase_date: string;
+            cancelled_at: string | null;
+            category_id: number | null;
+            posted_count: number;
+            projected_count: number;
+            remaining_amount: number;
+            next_date: string | null;
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Format: email */
             email: string;
             password: string;
+        };
+        /** PayStatementRequest */
+        PayStatementRequest: {
+            from_account_id: number;
+            amount: number;
+            /** Format: date */
+            date: string;
+            description?: string | null;
         };
         /** RegisterRequest */
         RegisterRequest: {
@@ -327,6 +534,11 @@ export interface components {
             name: string;
             color?: string | null;
         };
+        /**
+         * StatementStatus
+         * @enum {string}
+         */
+        StatementStatus: "open" | "closed" | "partial" | "paid";
         /** StoreAccountRequest */
         StoreAccountRequest: {
             name: string;
@@ -335,6 +547,10 @@ export interface components {
             opening_balance?: number;
             color?: string | null;
             icon?: string | null;
+            credit_limit?: number | null;
+            closing_day?: number | null;
+            due_day?: number | null;
+            last_four?: string | null;
         };
         /** StoreCategoryRequest */
         StoreCategoryRequest: {
@@ -358,6 +574,12 @@ export interface components {
             payee?: string | null;
             is_ignored?: boolean;
             tag_ids?: number[];
+            /**
+             * @description Sem `nullable`: enviar statement_id como null é rejeitado de propósito.
+             *     A escolha é automática quando o campo simplesmente não é enviado.
+             */
+            statement_id?: number;
+            installments?: number;
         };
         /** StoreTransferRequest */
         StoreTransferRequest: {
@@ -411,6 +633,12 @@ export interface components {
             categorized_by: string | null;
             is_ignored: boolean;
             transfer_id: string | null;
+            statement_id: number | null;
+            installment: {
+                plan_id: number;
+                number: number;
+                total: number;
+            } | null;
         };
         /**
          * TransactionSource
@@ -444,6 +672,10 @@ export interface components {
             color?: string | null;
             icon?: string | null;
             is_archived?: boolean;
+            credit_limit?: number;
+            closing_day?: number;
+            due_day?: number;
+            last_four?: string | null;
         };
         /** UpdateCategoryRequest */
         UpdateCategoryRequest: {
@@ -454,12 +686,25 @@ export interface components {
             is_transfer?: boolean;
             is_archived?: boolean;
         };
+        /** UpdateInstallmentPlanRequest */
+        UpdateInstallmentPlanRequest: {
+            description?: string;
+            category_id?: number | null;
+        };
         /** UpdateProfileRequest */
         UpdateProfileRequest: {
             name?: string;
             password?: string;
             current_password?: string | null;
             password_confirmation?: string;
+        };
+        /** UpdateStatementRequest */
+        UpdateStatementRequest: {
+            /** Format: date */
+            closing_date?: string;
+            /** Format: date */
+            due_date?: string;
+            reported_total?: number | null;
         };
         /** UpdateTransactionRequest */
         UpdateTransactionRequest: {
@@ -474,6 +719,11 @@ export interface components {
             payee?: string | null;
             is_ignored?: boolean;
             tag_ids?: number[];
+            /**
+             * @description Sem `nullable`: enviar statement_id como null é rejeitado de propósito.
+             *     A escolha é automática quando o campo simplesmente não é enviado.
+             */
+            statement_id?: number;
         };
         /** UpdateTransferRequest */
         UpdateTransferRequest: {
@@ -493,6 +743,11 @@ export interface components {
             avatar: string | null;
             has_password: boolean;
             google_linked: boolean;
+            /**
+             * @description Configuração da instância (ainda não é por usuário); fica aqui para o
+             *     frontend não fixar 'BRL' ao decidir quando mostrar a moeda de uma conta.
+             */
+            primary_currency: string;
         };
     };
     responses: {
@@ -688,6 +943,18 @@ export interface operations {
             };
             401: components["responses"]["AuthenticationException"];
             404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "account_type_locked";
+                        message: string;
+                    };
+                };
+            };
             422: components["responses"]["ValidationException"];
         };
     };
@@ -713,6 +980,257 @@ export interface operations {
                     };
                 };
             };
+        };
+    };
+    "card.index": {
+        parameters: {
+            query?: {
+                include_archived?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Array of `CardResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["CardResource"][];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "card.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account ID */
+                account: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `CardResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["CardResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "card.statements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account ID */
+                account: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Array of `CardStatementResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["CardStatementResource"][];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "card.statementPreview": {
+        parameters: {
+            query: {
+                date: string;
+            };
+            header?: never;
+            path: {
+                /** @description The account ID */
+                account: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            statement_id: number | null;
+                            closing_date: string;
+                            due_date: string;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "card.installmentPlans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account ID */
+                account: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Array of `InstallmentPlanResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InstallmentPlanResource"][];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "cardStatement.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The statement ID */
+                statement: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `CardStatementResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["CardStatementResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "cardStatement.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The statement ID */
+                statement: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["UpdateStatementRequest"];
+            };
+        };
+        responses: {
+            /** @description `CardStatementResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["CardStatementResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "cardStatement.pay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The statement ID */
+                statement: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayStatementRequest"];
+            };
+        };
+        responses: {
+            /** @description `TransferResource` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TransferResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "statement_already_paid";
+                        message: string;
+                    } | {
+                        /** @enum {string} */
+                        code: "transfer_same_account";
+                        message: string;
+                    } | {
+                        /** @enum {string} */
+                        code: "transfer_currency_mismatch";
+                        message: string;
+                    };
+                };
+            };
+            422: components["responses"]["ValidationException"];
         };
     };
     "categories.index": {
@@ -909,6 +1427,73 @@ export interface operations {
             };
             401: components["responses"]["AuthenticationException"];
             422: components["responses"]["ValidationException"];
+        };
+    };
+    "installmentPlan.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The plan ID */
+                plan: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["UpdateInstallmentPlanRequest"];
+            };
+        };
+        responses: {
+            /** @description `InstallmentPlanResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InstallmentPlanResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "installment_plan_finished";
+                        message: string;
+                    };
+                };
+            };
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "installmentPlan.cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The plan ID */
+                plan: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
         };
     };
     "me.show": {
@@ -1185,6 +1770,7 @@ export interface operations {
             query?: {
                 account_id?: number;
                 category_id?: number;
+                statement_id?: number;
                 tag_id?: number;
                 from?: string;
                 to?: string;
@@ -1346,6 +1932,10 @@ export interface operations {
                     "application/json": {
                         /** @enum {string} */
                         code: "transfer_leg_locked";
+                        message: string;
+                    } | {
+                        /** @enum {string} */
+                        code: "installment_locked";
                         message: string;
                     } | {
                         /** @enum {string} */

@@ -18,6 +18,7 @@ type ConfirmDialogProps = {
   title: string
   description?: string
   confirmLabel?: string
+  cancelLabel?: string
   destructive?: boolean
   /** Pode ser assíncrono; o diálogo fica em estado de carregamento até terminar. */
   onConfirm: () => Promise<void> | void
@@ -29,6 +30,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel = 'Confirmar',
+  cancelLabel = 'Cancelar',
   destructive = false,
   onConfirm,
 }: ConfirmDialogProps) {
@@ -54,7 +56,7 @@ export function ConfirmDialog({
           {description && <AlertDialogDescription>{description}</AlertDialogDescription>}
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>Cancelar</AlertDialogCancel>
+          <AlertDialogCancel disabled={pending}>{cancelLabel}</AlertDialogCancel>
           <Button variant={destructive ? 'destructive' : 'default'} disabled={pending} onClick={handleConfirm}>
             {pending && <LoaderCircle className="h-4 w-4 animate-spin" />}
             {confirmLabel}

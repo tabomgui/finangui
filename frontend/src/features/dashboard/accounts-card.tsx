@@ -1,9 +1,8 @@
 import { Link } from 'react-router-dom'
+import type { DashboardAccount } from '@/api/types'
 import { CategoryIcon } from '@/components/shared/category-icon'
 import { MoneyText } from '@/components/shared/money-text'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-
-type DashboardAccount = { id: number; name: string; currency: string; color: string | null; icon: string | null; balance: number }
 
 export function AccountsCard({ accounts }: { accounts: DashboardAccount[] }) {
   return (

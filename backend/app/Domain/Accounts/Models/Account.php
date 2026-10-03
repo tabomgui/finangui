@@ -3,6 +3,7 @@
 namespace App\Domain\Accounts\Models;
 
 use App\Domain\Accounts\Enums\AccountType;
+use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\Concerns\BelongsToUser;
@@ -19,6 +20,10 @@ use LogicException;
 /**
  * @property AccountType $type
  * @property Money $opening_balance
+ * @property Money|null $credit_limit
+ * @property int|null $closing_day
+ * @property int|null $due_day
+ * @property string|null $last_four
  */
 class Account extends Model
 {
@@ -27,7 +32,10 @@ class Account extends Model
     /** @use HasFactory<AccountFactory> */
     use HasFactory;
 
-    protected $fillable = ['user_id', 'name', 'type', 'currency', 'opening_balance', 'color', 'icon', 'is_archived'];
+    protected $fillable = [
+        'user_id', 'name', 'type', 'currency', 'opening_balance', 'color', 'icon', 'is_archived',
+        'credit_limit', 'closing_day', 'due_day', 'last_four',
+    ];
 
     /**
      * Espelham os defaults da migration: sem isso, um create() sem a chave
@@ -50,12 +58,20 @@ class Account extends Model
             'type' => AccountType::class,
             'opening_balance' => MoneyCast::class,
             'is_archived' => 'boolean',
+            'credit_limit' => MoneyCast::class,
+            'closing_day' => 'integer',
+            'due_day' => 'integer',
         ];
     }
 
     protected static function newFactory(): AccountFactory
     {
         return AccountFactory::new();
+    }
+
+    public function isCreditCard(): bool
+    {
+        return $this->type === AccountType::CreditCard;
     }
 
     /**
@@ -67,6 +83,14 @@ class Account extends Model
     }
 
     /**
+     * @return HasMany<CardStatement, $this>
+     */
+    public function statements(): HasMany
+    {
+        return $this->hasMany(CardStatement::class);
+    }
+
+    /**
      * Carrega o saldo calculado numa única query (subselect por conta).
      * Saldo = opening_balance + Σ(posted, não ignoradas) com sinal por direction.
      * Com $asOf, considera só transações com date <= $asOf (comparação por data, sem hora).
@@ -75,7 +99,11 @@ class Account extends Model
      */
     public function scopeWithBalance(Builder $query, ?CarbonInterface $asOf = null): void
     {
-        $query->select('accounts.*')->addSelect(['balance_net' => Transaction::query()
+        if ($query->getQuery()->columns === null) {
+            $query->select('accounts.*');
+        }
+
+        $query->addSelect(['balance_net' => Transaction::query()
             ->withoutGlobalScopes()
             ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0)")
             ->whereColumn('transactions.account_id', 'accounts.id')
@@ -97,5 +125,51 @@ class Account extends Model
         }
 
         return $this->opening_balance->plus(Money::cents((int) $this->attributes['balance_net']));
+    }
+
+    /**
+     * Carrega o líquido do cartão para o cálculo de limite: o atual (lançadas e
+     * pendentes) e o das parcelas projetadas. Recorrências projetadas não entram.
+     *
+     * @param  Builder<Account>  $query
+     */
+    public function scopeWithCardUsage(Builder $query): void
+    {
+        $signed = "COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0)";
+        $linked = fn () => Transaction::query()->withoutGlobalScopes()
+            ->whereColumn('transactions.account_id', 'accounts.id')
+            ->where('is_ignored', false);
+
+        if ($query->getQuery()->columns === null) {
+            $query->select('accounts.*');
+        }
+
+        $query->addSelect([
+            'card_net_current' => $linked()->selectRaw($signed)
+                ->whereIn('status', [TransactionStatus::Posted->value, TransactionStatus::Pending->value]),
+            'card_net_projected' => $linked()->selectRaw($signed)
+                ->where('status', TransactionStatus::Projected->value)
+                ->whereNotNull('installment_plan_id'),
+        ]);
+    }
+
+    /**
+     * @return array{used: Money, projected: Money, available: Money}
+     */
+    public function cardUsage(): array
+    {
+        if (! array_key_exists('card_net_current', $this->attributes)) {
+            throw new LogicException('Carregue o cartão com withCardUsage() antes de ler o limite.');
+        }
+
+        $used = max(-($this->opening_balance->cents + (int) $this->attributes['card_net_current']), 0);
+        $projected = max(-(int) $this->attributes['card_net_projected'], 0);
+        $limit = $this->credit_limit->cents ?? 0;
+
+        return [
+            'used' => Money::cents($used),
+            'projected' => Money::cents($projected),
+            'available' => Money::cents($limit - $used - $projected),
+        ];
     }
 }

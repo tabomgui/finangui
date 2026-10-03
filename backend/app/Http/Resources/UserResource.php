@@ -23,6 +23,9 @@ final class UserResource extends JsonResource
             'avatar' => $this->avatar,
             'has_password' => $this->password !== null,
             'google_linked' => $this->google_id !== null,
+            // Configuração da instância (ainda não é por usuário); fica aqui para o
+            // frontend não fixar 'BRL' ao decidir quando mostrar a moeda de uma conta.
+            'primary_currency' => (string) config('finangui.primary_currency'),
         ];
     }
 }

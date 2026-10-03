@@ -24,6 +24,8 @@ const transaction = (overrides: Partial<Transaction>): Transaction => ({
   categorized_by: null,
   is_ignored: false,
   transfer_id: null,
+  statement_id: null,
+  installment: null,
   ...overrides,
 })
 
@@ -58,5 +60,16 @@ describe('TransactionRow', () => {
     const amount = screen.getByText(/R\$/)
     expect(amount).not.toHaveClass('text-income')
     expect(amount).not.toHaveClass('text-expense')
+  })
+
+  it('mostra o número da parcela no subtítulo', () => {
+    renderRow(
+      transaction({
+        category: { id: 3, parent_id: null, name: 'Eletrônicos', icon: null, color: null, is_transfer: false, is_transfer_effective: false },
+        installment: { plan_id: 1, number: 3, total: 10 },
+      }),
+    )
+
+    expect(screen.getByText(/3\/10/)).toBeInTheDocument()
   })
 })

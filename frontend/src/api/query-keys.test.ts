@@ -10,18 +10,23 @@ function seed(client: QueryClient) {
     queryKeys.transactions({}),
     queryKeys.transfer('abc'),
     queryKeys.dashboard('2026-10'),
+    queryKeys.cards(false),
+    queryKeys.card(1),
+    queryKeys.cardStatements(1),
+    queryKeys.statementPreview(1, '2026-10-10'),
+    queryKeys.installmentPlans(1),
   ]) {
     client.setQueryData(key, 'x')
   }
 }
 
 function invalidated(client: QueryClient) {
-  return client
+  const roots = client
     .getQueryCache()
     .getAll()
     .filter((query) => query.state.isInvalidated)
-    .map((query) => query.queryKey[0])
-    .sort()
+    .map((query) => query.queryKey[0] as string)
+  return [...new Set(roots)].sort()
 }
 
 describe('query keys', () => {
@@ -29,18 +34,26 @@ describe('query keys', () => {
     expect(queryKeys.transactions({ search: '', account_id: undefined })).toEqual(['transactions', 'list', {}])
   })
 
-  it('invalidateLedger invalida transações, transferências, contas e dashboard', async () => {
+  it('invalidateLedger invalida transações, transferências, contas, dashboard e cartões', async () => {
     const client = new QueryClient()
     seed(client)
     await invalidateLedger(client)
-    expect(invalidated(client)).toEqual(['accounts', 'dashboard', 'transactions', 'transfers'])
+    expect(invalidated(client)).toEqual([
+      'accounts',
+      'card-statements',
+      'cards',
+      'dashboard',
+      'installment-plans',
+      'transactions',
+      'transfers',
+    ])
   })
 
-  it('invalidateCategories invalida categorias, transações e dashboard', async () => {
+  it('invalidateCategories invalida categorias, transações, dashboard e parcelamentos', async () => {
     const client = new QueryClient()
     seed(client)
     await invalidateCategories(client)
-    expect(invalidated(client)).toEqual(['categories', 'dashboard', 'transactions'])
+    expect(invalidated(client)).toEqual(['categories', 'dashboard', 'installment-plans', 'transactions'])
   })
 
   it('invalidateTags invalida tags e transações', async () => {

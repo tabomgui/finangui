@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Domain\Accounts\Actions\UpdateAccount;
 use App\Domain\Accounts\Errors\AccountHasTransactions;
 use App\Domain\Accounts\Models\Account;
 use App\Http\Controllers\Controller;
@@ -41,11 +42,9 @@ final class AccountController extends Controller
         return AccountResource::make($this->withBalance($account));
     }
 
-    public function update(UpdateAccountRequest $request, Account $account): AccountResource
+    public function update(UpdateAccountRequest $request, Account $account, UpdateAccount $updateAccount): AccountResource
     {
-        $account->update($request->validated());
-
-        return AccountResource::make($this->withBalance($account));
+        return AccountResource::make($this->withBalance($updateAccount->handle($account, $request->validated())));
     }
 
     public function destroy(Account $account): Response

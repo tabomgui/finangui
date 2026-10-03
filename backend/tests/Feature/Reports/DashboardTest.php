@@ -155,6 +155,57 @@ it('não conta no saldo transação futura dentro do próprio mês atual, mas co
         ->assertJsonPath('data.expense', 200);
 });
 
+it('conta o saldo do cartão no saldo total, mesmo com saldo inicial negativo', function () {
+    actingAsUser();
+    Account::factory()->create(['name' => 'A', 'opening_balance' => 1000]);
+    Account::factory()->creditCard()->create(['name' => 'Cartão', 'opening_balance' => -2000]);
+
+    $this->getJson('/api/v1/dashboard?month=2026-10')
+        ->assertJsonPath('data.total_balance', -1000)
+        ->assertJsonCount(2, 'data.accounts');
+});
+
+it('parcela projetada do mês não entra em despesa/maiores categorias; a lançada conta na própria data', function () {
+    actingAsUser();
+    $this->travelTo('2026-10-06');
+    $category = Category::factory()->create(['name' => 'Eletrônicos']);
+    $card = Account::factory()->creditCard(closingDay: 10, dueDay: 20)->create();
+
+    $this->postJson('/api/v1/transactions', [
+        'account_id' => $card->id, 'date' => '2026-10-05', 'amount' => 30000, 'direction' => 'out',
+        'description' => 'Notebook', 'installments' => 2, 'category_id' => $category->id,
+    ])->assertCreated();
+    // Parcela 1 (2026-10-05) já lançada (posted); parcela 2 (2026-11-05) é projetada.
+
+    $this->getJson('/api/v1/dashboard?month=2026-10')
+        ->assertJsonPath('data.expense', 15000)
+        ->assertJsonPath('data.top_categories.0.amount', 15000);
+
+    $this->getJson('/api/v1/dashboard?month=2026-11')
+        ->assertJsonPath('data.expense', 0)
+        ->assertJsonCount(0, 'data.top_categories');
+});
+
+it('pagar fatura não muda receita nem despesa (é transferência, não lançamento)', function () {
+    actingAsUser();
+    $this->travelTo('2026-10-06');
+    $checking = Account::factory()->create(['opening_balance' => 100000]);
+    $card = Account::factory()->creditCard(closingDay: 10, dueDay: 20)->create();
+    $this->postJson('/api/v1/transactions', [
+        'account_id' => $card->id, 'date' => '2026-10-05', 'amount' => 30000, 'direction' => 'out', 'description' => 'Compra',
+    ])->assertCreated();
+
+    $statement = $this->getJson("/api/v1/cards/{$card->id}")->json('data.current_statement');
+
+    $this->postJson("/api/v1/card-statements/{$statement['id']}/payments", [
+        'from_account_id' => $checking->id, 'amount' => 30000, 'date' => '2026-10-06',
+    ])->assertCreated();
+
+    $this->getJson('/api/v1/dashboard?month=2026-10')
+        ->assertJsonPath('data.income', 0)
+        ->assertJsonPath('data.expense', 30000);
+});
+
 it('isola o resumo de dados de outro usuário', function () {
     $user = actingAsUser();
     $this->travelTo('2026-10-15');

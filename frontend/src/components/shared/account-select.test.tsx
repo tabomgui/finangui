@@ -12,6 +12,10 @@ const account = (overrides: Partial<Account>): Account => ({
   currency: 'BRL',
   opening_balance: 0,
   balance: 0,
+  credit_limit: null,
+  closing_day: null,
+  due_day: null,
+  last_four: null,
   color: null,
   icon: null,
   is_archived: false,
@@ -68,5 +72,66 @@ describe('AccountSelect', () => {
     const options = screen.getAllByRole('option').map((option) => option.textContent)
 
     expect(options).toEqual(['Inter'])
+  })
+
+  // `credit_card` ainda não existe em `AccountType` (entra numa etapa posterior, fora deste
+  // arquivo); o filtro em si é genérico, então os tipos já existentes bastam para testá-lo.
+  it('com types, lista só os tipos informados', () => {
+    const client = new QueryClient()
+    client.setQueryData(queryKeys.accounts(true), [
+      account({ id: 1, name: 'Inter', type: 'checking' }),
+      account({ id: 2, name: 'Poupança', type: 'savings' }),
+    ])
+
+    render(
+      <QueryClientProvider client={client}>
+        <AccountSelect id="acc" value={null} onChange={() => {}} types={['savings']} />
+      </QueryClientProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('combobox'))
+    const options = screen.getAllByRole('option').map((option) => option.textContent)
+
+    expect(options).toEqual(['Poupança'])
+  })
+
+  it('com excludeTypes, esconde os tipos informados', () => {
+    const client = new QueryClient()
+    client.setQueryData(queryKeys.accounts(true), [
+      account({ id: 1, name: 'Inter', type: 'checking' }),
+      account({ id: 2, name: 'Poupança', type: 'savings' }),
+    ])
+
+    render(
+      <QueryClientProvider client={client}>
+        <AccountSelect id="acc" value={null} onChange={() => {}} excludeTypes={['savings']} />
+      </QueryClientProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('combobox'))
+    const options = screen.getAllByRole('option').map((option) => option.textContent)
+
+    expect(options).toEqual(['Inter'])
+  })
+
+  it('o filtro por tipo não esconde a conta já selecionada', () => {
+    const client = new QueryClient()
+    client.setQueryData(queryKeys.accounts(true), [
+      account({ id: 1, name: 'Inter', type: 'checking' }),
+      account({ id: 2, name: 'Poupança', type: 'savings' }),
+    ])
+
+    render(
+      <QueryClientProvider client={client}>
+        <AccountSelect id="acc" value={2} onChange={() => {}} types={['checking']} />
+      </QueryClientProvider>,
+    )
+
+    expect(screen.getByRole('combobox')).toHaveTextContent('Poupança')
+
+    fireEvent.click(screen.getByRole('combobox'))
+    const options = screen.getAllByRole('option').map((option) => option.textContent)
+
+    expect(options).toContain('Poupança')
   })
 })

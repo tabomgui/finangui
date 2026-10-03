@@ -3,6 +3,8 @@
 namespace App\Domain\Transactions\Models;
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Models\CardStatement;
+use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Tags\Models\Tag;
 use App\Domain\Transactions\Enums\Direction;
@@ -37,7 +39,8 @@ class Transaction extends Model
         'user_id', 'account_id', 'date', 'amount', 'direction', 'currency',
         'description', 'original_description', 'description_locked', 'notes',
         'category_id', 'payee', 'status', 'source', 'external_id', 'categorized_by',
-        'is_ignored', 'transfer_id', 'raw',
+        'is_ignored', 'transfer_id', 'raw', 'statement_id',
+        'installment_plan_id', 'installment_number',
     ];
 
     /**
@@ -67,6 +70,7 @@ class Transaction extends Model
             'description_locked' => 'boolean',
             'is_ignored' => 'boolean',
             'raw' => 'array',
+            'installment_number' => 'integer',
         ];
     }
 
@@ -99,9 +103,30 @@ class Transaction extends Model
         return $this->belongsToMany(Tag::class);
     }
 
+    /**
+     * @return BelongsTo<CardStatement, $this>
+     */
+    public function statement(): BelongsTo
+    {
+        return $this->belongsTo(CardStatement::class, 'statement_id');
+    }
+
+    /**
+     * @return BelongsTo<InstallmentPlan, $this>
+     */
+    public function installmentPlan(): BelongsTo
+    {
+        return $this->belongsTo(InstallmentPlan::class);
+    }
+
     public function isTransferLeg(): bool
     {
         return $this->transfer_id !== null;
+    }
+
+    public function isInstallment(): bool
+    {
+        return $this->installment_plan_id !== null;
     }
 
     /**

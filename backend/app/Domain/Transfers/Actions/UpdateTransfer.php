@@ -3,6 +3,8 @@
 namespace App\Domain\Transfers\Actions;
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Actions\AssignStatement;
+use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Models\Transaction;
 use App\Domain\Transfers\Errors\TransferCurrencyMismatch;
 use App\Domain\Transfers\Errors\TransferSameAccount;
@@ -13,6 +15,8 @@ use Illuminate\Support\Facades\DB;
 
 final class UpdateTransfer
 {
+    public function __construct(private readonly AssignStatement $assignStatement) {}
+
     /**
      * @param  array<string, mixed>  $input  dados já validados (parciais)
      * @return array{out: Transaction, in: Transaction}
@@ -58,6 +62,17 @@ final class UpdateTransfer
                 if (array_key_exists('notes', $input)) {
                     $leg->notes = $input['notes'];
                 }
+
+                // A entrada (pagamento) só recalcula a fatura quando o cartão de
+                // destino muda: a fatura pode ter sido escolhida à mão e uma
+                // mudança só de data não deve desfazer essa escolha. A saída não
+                // tem esse conceito de escolha e sempre recalcula pela data.
+                $relink = $leg->isDirty('account_id') || ($leg->direction === Direction::Out && $leg->isDirty('date'));
+
+                if ($relink) {
+                    $this->assignStatement->handle($leg);
+                }
+
                 $leg->save();
             }
 

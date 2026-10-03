@@ -1,11 +1,10 @@
 import { z } from 'zod'
 import type { components } from '@/api/schema'
 import type { Direction, Transaction, Transfer } from '@/api/types'
+import { isDateOnly } from '@/lib/date'
 
 type StoreTransactionRequest = components['schemas']['StoreTransactionRequest']
 type StoreTransferRequest = components['schemas']['StoreTransferRequest']
-
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
 const amount = z
   .number()
@@ -14,7 +13,7 @@ const amount = z
 
 const description = z.string().trim().min(1, 'Informe a descrição.').max(255, 'Use no máximo 255 caracteres.')
 const notes = z.string().max(2000, 'Use no máximo 2000 caracteres.')
-const date = z.string().regex(DATE_ONLY, 'Informe a data.')
+const date = z.string().refine(isDateOnly, 'Informe a data.')
 
 export const entrySchema = z.object({
   direction: z.enum(['in', 'out']),
@@ -26,6 +25,8 @@ export const entrySchema = z.object({
   tag_ids: z.array(z.number()),
   notes,
   is_ignored: z.boolean(),
+  installments: z.number().int().min(1).max(48),
+  statement_id: z.number().nullable(),
 })
 
 // `.nullable().refine(...)` no zod 4 estreita o tipo de SAÍDA (amount/account_id passam a `number`),
@@ -48,6 +49,8 @@ export function entryDefaults(
       tag_ids: (transaction.tags ?? []).map((tag) => tag.id),
       notes: transaction.notes ?? '',
       is_ignored: transaction.is_ignored,
+      installments: 1,
+      statement_id: transaction.statement_id ?? null,
     }
   }
 
@@ -61,10 +64,15 @@ export function entryDefaults(
     tag_ids: [],
     notes: '',
     is_ignored: false,
+    installments: 1,
+    statement_id: null,
   }
 }
 
-export function toTransactionBody(values: EntryValues): StoreTransactionRequest {
+export function toTransactionBody(
+  values: EntryValues,
+  { initialStatementId = null }: { initialStatementId?: number | null } = {},
+): StoreTransactionRequest {
   return {
     direction: values.direction,
     account_id: values.account_id as number,
@@ -75,6 +83,10 @@ export function toTransactionBody(values: EntryValues): StoreTransactionRequest 
     tag_ids: values.tag_ids,
     notes: values.notes.trim() === '' ? null : values.notes.trim(),
     is_ignored: values.is_ignored,
+    ...(values.installments > 1 ? { installments: values.installments } : {}),
+    ...(values.statement_id !== null && values.statement_id !== initialStatementId
+      ? { statement_id: values.statement_id }
+      : {}),
   }
 }
 
