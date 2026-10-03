@@ -4,6 +4,7 @@ namespace App\Domain\Cards\Actions;
 
 use App\Domain\Cards\Errors\InstallmentPlanFinished;
 use App\Domain\Cards\Models\InstallmentPlan;
+use App\Domain\Rules\Support\TextNormalizer;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use Illuminate\Support\Facades\DB;
 
@@ -33,6 +34,7 @@ final class UpdateInstallmentPlan
             if (array_key_exists('description', $input) && $input['description'] !== $plan->description) {
                 $plan->description = $input['description'];
                 $changes['description'] = $input['description'];
+                $changes['description_key'] = TextNormalizer::key($input['description']);
                 $changes['description_locked'] = true;
             } elseif (array_key_exists('description', $input)) {
                 $plan->description = $input['description'];

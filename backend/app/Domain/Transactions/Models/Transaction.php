@@ -6,6 +6,7 @@ use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Categories\Models\Category;
+use App\Domain\Rules\Support\TextNormalizer;
 use App\Domain\Tags\Models\Tag;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Enums\TransactionSource;
@@ -54,6 +55,7 @@ class Transaction extends Model
         'status' => 'posted',
         'source' => 'manual',
         'is_ignored' => false,
+        'description_key' => '',
     ];
 
     /**
@@ -77,6 +79,16 @@ class Transaction extends Model
     protected static function newFactory(): TransactionFactory
     {
         return TransactionFactory::new();
+    }
+
+    protected static function booted(): void
+    {
+        // Mantida ao salvar: o histórico de categorização agrupa por ela.
+        static::saving(function (Transaction $transaction) {
+            if ($transaction->isDirty('description') || ! $transaction->exists) {
+                $transaction->description_key = TextNormalizer::key($transaction->description);
+            }
+        });
     }
 
     /**
