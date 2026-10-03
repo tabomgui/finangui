@@ -10,6 +10,7 @@ use App\Domain\Imports\Parsers\NubankCardParser;
 use App\Domain\Imports\Parsers\NubankParser;
 use App\Domain\Imports\Parsers\OfxParser;
 use App\Domain\Imports\Parsers\Parser;
+use LogicException;
 
 /**
  * Descobre o formato de um arquivo importado pelo cabeçalho/estrutura,
@@ -65,6 +66,10 @@ final class FormatDetector
             ImportFormat::NubankCard => new NubankCardParser,
             ImportFormat::C6 => new C6Parser,
             ImportFormat::Ofx => new OfxParser,
+            // Nunca chamado de verdade: StoreImportBatchRequest rejeita
+            // 'pluggy' antes de chegar aqui, e o próprio formato não entra
+            // em self::ORDER (detecção automática).
+            ImportFormat::Pluggy => throw new LogicException('Formato pluggy não tem parser de arquivo.'),
         };
     }
 

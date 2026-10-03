@@ -11,10 +11,18 @@ enum ImportFormat: string
     case NubankCard = 'nubank_card';
     case C6 = 'c6';
     case Ofx = 'ofx';
+    // Sem parser de arquivo: linhas deste formato vêm do SyncConnection
+    // (TransactionMapper), nunca de upload — StoreImportBatchRequest exclui
+    // este caso das suas regras.
+    case Pluggy = 'pluggy';
 
     public function source(): TransactionSource
     {
-        return $this === self::Ofx ? TransactionSource::Ofx : TransactionSource::Csv;
+        return match ($this) {
+            self::Ofx => TransactionSource::Ofx,
+            self::Pluggy => TransactionSource::Pluggy,
+            default => TransactionSource::Csv,
+        };
     }
 
     public function label(): string
@@ -25,6 +33,7 @@ enum ImportFormat: string
             self::NubankCard => 'Nubank (cartão)',
             self::C6 => 'C6 (conta)',
             self::Ofx => 'OFX',
+            self::Pluggy => 'Sincronização bancária',
         };
     }
 }

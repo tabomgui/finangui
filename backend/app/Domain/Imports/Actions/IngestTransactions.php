@@ -3,9 +3,11 @@
 namespace App\Domain\Imports\Actions;
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Banking\Support\PluggyCategoryMap;
 use App\Domain\Cards\Actions\AssignStatement;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
+use App\Domain\Categories\Models\Category;
 use App\Domain\Imports\Data\ParsedRow;
 use App\Domain\Imports\Data\RowDecision;
 use App\Domain\Imports\Enums\ImportBatchStatus;
@@ -86,7 +88,13 @@ final class IngestTransactions
             // por transação inserida (ver HistoryCategorizer::suggestMany()).
             $historyMemo = $this->history->suggestMany($this->newRowHistoryPairs($decisions));
 
-            [$stats, $undo] = $this->applyDecisions($locked, $account, $decisions, $rules, $historyMemo);
+            // Idem para a fatura do banco (meta.bill_id) e para a categoria
+            // do Pluggy (meta.provider_category_id): uma consulta para o
+            // lote inteiro, não uma por linha nova.
+            $billStatementMemo = $this->preloadBillStatements($account, $decisions);
+            $pluggyCategoryMemo = $this->preloadPluggyCategories($decisions);
+
+            [$stats, $undo] = $this->applyDecisions($locked, $account, $decisions, $rules, $historyMemo, $billStatementMemo, $pluggyCategoryMemo);
 
             $createdStatementIds = CardStatement::query()
                 ->where('account_id', $account->id)
@@ -117,10 +125,19 @@ final class IngestTransactions
      * @param  list<RowDecision>  $decisions
      * @param  list<RuleDefinition>  $rules
      * @param  array<string, int>  $historyMemo
+     * @param  array<string, int>  $billStatementMemo  external_id da fatura → id do CardStatement (ver preloadBillStatements())
+     * @param  array<string, int>  $pluggyCategoryMemo  nome da categoria padrão → id da categoria do usuário (ver preloadPluggyCategories())
      * @return array{0: array<string, int>, 1: list<array{transaction_id: int, attributes: array<string, mixed>}>}
      */
-    private function applyDecisions(ImportBatch $batch, Account $account, array $decisions, array $rules, array $historyMemo): array
-    {
+    private function applyDecisions(
+        ImportBatch $batch,
+        Account $account,
+        array $decisions,
+        array $rules,
+        array $historyMemo,
+        array $billStatementMemo,
+        array $pluggyCategoryMemo,
+    ): array {
         $stats = [
             'inserted' => 0,
             'duplicates' => 0,
@@ -137,7 +154,7 @@ final class IngestTransactions
 
         foreach ($decisions as $index => $decision) {
             match ($decision->outcome) {
-                RowOutcome::New => $this->insertNew($batch, $account, $decision->row, $rules, $historyMemo, $stats, $plansBySeedIndex, $index),
+                RowOutcome::New => $this->insertNew($batch, $account, $decision->row, $rules, $historyMemo, $billStatementMemo, $pluggyCategoryMemo, $stats, $plansBySeedIndex, $index),
                 RowOutcome::Duplicate => $stats['duplicates']++,
                 RowOutcome::Update => $this->matchedOutcomes->update($decision, $undo, $stats),
                 RowOutcome::ReplaceInstallment => $decision->transactionId !== null
@@ -164,6 +181,8 @@ final class IngestTransactions
      *
      * @param  list<RuleDefinition>  $rules
      * @param  array<string, int>  $historyMemo
+     * @param  array<string, int>  $billStatementMemo  external_id da fatura → id do CardStatement (ver preloadBillStatements())
+     * @param  array<string, int>  $pluggyCategoryMemo  nome da categoria padrão → id da categoria do usuário (ver preloadPluggyCategories())
      * @param  array<string, int>  $stats
      * @param  array<int, InstallmentPlan>  $plansBySeedIndex
      */
@@ -173,6 +192,8 @@ final class IngestTransactions
         ParsedRow $row,
         array $rules,
         array $historyMemo,
+        array $billStatementMemo,
+        array $pluggyCategoryMemo,
         array &$stats,
         array &$plansBySeedIndex,
         int $index,
@@ -200,10 +221,18 @@ final class IngestTransactions
             'installment_number' => $plan !== null ? $row->installment['number'] : null,
         ]);
 
-        $this->assignStatement->handle($transaction);
+        // Fatura do banco (ex.: Pluggy): se a linha aponta um bill_id e já
+        // existe uma fatura local com esse external_id, usa essa fatura
+        // específica em vez da regra de data padrão do AssignStatement.
+        $billId = $row->meta['bill_id'] ?? null;
+        $statementId = is_string($billId) ? ($billStatementMemo[$billId] ?? null) : null;
+
+        $this->assignStatement->handle($transaction, $statementId);
         $transaction->save();
 
         $this->categorize->handleImported($transaction, $rules, $historyMemo);
+
+        $this->applyPluggyCategory($transaction, $row, $pluggyCategoryMemo);
 
         if ($plan !== null) {
             $plansBySeedIndex[$index] = $plan;
@@ -211,6 +240,108 @@ final class IngestTransactions
         }
 
         $stats['inserted']++;
+    }
+
+    /**
+     * Terceiro passo da categorização de uma linha nova importada do Pluggy
+     * — só depois de regras e histórico (handleImported(), chamado antes
+     * disso, já cobre os dois primeiros): se a transação ainda não tem
+     * categoria e a linha carrega a categoria do provedor, usa
+     * PluggyCategoryMap para achar o nome padrão e o memo pré-carregado
+     * (preloadPluggyCategories()) para achar a categoria do usuário com
+     * esse nome. Sem match em qualquer um dos dois passos, não categoriza.
+     *
+     * @param  array<string, int>  $pluggyCategoryMemo
+     */
+    private function applyPluggyCategory(Transaction $transaction, ParsedRow $row, array $pluggyCategoryMemo): void
+    {
+        if ($transaction->category_id !== null) {
+            return;
+        }
+
+        $providerCategoryId = $row->meta['provider_category_id'] ?? null;
+        $categoryName = is_string($providerCategoryId) ? PluggyCategoryMap::categoryFor($providerCategoryId) : null;
+        $categoryId = $categoryName !== null ? ($pluggyCategoryMemo[$categoryName] ?? null) : null;
+
+        if ($categoryId === null) {
+            return;
+        }
+
+        $transaction->category_id = $categoryId;
+        $transaction->categorized_by = 'pluggy';
+        $transaction->save();
+    }
+
+    /**
+     * Uma consulta para toda fatura local (CardStatement) cujo external_id
+     * aparece em meta.bill_id de alguma linha nova deste lote — em vez de
+     * uma consulta por linha. Contas que não são cartão nunca têm fatura,
+     * então nem tenta.
+     *
+     * @param  list<RowDecision>  $decisions
+     * @return array<string, int> external_id → id do CardStatement
+     */
+    private function preloadBillStatements(Account $account, array $decisions): array
+    {
+        if (! $account->isCreditCard()) {
+            return [];
+        }
+
+        $billIds = [];
+
+        foreach ($decisions as $decision) {
+            if ($decision->outcome !== RowOutcome::New) {
+                continue;
+            }
+
+            $billId = $decision->row->meta['bill_id'] ?? null;
+
+            if (is_string($billId)) {
+                $billIds[$billId] = true;
+            }
+        }
+
+        if ($billIds === []) {
+            return [];
+        }
+
+        return CardStatement::query()
+            ->where('account_id', $account->id)
+            ->whereIn('external_id', array_keys($billIds))
+            ->pluck('id', 'external_id')
+            ->all();
+    }
+
+    /**
+     * Uma consulta para toda categoria ativa do usuário cujo nome é sugerido
+     * pela categoria de alguma linha nova deste lote (via PluggyCategoryMap),
+     * em vez de uma consulta por linha.
+     *
+     * @param  list<RowDecision>  $decisions
+     * @return array<string, int> nome da categoria → id
+     */
+    private function preloadPluggyCategories(array $decisions): array
+    {
+        $names = [];
+
+        foreach ($decisions as $decision) {
+            if ($decision->outcome !== RowOutcome::New) {
+                continue;
+            }
+
+            $providerCategoryId = $decision->row->meta['provider_category_id'] ?? null;
+            $name = is_string($providerCategoryId) ? PluggyCategoryMap::categoryFor($providerCategoryId) : null;
+
+            if ($name !== null) {
+                $names[$name] = true;
+            }
+        }
+
+        if ($names === []) {
+            return [];
+        }
+
+        return Category::query()->whereIn('name', array_keys($names))->usable()->pluck('id', 'name')->all();
     }
 
     /**

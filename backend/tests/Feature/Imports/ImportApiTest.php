@@ -63,6 +63,17 @@ it('formato explícito que bate com o conteúdo cria o lote normalmente', functi
     $response->assertJsonPath('data.batch.format', 'nubank');
 });
 
+it('recusa format=pluggy no upload: não há parser de arquivo para esse formato', function () {
+    $response = $this->postJson('/api/v1/import-batches', [
+        'account_id' => $this->account->id,
+        'file' => nubankFile(importFixture('nubank.csv')),
+        'format' => 'pluggy',
+    ]);
+
+    $response->assertUnprocessable();
+    $response->assertJsonValidationErrors(['format']);
+});
+
 it('formato não reconhecido e sem format explícito dá 422 em file', function () {
     $response = $this->postJson('/api/v1/import-batches', [
         'account_id' => $this->account->id,

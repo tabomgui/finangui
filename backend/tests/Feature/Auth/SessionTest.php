@@ -116,6 +116,17 @@ it('informa a moeda principal configurada', function () {
     $this->getJson('/api/v1/me')->assertOk()->assertJsonPath('data.primary_currency', 'USD');
 });
 
+it('banking_enabled reflete se o provedor bancário está configurado', function () {
+    config(['services.pluggy.client_id' => null, 'services.pluggy.client_secret' => null]);
+    actingAsUser();
+
+    $this->getJson('/api/v1/me')->assertOk()->assertJsonPath('data.banking_enabled', false);
+
+    config(['services.pluggy.client_id' => 'id', 'services.pluggy.client_secret' => 'secret']);
+
+    $this->getJson('/api/v1/me')->assertOk()->assertJsonPath('data.banking_enabled', true);
+});
+
 it('informa o status de auth da instância', function () {
     config([
         'services.google.client_id' => null,

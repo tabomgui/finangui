@@ -3,17 +3,20 @@
 namespace App\Domain\Accounts\Models;
 
 use App\Domain\Accounts\Enums\AccountType;
+use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\Concerns\BelongsToUser;
 use App\Support\Money\Money;
 use App\Support\Money\MoneyCast;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Database\Factories\AccountFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use LogicException;
 
@@ -24,6 +27,10 @@ use LogicException;
  * @property int|null $closing_day
  * @property int|null $due_day
  * @property string|null $last_four
+ * @property int|null $connection_id
+ * @property string|null $external_id
+ * @property Money|null $provider_balance
+ * @property CarbonImmutable|null $provider_synced_at
  */
 class Account extends Model
 {
@@ -35,6 +42,7 @@ class Account extends Model
     protected $fillable = [
         'user_id', 'name', 'type', 'currency', 'opening_balance', 'color', 'icon', 'is_archived',
         'credit_limit', 'closing_day', 'due_day', 'last_four',
+        'connection_id', 'external_id', 'provider_balance', 'provider_synced_at',
     ];
 
     /**
@@ -61,6 +69,8 @@ class Account extends Model
             'credit_limit' => MoneyCast::class,
             'closing_day' => 'integer',
             'due_day' => 'integer',
+            'provider_balance' => MoneyCast::class,
+            'provider_synced_at' => 'immutable_datetime',
         ];
     }
 
@@ -80,6 +90,14 @@ class Account extends Model
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class);
+    }
+
+    /**
+     * @return BelongsTo<BankConnection, $this>
+     */
+    public function connection(): BelongsTo
+    {
+        return $this->belongsTo(BankConnection::class, 'connection_id');
     }
 
     /**
