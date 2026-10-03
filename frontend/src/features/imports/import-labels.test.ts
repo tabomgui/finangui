@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ImportBatch, ImportPreview } from '@/api/types'
-import { BATCH_STATUS_LABELS, FORMAT_OPTIONS, OUTCOME_LABELS, statsSummary, summaryText } from './import-labels'
+import { BATCH_STATUS_LABELS, BATCH_STATUS_VARIANT, FORMAT_OPTIONS, OUTCOME_LABELS, statsSummary, summaryText } from './import-labels'
 
 function summary(overrides: Partial<ImportPreview['summary']>): ImportPreview['summary'] {
   return { new: 0, duplicate: 0, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0, ...overrides }
@@ -29,6 +29,12 @@ describe('FORMAT_OPTIONS', () => {
 describe('BATCH_STATUS_LABELS', () => {
   it('traduz os três status de um lote', () => {
     expect(BATCH_STATUS_LABELS).toEqual({ pending: 'Pendente', completed: 'Importado', reverted: 'Revertido' })
+  })
+})
+
+describe('BATCH_STATUS_VARIANT', () => {
+  it('cobre os três status de um lote', () => {
+    expect(BATCH_STATUS_VARIANT).toEqual({ pending: 'secondary', completed: 'default', reverted: 'outline' })
   })
 })
 

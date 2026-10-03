@@ -116,10 +116,12 @@ export function AccountsPage() {
                         <Pencil className="h-4 w-4" />
                         Editar
                       </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => navigate(`/importar?conta=${account.id}`)}>
-                        <FileUp className="h-4 w-4" />
-                        Importar extrato
-                      </DropdownMenuItem>
+                      {!account.is_archived && (
+                        <DropdownMenuItem onSelect={() => navigate(`/importar?conta=${account.id}`)}>
+                          <FileUp className="h-4 w-4" />
+                          Importar extrato
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem onSelect={() => toggleArchive(account)}>
                         {account.is_archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
                         {account.is_archived ? 'Desarquivar' : 'Arquivar'}

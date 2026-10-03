@@ -17,6 +17,7 @@ const DEFAULT_MESSAGES: Record<number, string> = {
   401: 'Sua sessão terminou. Entre novamente.',
   403: 'Você não tem permissão para isso.',
   404: 'Não encontrado.',
+  413: 'Arquivo grande demais.',
   419: 'Sua sessão expirou. Recarregue a página.',
   429: 'Muitas tentativas. Aguarde um minuto e tente de novo.',
 }

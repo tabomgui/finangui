@@ -23,6 +23,13 @@ export const BATCH_STATUS_LABELS: Record<ImportBatchStatus, string> = {
   reverted: 'Revertido',
 }
 
+/** Variante do `Badge` do status de um lote; compartilhada por histórico e prévia. */
+export const BATCH_STATUS_VARIANT: Record<ImportBatchStatus, 'secondary' | 'default' | 'outline'> = {
+  pending: 'secondary',
+  completed: 'default',
+  reverted: 'outline',
+}
+
 /** Singular/plural simples (português não tem irregularidade nos termos usados aqui). */
 function pluralize(count: number, singular: string, plural: string): string {
   return count === 1 ? singular : plural

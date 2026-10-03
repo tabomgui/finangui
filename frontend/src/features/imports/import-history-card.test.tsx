@@ -110,6 +110,24 @@ describe('ImportHistoryCard', () => {
     expect(toast.success).toHaveBeenCalledWith('Importação revertida.')
   })
 
+  it('mostra o aviso de limite quando a listagem traz as 50 mais recentes', () => {
+    batchesState = {
+      data: Array.from({ length: 50 }, (_, index) => batch({ id: index + 1, filename: `extrato-${index}.csv` })),
+      isPending: false,
+      isError: false,
+    }
+    renderCard()
+
+    expect(screen.getByText('Mostrando as 50 mais recentes.')).toBeInTheDocument()
+  })
+
+  it('não mostra o aviso de limite quando há menos de 50 lotes', () => {
+    batchesState = { data: [batch({})], isPending: false, isError: false }
+    renderCard()
+
+    expect(screen.queryByText(/mais recentes/)).not.toBeInTheDocument()
+  })
+
   it('lote revertido não mostra menu de ações', () => {
     batchesState = { data: [batch({ status: 'reverted', stats: { inserted: 1, failed: [] } })], isPending: false, isError: false }
     renderCard()

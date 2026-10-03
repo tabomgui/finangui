@@ -6,9 +6,10 @@ import { ApiError } from '@/api/errors'
 import { ImportUploadCard } from './import-upload-card'
 
 const mutateAsync = vi.fn()
+let uploadPending = false
 
 vi.mock('@/api/queries/imports', () => ({
-  useUploadStatement: () => ({ mutateAsync, isPending: false }),
+  useUploadStatement: () => ({ mutateAsync, isPending: uploadPending }),
 }))
 
 vi.mock('@/api/queries/accounts', () => ({
@@ -52,9 +53,19 @@ function chooseFile(name = 'extrato.csv', content = 'conteudo') {
 
 beforeEach(() => {
   mutateAsync.mockReset()
+  uploadPending = false
 })
 
 describe('ImportUploadCard', () => {
+  it('mostra o indicador de carregamento em "Ver prévia" enquanto o upload está em andamento', () => {
+    uploadPending = true
+    renderCard()
+
+    const button = screen.getByRole('button', { name: 'Ver prévia' })
+    expect(button).toBeDisabled()
+    expect(button.querySelector('svg')).toBeInTheDocument()
+  })
+
   it('valida conta e arquivo antes de enviar', async () => {
     renderCard()
 
@@ -118,5 +129,28 @@ describe('ImportUploadCard', () => {
 
     expect(await screen.findByText('Não reconhecemos o formato deste arquivo. Escolha o banco.')).toBeInTheDocument()
     expect(screen.getByLabelText('Banco/formato')).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('não destaca o seletor de formato para outro erro de arquivo (ex.: tamanho)', async () => {
+    mutateAsync.mockRejectedValue(new ApiError(422, 'Dados inválidos.', null, { file: ['O arquivo não pode ser maior que 2048 kilobytes.'] }))
+    renderCard()
+
+    await chooseAccount('Nubank')
+    chooseFile()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver prévia' }))
+
+    expect(await screen.findByText('O arquivo não pode ser maior que 2048 kilobytes.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Banco/formato')).not.toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('recusa um arquivo maior que 2 MB sem chamar a API', async () => {
+    renderCard()
+
+    await chooseAccount('Nubank')
+    chooseFile('extrato-grande.csv', 'x'.repeat(2 * 1024 * 1024 + 1))
+    fireEvent.click(screen.getByRole('button', { name: 'Ver prévia' }))
+
+    await waitFor(() => expect(screen.getByText('Arquivo grande demais. O limite é 2 MB.')).toBeInTheDocument())
+    expect(mutateAsync).not.toHaveBeenCalled()
   })
 })

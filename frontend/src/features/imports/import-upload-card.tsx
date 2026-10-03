@@ -1,4 +1,4 @@
-import { Upload } from 'lucide-react'
+import { LoaderCircle, Upload } from 'lucide-react'
 import { type ChangeEvent, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -18,6 +18,15 @@ type UploadFormValues = {
   file: File | null
   format: ImportFormat | 'auto'
 }
+
+// Mesmo limite de `StoreImportBatchRequest` no backend (`max:2048` KB). Checar no cliente evita
+// uma viagem ao servidor só para voltar com o 413/422 de um arquivo visivelmente grande demais.
+const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024
+
+// Mensagem exata de `CreateImportBatch` (backend) quando o `FormatDetector` não reconhece o
+// cabeçalho do arquivo. Comparar a mensagem inteira, não só "existe erro em `file`": outros
+// erros nesse campo (tamanho, extensão) não têm relação com o seletor de formato.
+const UNRECOGNIZED_FORMAT_MESSAGE = 'Não reconhecemos o formato deste arquivo. Escolha o banco.'
 
 /** Conta pré-selecionada via `?conta=<id>` (link "Importar extrato" no menu de uma conta). */
 function accountFromSearch(params: URLSearchParams): number | null {
@@ -55,6 +64,11 @@ export function ImportUploadCard() {
     if (!values.file) form.setError('file', { type: 'required', message: 'Escolha um arquivo.' })
     if (!values.account_id || !values.file) return
 
+    if (values.file.size > MAX_FILE_SIZE_BYTES) {
+      form.setError('file', { type: 'maxSize', message: 'Arquivo grande demais. O limite é 2 MB.' })
+      return
+    }
+
     try {
       const preview = await upload.mutateAsync({
         account_id: values.account_id,
@@ -64,7 +78,7 @@ export function ImportUploadCard() {
       navigate(`/importar/${preview.batch.id}`)
     } catch (error) {
       const fileMessage = error instanceof ApiError ? error.fieldErrors.file?.[0] : undefined
-      setHighlightFormat(Boolean(fileMessage))
+      setHighlightFormat(fileMessage === UNRECOGNIZED_FORMAT_MESSAGE)
       if (!applyFieldErrors(error, form.setError, ['account_id', 'file', 'format'])) notifyError(error)
     }
   })
@@ -94,6 +108,7 @@ export function ImportUploadCard() {
                 type="file"
                 accept=".csv,.ofx,.txt"
                 className="sr-only"
+                tabIndex={-1}
                 aria-describedby={control['aria-describedby']}
                 aria-invalid={control['aria-invalid']}
                 onChange={handleFileChange}
@@ -109,7 +124,7 @@ export function ImportUploadCard() {
           )}
         </Field>
 
-        <Field label="Banco/formato" htmlFor="import-format">
+        <Field label="Banco/formato" htmlFor="import-format" error={errors.format?.message}>
           {(control) => (
             <Select
               value={format}
@@ -136,6 +151,7 @@ export function ImportUploadCard() {
         <p className="text-xs text-muted-foreground">Exporte o extrato no app do banco em CSV ou OFX.</p>
 
         <Button type="submit" disabled={upload.isPending} className="w-full sm:w-auto">
+          {upload.isPending && <LoaderCircle className="h-4 w-4 animate-spin" />}
           Ver prévia
         </Button>
       </form>

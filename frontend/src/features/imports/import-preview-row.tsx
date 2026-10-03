@@ -1,9 +1,11 @@
 import { Wand2 } from 'lucide-react'
+import { memo } from 'react'
 import type { ImportPreviewRow as ImportRow } from '@/api/types'
 import { MoneyText } from '@/components/shared/money-text'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { formatDate } from '@/lib/date'
+import { formatSignedMoney } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { OUTCOME_LABELS } from './import-labels'
 
@@ -17,15 +19,25 @@ type ImportPreviewRowProps = {
   onToggle: (line: number) => void
 }
 
-/** Uma linha da prévia de importação: desfecho, parcela, com o que casou e categoria sugerida. */
-export function ImportPreviewRow({ row, selected, selectable, categoryName, onToggle }: ImportPreviewRowProps) {
+/**
+ * Uma linha da prévia de importação: desfecho, parcela, com o que casou e categoria sugerida.
+ * `memo`: a página pode ter até 5000 linhas e troca `selectedLines` a cada clique num checkbox —
+ * sem isso, cada clique re-renderizaria todas as linhas visíveis, não só a que mudou.
+ */
+export const ImportPreviewRow = memo(function ImportPreviewRow({
+  row,
+  selected,
+  selectable,
+  categoryName,
+  onToggle,
+}: ImportPreviewRowProps) {
   return (
     <label className={cn('flex items-center gap-3 px-3 py-3', selectable ? 'cursor-pointer hover:bg-muted/50' : 'opacity-60')}>
       <Checkbox
         checked={selected}
         disabled={!selectable}
         onCheckedChange={() => onToggle(row.line)}
-        aria-label={`Selecionar ${row.description}`}
+        aria-label={`Selecionar ${row.description} em ${formatDate(row.date)}, ${formatSignedMoney(row.amount, row.direction)}`}
       />
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium">{row.description}</p>
@@ -52,4 +64,4 @@ export function ImportPreviewRow({ row, selected, selectable, categoryName, onTo
       <MoneyText cents={row.amount} direction={row.direction} className="shrink-0 font-semibold" />
     </label>
   )
-}
+})

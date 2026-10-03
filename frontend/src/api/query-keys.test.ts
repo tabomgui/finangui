@@ -1,6 +1,14 @@
 import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
-import { invalidateCategories, invalidateImports, invalidateLedger, invalidateRules, invalidateTags, queryKeys } from './query-keys'
+import {
+  invalidateCategories,
+  invalidateImportBatchesList,
+  invalidateImports,
+  invalidateLedger,
+  invalidateRules,
+  invalidateTags,
+  queryKeys,
+} from './query-keys'
 
 function seed(client: QueryClient) {
   for (const key of [
@@ -80,5 +88,15 @@ describe('query keys', () => {
     seed(client)
     await invalidateImports(client)
     expect(invalidated(client)).toEqual(['import-batches'])
+  })
+
+  it('invalidateImportBatchesList invalida a listagem, nunca o detalhe de um lote', async () => {
+    const client = new QueryClient()
+    seed(client)
+    await invalidateImportBatchesList(client)
+
+    const cache = client.getQueryCache()
+    expect(cache.find({ queryKey: queryKeys.importBatches() })?.state.isInvalidated).toBe(true)
+    expect(cache.find({ queryKey: queryKeys.importBatch(1) })?.state.isInvalidated).toBe(false)
   })
 })

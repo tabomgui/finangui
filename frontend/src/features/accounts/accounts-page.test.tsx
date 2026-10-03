@@ -77,4 +77,16 @@ describe('AccountsPage', () => {
 
     expect(await screen.findByText('Importar extrato: tela')).toBeInTheDocument()
   })
+
+  it('não mostra "Importar extrato" no menu de uma conta arquivada', async () => {
+    accountsState = { data: [account({ id: 6, name: 'Conta antiga', is_archived: true })], isPending: false, isError: false }
+    renderPage()
+
+    const trigger = screen.getByRole('button', { name: 'Ações da conta Conta antiga' })
+    fireEvent.pointerDown(trigger, { button: 0, pointerType: 'mouse' })
+    fireEvent.click(trigger)
+
+    expect(await screen.findByRole('menuitem', { name: 'Desarquivar' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Importar extrato' })).not.toBeInTheDocument()
+  })
 })

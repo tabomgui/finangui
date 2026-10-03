@@ -37,7 +37,7 @@ export const queryKeys = {
   rules: () => ['rules'] as const,
   rule: (id: number) => ['rules', id] as const,
   rulePreview: (body: unknown) => ['rule-preview', body] as const,
-  importBatches: (accountId?: number) => ['import-batches', { accountId }] as const,
+  importBatches: (accountId?: number) => ['import-batches', 'list', { accountId }] as const,
   importBatch: (id: number) => ['import-batches', 'detail', id] as const,
 }
 
@@ -83,4 +83,16 @@ export function invalidateRules(queryClient: QueryClient) {
 
 export function invalidateImports(queryClient: QueryClient) {
   return invalidate(queryClient, ['import-batches'])
+}
+
+/**
+ * Só a listagem de lotes (`import-batches/list/...`), nunca o detalhe de um lote específico.
+ * Confirmar e cancelar navegam para fora da prévia na sequência; invalidar o detalhe ali
+ * reativaria a query da página que está de saída (ela ainda está montada por um instante) — ao
+ * confirmar, isso gastaria uma requisição que o usuário nunca vê; ao cancelar, o lote já não
+ * existe mais e essa requisição voltaria 404. Essas duas mutações tratam o detalhe no próprio
+ * hook (`removeQueries`), não aqui.
+ */
+export function invalidateImportBatchesList(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({ queryKey: ['import-batches', 'list'] })
 }
