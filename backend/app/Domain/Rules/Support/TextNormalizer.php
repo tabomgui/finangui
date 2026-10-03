@@ -22,11 +22,17 @@ final class TextNormalizer
         return trim((string) preg_replace('/\s+/', ' ', mb_strtoupper($ascii)));
     }
 
+    /**
+     * Cabe na coluna description_key (varchar 255): a transliteração pode
+     * expandir o texto (ex.: "Щ" vira "Shh"), então o corte é no resultado
+     * final, não no texto de entrada.
+     */
     public static function key(?string $text): string
     {
         $normalized = self::normalize($text);
         $lettersOnly = (string) preg_replace('/[^A-Z ]+/', ' ', $normalized);
+        $collapsed = trim((string) preg_replace('/\s+/', ' ', $lettersOnly));
 
-        return trim((string) preg_replace('/\s+/', ' ', $lettersOnly));
+        return mb_substr($collapsed, 0, 255);
     }
 }

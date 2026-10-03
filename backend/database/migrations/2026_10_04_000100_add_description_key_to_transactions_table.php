@@ -12,13 +12,23 @@ return new class extends Migration
     {
         Schema::table('transactions', function (Blueprint $table) {
             $table->string('description_key')->default('');
-            $table->index(['user_id', 'description_key']);
         });
 
-        DB::table('transactions')->select(['id', 'description'])->orderBy('id')->chunkById(1000, function ($rows) {
-            foreach ($rows as $row) {
-                DB::table('transactions')->where('id', $row->id)->update(['description_key' => TextNormalizer::key($row->description)]);
-            }
+        // Uma atualização por descrição distinta, não por linha: muito mais
+        // rápido quando a mesma descrição se repete em muitas transações.
+        DB::table('transactions')->select('description')->distinct()->orderBy('description')->cursor()
+            ->each(function ($row) {
+                $key = TextNormalizer::key($row->description);
+
+                $row->description === null
+                    ? DB::table('transactions')->whereNull('description')->update(['description_key' => $key])
+                    : DB::table('transactions')->where('description', $row->description)->update(['description_key' => $key]);
+            });
+
+        // O índice só depois do backfill: evita manter a árvore do índice
+        // atualizada a cada um dos updates acima.
+        Schema::table('transactions', function (Blueprint $table) {
+            $table->index(['user_id', 'description_key']);
         });
     }
 

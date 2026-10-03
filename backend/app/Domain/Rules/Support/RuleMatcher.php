@@ -23,14 +23,30 @@ final class RuleMatcher
             return false;
         }
 
-        $results = array_map(
-            fn (array $node) => isset($node['conditions'])
-                ? self::matches((string) ($node['match'] ?? 'all'), array_values($node['conditions']), $subject)
-                : self::condition($node, $subject),
-            $conditions,
-        );
+        $results = array_map(fn (mixed $node): bool => self::node($node, $subject), $conditions);
 
         return $match === 'any' ? in_array(true, $results, true) : ! in_array(false, $results, true);
+    }
+
+    /**
+     * Um nó de condições: um grupo (tem a chave "conditions") ou uma
+     * condição simples. Entrada malformada nunca lança, só não casa.
+     */
+    private static function node(mixed $node, RuleSubject $subject): bool
+    {
+        if (! is_array($node)) {
+            return false;
+        }
+
+        if (isset($node['conditions'])) {
+            if (! is_array($node['conditions'])) {
+                return false;
+            }
+
+            return self::matches(self::str($node['match'] ?? 'all'), array_values($node['conditions']), $subject);
+        }
+
+        return self::condition($node, $subject);
     }
 
     /**
@@ -38,8 +54,8 @@ final class RuleMatcher
      */
     private static function condition(array $condition, RuleSubject $subject): bool
     {
-        $field = RuleField::tryFrom((string) ($condition['field'] ?? ''));
-        $op = RuleOperator::tryFrom((string) ($condition['op'] ?? ''));
+        $field = RuleField::tryFrom(self::str($condition['field'] ?? ''));
+        $op = RuleOperator::tryFrom(self::str($condition['op'] ?? ''));
         $value = $condition['value'] ?? null;
 
         if ($field === null || $op === null || ! in_array($op, $field->operators(), true)) {
@@ -47,20 +63,18 @@ final class RuleMatcher
         }
 
         return match ($field) {
-            RuleField::Description, RuleField::OriginalDescription, RuleField::Payee, RuleField::Notes => self::text($op, $subject->text($field), (string) $value),
-            RuleField::Amount => self::compare($op, $subject->amount <=> (int) $value),
-            RuleField::Date => self::compare($op, strcmp($subject->date, (string) $value) <=> 0),
-            RuleField::Direction => self::compare($op, $subject->direction === (string) $value ? 0 : 1),
-            RuleField::AccountId => self::compare($op, $subject->accountId === (int) $value ? 0 : 1),
+            RuleField::Description, RuleField::OriginalDescription, RuleField::Payee, RuleField::Notes => self::text($op, $subject->text($field), self::str($value)),
+            RuleField::Amount => self::compare($op, $subject->amount <=> self::toInt($value)),
+            RuleField::Date => self::compare($op, strcmp($subject->date, self::str($value)) <=> 0),
+            RuleField::Direction => self::compare($op, $subject->direction === self::str($value) ? 0 : 1),
+            RuleField::AccountId => self::compare($op, $subject->accountId === self::toInt($value) ? 0 : 1),
         };
     }
 
     private static function text(RuleOperator $op, string $haystack, string $value): bool
     {
         if ($op === RuleOperator::Regex) {
-            $result = @preg_match(self::pattern($value), $haystack);
-
-            return $result === 1;
+            return self::regexMatches($value, $haystack);
         }
 
         $needle = TextNormalizer::normalize($value);
@@ -77,12 +91,48 @@ final class RuleMatcher
     }
 
     /**
+     * Limita o backtracking da PCRE enquanto avalia, para um padrão
+     * patológico (ReDoS) não travar a aplicação; restaura o ini depois.
+     */
+    private static function regexMatches(string $value, string $haystack): bool
+    {
+        $previous = ini_set('pcre.backtrack_limit', '100000');
+
+        try {
+            return @preg_match(self::pattern($value), $haystack) === 1;
+        } finally {
+            if ($previous !== false) {
+                ini_set('pcre.backtrack_limit', $previous);
+            }
+        }
+    }
+
+    /**
      * Padrão sem acento (o texto comparado também não tem), delimitado com
-     * um caractere que não precisa de escape no uso comum.
+     * um caractere que não precisa de escape no uso comum. Só escapa um "~"
+     * que ainda não estava escapado, para não quebrar um "\~" que o próprio
+     * usuário já tenha escrito no padrão.
      */
     public static function pattern(string $value): string
     {
-        return '~'.str_replace('~', '\~', Str::ascii($value)).'~iu';
+        $ascii = Str::ascii($value);
+        $escaped = preg_replace('/(?<!\\\\)((?:\\\\\\\\)*)~/', '$1\~', $ascii) ?? $ascii;
+
+        return '~'.$escaped.'~iu';
+    }
+
+    /**
+     * Coerção defensiva: entrada malformada (array, objeto) nunca deve
+     * lançar nem gerar warning de conversão; só não casa.
+     */
+    private static function str(mixed $value): string
+    {
+        return is_string($value) ? $value : '';
+    }
+
+    private static function toInt(mixed $value): int
+    {
+        return is_object($value) ? 0 : (int) $value;
     }
 
     private static function compare(RuleOperator $op, int $cmp): bool

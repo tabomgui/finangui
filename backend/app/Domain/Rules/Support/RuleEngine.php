@@ -49,8 +49,9 @@ final class RuleEngine
 
         switch ($type) {
             case RuleActionType::SetCategory:
-                if ($canSetCategory && $outcome->categoryId === null) {
-                    $outcome->categoryId = (int) $action['category_id'];
+                $categoryId = $action['category_id'] ?? null;
+                if ($canSetCategory && $outcome->categoryId === null && is_int($categoryId) && $categoryId > 0) {
+                    $outcome->categoryId = $categoryId;
                     $outcome->categoryRuleId = $ruleId;
                 }
 
@@ -68,8 +69,8 @@ final class RuleEngine
 
                 break;
             case RuleActionType::AddTag:
-                $tagId = (int) $action['tag_id'];
-                if (! in_array($tagId, $outcome->tagIds, true)) {
+                $tagId = $action['tag_id'] ?? null;
+                if (is_int($tagId) && $tagId > 0 && ! in_array($tagId, $outcome->tagIds, true)) {
                     $outcome->tagIds[] = $tagId;
                 }
 

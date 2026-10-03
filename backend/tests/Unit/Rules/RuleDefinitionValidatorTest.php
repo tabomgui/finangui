@@ -55,7 +55,21 @@ it('aceita uma regra completa: texto, amount, direction, account_id, date, grupo
 });
 
 it('match fora de all|any', function () {
-    expect(ruleErrors(['match' => 'maybe']))->toHaveKey('match');
+    $errors = ruleErrors(['match' => 'maybe']);
+
+    expect($errors)->toHaveKey('match')
+        ->and($errors['match'])->toBe('Escolha se todas ou alguma das condições precisam casar.');
+});
+
+it('match do grupo fora de all|any', function () {
+    $errors = ruleErrors(['conditions' => [
+        ['match' => 'maybe', 'conditions' => [
+            ['field' => 'description', 'op' => 'contains', 'value' => 'uber'],
+        ]],
+    ]]);
+
+    expect($errors)->toHaveKey('conditions.0.match')
+        ->and($errors['conditions.0.match'])->toBe('Escolha se todas ou alguma das condições precisam casar.');
 });
 
 it('conditions vazio e actions vazio', function () {
@@ -159,6 +173,55 @@ it('mais de 20 condições no total, contando as de dentro dos grupos', function
     expect(ruleErrors(['conditions' => $conditions]))->toHaveKey('conditions');
 });
 
+it('mais de 5 condições regex por regra', function () {
+    $conditions = array_fill(0, 6, ['field' => 'description', 'op' => 'regex', 'value' => '^uber']);
+
+    expect(ruleErrors(['conditions' => $conditions]))->toHaveKey('conditions');
+});
+
+it('texto que normaliza para vazio (emoji, CJK) é rejeitado com mensagem específica', function () {
+    foreach (['😀😀', '日本語'] as $value) {
+        $errors = ruleErrors(['conditions' => [
+            ['field' => 'description', 'op' => 'contains', 'value' => $value],
+        ]]);
+
+        expect($errors)->toHaveKey('conditions.0.value')
+            ->and($errors['conditions.0.value'])->toBe('O texto não tem letras ou números comparáveis.');
+    }
+});
+
+it('regex aceita valor que só tem símbolos, pois a checagem de texto comparável não vale para regex', function () {
+    expect(ruleErrors(['conditions' => [
+        ['field' => 'description', 'op' => 'regex', 'value' => '^\d+$'],
+    ]]))->toBe([]);
+});
+
+it('conditions, actions e conditions de grupo que não são lista são rejeitados', function () {
+    expect(ruleErrors(['conditions' => ['a' => ['field' => 'description', 'op' => 'contains', 'value' => 'x']]]))->toHaveKey('conditions')
+        ->and(ruleErrors(['actions' => ['a' => ['type' => 'ignore']]]))->toHaveKey('actions')
+        ->and(ruleErrors(['conditions' => [
+            ['match' => 'any', 'conditions' => ['a' => ['field' => 'description', 'op' => 'contains', 'value' => 'x']]],
+        ]]))->toHaveKey('conditions.0.conditions');
+});
+
+it('field, op, type ou value malformados (array ou objeto) geram erro em vez de lançar', function () {
+    expect(ruleErrors(['conditions' => [
+        ['field' => ['x'], 'op' => 'contains', 'value' => 'x'],
+    ]]))->toHaveKey('conditions.0.field')
+        ->and(ruleErrors(['conditions' => [
+            ['field' => 'description', 'op' => ['x'], 'value' => 'x'],
+        ]]))->toHaveKey('conditions.0.op')
+        ->and(ruleErrors(['conditions' => [
+            ['field' => new stdClass, 'op' => 'contains', 'value' => 'x'],
+        ]]))->toHaveKey('conditions.0.field')
+        ->and(ruleErrors(['actions' => [
+            ['type' => ['x']],
+        ]]))->toHaveKey('actions.0.type')
+        ->and(ruleErrors(['actions' => [
+            ['type' => new stdClass],
+        ]]))->toHaveKey('actions.0.type');
+});
+
 it('ação desconhecida', function () {
     expect(ruleErrors(['actions' => [
         ['type' => 'bogus'],
@@ -171,12 +234,30 @@ it('set_category sem category_id inteiro', function () {
     ]]))->toHaveKey('actions.0.category_id');
 });
 
-it('set_description e set_payee com valor vazio ou maior que 255 caracteres', function () {
+it('set_description e set_payee com valor vazio', function () {
     expect(ruleErrors(['actions' => [
         ['type' => 'set_description', 'value' => ''],
     ]]))->toHaveKey('actions.0.value')
         ->and(ruleErrors(['actions' => [
-            ['type' => 'set_payee', 'value' => str_repeat('a', 256)],
+            ['type' => 'set_payee', 'value' => ''],
+        ]]))->toHaveKey('actions.0.value');
+});
+
+it('set_description aceita até 255 caracteres (coluna description)', function () {
+    expect(ruleErrors(['actions' => [
+        ['type' => 'set_description', 'value' => str_repeat('a', 255)],
+    ]]))->toBe([])
+        ->and(ruleErrors(['actions' => [
+            ['type' => 'set_description', 'value' => str_repeat('a', 256)],
+        ]]))->toHaveKey('actions.0.value');
+});
+
+it('set_payee aceita até 120 caracteres (coluna payee)', function () {
+    expect(ruleErrors(['actions' => [
+        ['type' => 'set_payee', 'value' => str_repeat('a', 120)],
+    ]]))->toBe([])
+        ->and(ruleErrors(['actions' => [
+            ['type' => 'set_payee', 'value' => str_repeat('a', 121)],
         ]]))->toHaveKey('actions.0.value');
 });
 
@@ -201,6 +282,12 @@ it('add_tag repetindo a mesma tag', function () {
         ['type' => 'add_tag', 'tag_id' => 3],
         ['type' => 'add_tag', 'tag_id' => 3],
     ]]))->toHaveKey('actions.1.tag_id');
+});
+
+it('a sexta tag distinta em add_tag é rejeitada', function () {
+    $actions = array_map(fn (int $tagId) => ['type' => 'add_tag', 'tag_id' => $tagId], range(1, 6));
+
+    expect(ruleErrors(['actions' => $actions]))->toHaveKey('actions.5.tag_id');
 });
 
 it('mais de 10 ações', function () {

@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Domain\Categories\Models\Category;
 use App\Domain\Rules\Models\Rule;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -19,8 +20,12 @@ class RuleFactory extends Factory
      */
     public function definition(): array
     {
+        // Mesmo usuário para a regra e para a categoria padrão da ação: o
+        // motor exige um category_id inteiro positivo de uma categoria real.
+        $userId = Auth::id() ?? User::factory()->create()->id;
+
         return [
-            'user_id' => fn () => Auth::id() ?? User::factory()->create()->id,
+            'user_id' => $userId,
             'name' => 'Mercado',
             'priority' => 0,
             'is_active' => true,
@@ -28,8 +33,8 @@ class RuleFactory extends Factory
             'conditions' => [
                 ['field' => 'description', 'op' => 'contains', 'value' => 'mercado'],
             ],
-            'actions' => [
-                ['type' => 'set_category', 'category_id' => null],
+            'actions' => fn () => [
+                ['type' => 'set_category', 'category_id' => Category::factory()->create(['user_id' => $userId])->id],
             ],
         ];
     }

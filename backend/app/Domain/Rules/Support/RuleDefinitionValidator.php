@@ -12,6 +12,11 @@ use DateTimeImmutable;
  * confere existência de categoria/tag/conta (fica no request, com escopo de
  * usuário). Devolve erros indexados por caminho, no formato do Laravel
  * (ex.: "conditions.0.value").
+ *
+ * Entrada malformada (tipo errado em field/op/type/value, lista que na
+ * verdade é um array associativo) nunca lança: só gera um erro no caminho
+ * certo. As contagens (máximo de condições/ações/regex) saem antes de
+ * validar cada item, para uma lista enorme não ser percorrida em vão.
  */
 final class RuleDefinitionValidator
 {
@@ -20,6 +25,10 @@ final class RuleDefinitionValidator
     private const MAX_ACTIONS = 10;
 
     private const MAX_TAGS = 5;
+
+    private const MAX_REGEX_CONDITIONS = 5;
+
+    private const INVALID_MATCH_MESSAGE = 'Escolha se todas ou alguma das condições precisam casar.';
 
     /**
      * @param  array<string, mixed>  $input
@@ -30,14 +39,13 @@ final class RuleDefinitionValidator
         $errors = [];
 
         if (! in_array($input['match'] ?? null, ['all', 'any'], true)) {
-            $errors['match'] = 'Selecione "all" ou "any".';
+            $errors['match'] = self::INVALID_MATCH_MESSAGE;
         }
 
-        return array_merge(
-            $errors,
-            self::conditionsErrors($input['conditions'] ?? null),
-            self::actionsErrors($input['actions'] ?? null),
-        );
+        $errors += self::conditionsErrors($input['conditions'] ?? null);
+        $errors += self::actionsErrors($input['actions'] ?? null);
+
+        return $errors;
     }
 
     /**
@@ -49,88 +57,125 @@ final class RuleDefinitionValidator
             return ['conditions' => 'Inclua pelo menos uma condição.'];
         }
 
-        $errors = [];
-        $total = 0;
-
-        foreach (array_values($conditions) as $i => $node) {
-            [$nodeErrors, $count] = self::node($node, "conditions.{$i}", 0);
-            $errors = array_merge($errors, $nodeErrors);
-            $total += $count;
+        if (! array_is_list($conditions)) {
+            return ['conditions' => 'A lista de condições está mal formada.'];
         }
 
-        if ($total > self::MAX_CONDITIONS) {
-            $errors['conditions'] = 'No máximo '.self::MAX_CONDITIONS.' condições, contando as de dentro dos grupos.';
+        if (count($conditions) > self::MAX_CONDITIONS) {
+            return ['conditions' => self::maxConditionsMessage()];
+        }
+
+        $errors = [];
+        $total = 0;
+        $regexCount = 0;
+
+        foreach ($conditions as $i => $node) {
+            [$nodeErrors, $count, $regexes] = self::node($node, "conditions.{$i}", 0);
+            $errors += $nodeErrors;
+            $total += $count;
+            $regexCount += $regexes;
+
+            if ($total > self::MAX_CONDITIONS) {
+                $errors['conditions'] = self::maxConditionsMessage();
+
+                return $errors;
+            }
+        }
+
+        if ($regexCount > self::MAX_REGEX_CONDITIONS) {
+            $errors['conditions'] = 'No máximo '.self::MAX_REGEX_CONDITIONS.' condições regex por regra.';
         }
 
         return $errors;
     }
 
+    private static function maxConditionsMessage(): string
+    {
+        return 'No máximo '.self::MAX_CONDITIONS.' condições, contando as de dentro dos grupos.';
+    }
+
     /**
-     * @return array{0: array<string, string>, 1: int}
+     * @return array{0: array<string, string>, 1: int, 2: int}
      */
     private static function node(mixed $node, string $path, int $depth): array
     {
         if (! is_array($node)) {
-            return [[$path => 'Condição inválida.'], 1];
+            return [[$path => 'Condição inválida.'], 1, 0];
         }
 
         if (array_key_exists('conditions', $node)) {
             return self::group($node, $path, $depth);
         }
 
-        return [self::condition($node, $path), 1];
+        [$errors, $isRegex] = self::condition($node, $path);
+
+        return [$errors, 1, $isRegex ? 1 : 0];
     }
 
     /**
      * @param  array<string, mixed>  $node
-     * @return array{0: array<string, string>, 1: int}
+     * @return array{0: array<string, string>, 1: int, 2: int}
      */
     private static function group(array $node, string $path, int $depth): array
     {
         if ($depth > 0) {
-            return [[$path => 'Grupos não podem ter outros grupos.'], 0];
+            return [[$path => 'Grupos não podem ter outros grupos.'], 0, 0];
         }
 
         $children = $node['conditions'] ?? null;
 
         if (! is_array($children) || $children === []) {
-            return [["{$path}.conditions" => 'Inclua pelo menos uma condição no grupo.'], 0];
+            return [["{$path}.conditions" => 'Inclua pelo menos uma condição no grupo.'], 0, 0];
+        }
+
+        if (! array_is_list($children)) {
+            return [["{$path}.conditions" => 'A lista de condições do grupo está mal formada.'], 0, 0];
+        }
+
+        if (count($children) > self::MAX_CONDITIONS) {
+            return [["{$path}.conditions" => self::maxConditionsMessage()], count($children), 0];
         }
 
         $match = $node['match'] ?? 'all';
-        $errors = in_array($match, ['all', 'any'], true) ? [] : ["{$path}.match" => 'Selecione "all" ou "any".'];
+        $errors = in_array($match, ['all', 'any'], true) ? [] : ["{$path}.match" => self::INVALID_MATCH_MESSAGE];
         $total = 0;
+        $regexCount = 0;
 
-        foreach (array_values($children) as $i => $child) {
-            [$childErrors, $count] = self::node($child, "{$path}.conditions.{$i}", $depth + 1);
-            $errors = array_merge($errors, $childErrors);
+        foreach ($children as $i => $child) {
+            [$childErrors, $count, $regexes] = self::node($child, "{$path}.conditions.{$i}", $depth + 1);
+            $errors += $childErrors;
             $total += $count;
+            $regexCount += $regexes;
+
+            if ($total > self::MAX_CONDITIONS) {
+                break;
+            }
         }
 
-        return [$errors, $total];
+        return [$errors, $total, $regexCount];
     }
 
     /**
      * @param  array<string, mixed>  $condition
-     * @return array<string, string>
+     * @return array{0: array<string, string>, 1: bool}
      */
     private static function condition(array $condition, string $path): array
     {
-        $field = RuleField::tryFrom((string) ($condition['field'] ?? ''));
+        $field = RuleField::tryFrom(self::str($condition['field'] ?? ''));
 
         if ($field === null) {
-            return ["{$path}.field" => 'Campo desconhecido.'];
+            return [["{$path}.field" => 'Campo desconhecido.'], false];
         }
 
-        $op = RuleOperator::tryFrom((string) ($condition['op'] ?? ''));
+        $op = RuleOperator::tryFrom(self::str($condition['op'] ?? ''));
 
         if ($op === null || ! in_array($op, $field->operators(), true)) {
-            return ["{$path}.op" => 'Operador não permitido para este campo.'];
+            return [["{$path}.op" => 'Operador não permitido para este campo.'], false];
         }
 
         $error = self::value($field, $op, $condition['value'] ?? null);
 
-        return $error === null ? [] : ["{$path}.value" => $error];
+        return [$error === null ? [] : ["{$path}.value" => $error], $op === RuleOperator::Regex];
     }
 
     private static function value(RuleField $field, RuleOperator $op, mixed $value): ?string
@@ -155,7 +200,7 @@ final class RuleDefinitionValidator
         }
 
         if ($op !== RuleOperator::Regex) {
-            return null;
+            return TextNormalizer::normalize($value) === '' ? 'O texto não tem letras ou números comparáveis.' : null;
         }
 
         $result = @preg_match(RuleMatcher::pattern($value), '');
@@ -198,16 +243,20 @@ final class RuleDefinitionValidator
             return ['actions' => 'Inclua pelo menos uma ação.'];
         }
 
+        if (! array_is_list($actions)) {
+            return ['actions' => 'A lista de ações está mal formada.'];
+        }
+
+        if (count($actions) > self::MAX_ACTIONS) {
+            return ['actions' => 'No máximo '.self::MAX_ACTIONS.' ações.'];
+        }
+
         $errors = [];
         $seenTypes = [];
         $seenTags = [];
 
-        foreach (array_values($actions) as $i => $action) {
-            $errors = array_merge($errors, self::action($action, "actions.{$i}", $seenTypes, $seenTags));
-        }
-
-        if (count($actions) > self::MAX_ACTIONS) {
-            $errors['actions'] = 'No máximo '.self::MAX_ACTIONS.' ações.';
+        foreach ($actions as $i => $action) {
+            $errors += self::action($action, "actions.{$i}", $seenTypes, $seenTags);
         }
 
         return $errors;
@@ -224,7 +273,7 @@ final class RuleDefinitionValidator
             return [$path => 'Ação inválida.'];
         }
 
-        $type = RuleActionType::tryFrom((string) ($action['type'] ?? ''));
+        $type = RuleActionType::tryFrom(self::str($action['type'] ?? ''));
 
         if ($type === null) {
             return ["{$path}.type" => 'Tipo de ação desconhecido.'];
@@ -239,7 +288,8 @@ final class RuleDefinitionValidator
 
         return match ($type) {
             RuleActionType::SetCategory => is_int($action['category_id'] ?? null) ? [] : ["{$path}.category_id" => 'Informe a categoria.'],
-            RuleActionType::SetDescription, RuleActionType::SetPayee => self::textAction($action['value'] ?? null, $path),
+            RuleActionType::SetDescription => self::textAction($action['value'] ?? null, $path, 255),
+            RuleActionType::SetPayee => self::textAction($action['value'] ?? null, $path, 120),
             RuleActionType::AddTag => self::tagAction($action['tag_id'] ?? null, $path, $seenTags),
             RuleActionType::Ignore => [],
         };
@@ -248,14 +298,14 @@ final class RuleDefinitionValidator
     /**
      * @return array<string, string>
      */
-    private static function textAction(mixed $value, string $path): array
+    private static function textAction(mixed $value, string $path, int $maxLength): array
     {
         if (! is_string($value) || trim($value) === '') {
             return ["{$path}.value" => 'Informe um texto.'];
         }
 
-        return mb_strlen($value) > 255
-            ? ["{$path}.value" => 'Texto muito longo (máximo 255 caracteres).']
+        return mb_strlen($value) > $maxLength
+            ? ["{$path}.value" => "Texto muito longo (máximo {$maxLength} caracteres)."]
             : [];
     }
 
@@ -273,10 +323,21 @@ final class RuleDefinitionValidator
             return ["{$path}.tag_id" => 'Tag repetida.'];
         }
 
+        if (count($seenTags) >= self::MAX_TAGS) {
+            return ["{$path}.tag_id" => 'No máximo '.self::MAX_TAGS.' tags por regra.'];
+        }
+
         $seenTags[] = $tagId;
 
-        return count($seenTags) > self::MAX_TAGS
-            ? ["{$path}.tag_id" => 'No máximo '.self::MAX_TAGS.' tags por regra.']
-            : [];
+        return [];
+    }
+
+    /**
+     * Coerção defensiva: entrada malformada (array, objeto) nunca deve
+     * lançar nem gerar warning de conversão; só não casa com nenhum enum.
+     */
+    private static function str(mixed $value): string
+    {
+        return is_string($value) ? $value : '';
     }
 }
