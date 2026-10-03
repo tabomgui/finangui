@@ -296,4 +296,34 @@ describe('limpeza de pendentes antigos (listagem completa)', function () {
 
         expect(Transaction::query()->whereKey($transferLeg->id)->exists())->toBeTrue();
     });
+
+    it('também considera pendente futura (projected, não parcela) antiga e ausente na limpeza', function () {
+        $account = Account::factory()->create(['external_id' => 'acc-1']);
+        $staleProjected = Transaction::factory()->create([
+            'account_id' => $account->id, 'external_id' => 'fut-absent', 'status' => TransactionStatus::Projected,
+            'source' => TransactionSource::Pluggy, 'date' => '2026-09-01',
+        ]);
+        $this->fake->transactionsByAccount['acc-1'] = [];
+
+        $this->action->handle($account, [], $this->now, []);
+
+        expect(Transaction::query()->whereKey($staleProjected->id)->exists())->toBeFalse();
+    });
+});
+
+it('pendente futura (projected) que chega lançada pelo banco com o mesmo id vira posted, sem duplicar', function () {
+    $account = Account::factory()->create();
+    $projected = Transaction::factory()->create([
+        'account_id' => $account->id, 'external_id' => 'fut-1', 'status' => TransactionStatus::Projected,
+        'source' => TransactionSource::Pluggy, 'direction' => Direction::Out, 'amount' => 5000,
+        'date' => '2026-09-01', 'description' => 'Compra',
+    ]);
+
+    $this->action->handle($account, [
+        syncProviderTransaction(['id' => 'fut-1', 'date' => '2026-09-01', 'amountCents' => 5000, 'description' => 'Compra', 'pending' => false]),
+    ], $this->now, []);
+
+    $projected->refresh();
+    expect($projected->status)->toBe(TransactionStatus::Posted)
+        ->and(Transaction::query()->where('account_id', $account->id)->count())->toBe(1);
 });

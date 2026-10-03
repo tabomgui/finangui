@@ -34,6 +34,8 @@ final class SyncBills
 {
     private const ADOPTION_WINDOW_DAYS = 7;
 
+    private const MAX_FALLBACK_DISTANCE_DAYS = 45;
+
     /**
      * @param  list<ProviderBill>  $bills
      *
@@ -170,11 +172,14 @@ final class SyncBills
 
     /**
      * Última tentativa do caminho de criação (createOrAdopt()), quando a
-     * fatura nova não cabe na ordem: a vizinha mais próxima do cartão,
-     * qualquer que seja a distância (sem a janela de ADOPTION_WINDOW_DAYS —
-     * já sabemos que há uma vizinha no caminho; é ela ou uma perto dela que
-     * está causando o conflito), que ainda não pertence a outra fatura do
-     * banco.
+     * fatura nova não cabe na ordem: a vizinha mais próxima do cartão (sem
+     * a janela de ADOPTION_WINDOW_DAYS — já sabemos que há uma vizinha no
+     * caminho; é ela ou uma perto dela que está causando o conflito), que
+     * ainda não pertence a outra fatura do banco — contanto que a distância
+     * até o vencimento informado não passe de MAX_FALLBACK_DISTANCE_DAYS.
+     * Mais do que isso não é mais "a vizinha do conflito", é só a fatura
+     * mais próxima que existe: melhor ignorar com log do que adotar algo
+     * longe demais do que o banco informou.
      */
     private function nearestAdoptable(Account $card, CarbonImmutable $due, string $billId): ?CardStatement
     {
@@ -193,6 +198,18 @@ final class SyncBills
             return null;
         }
 
-        return $adoptable->sortBy(fn (CardStatement $s) => abs($s->due_date->diffInDays($due, false)))->first();
+        $nearest = $adoptable->sortBy(fn (CardStatement $s) => abs($s->due_date->diffInDays($due, false)))->first();
+
+        if (abs($nearest->due_date->diffInDays($due, false)) > self::MAX_FALLBACK_DISTANCE_DAYS) {
+            Log::warning('Pluggy: a fatura local mais próxima está longe demais do vencimento informado pelo banco; ignorando a fatura nova.', [
+                'account_id' => $card->id,
+                'bill_id' => $billId,
+                'nearest_statement_id' => $nearest->id,
+            ]);
+
+            return null;
+        }
+
+        return $nearest;
     }
 }

@@ -158,3 +158,25 @@ it('fatura nova que não cabe na ordem e sem nenhuma candidata para adotar é ig
         ->and($other->due_date->toDateString())->toBe('2026-05-01')
         ->and(CardStatement::query()->where('account_id', $this->card->id)->count())->toBe(1);
 });
+
+it('a vizinha mais próxima disponível para adotar, a mais de 45 dias do vencimento informado, nunca é adotada (log, nada criado)', function () {
+    // Causa o conflito de ordem (já pertence a outra fatura do banco, não é
+    // adotável) — mesmo cenário da fatura "sem nenhuma candidata" acima.
+    $blocking = CardStatement::factory()->create([
+        'account_id' => $this->card->id, 'closing_date' => '2026-04-05', 'due_date' => '2026-05-01', 'external_id' => 'other-bill',
+    ]);
+    // A única candidata adotável, mas a mais de 45 dias do vencimento
+    // informado pelo banco (2026-04-20) — não é "a vizinha do conflito",
+    // é só a fatura mais próxima que existe.
+    $tooFar = CardStatement::factory()->create([
+        'account_id' => $this->card->id, 'closing_date' => '2026-07-01', 'due_date' => '2026-07-10',
+    ]);
+
+    $this->action->handle($this->card, [providerBill()]);
+
+    $tooFar->refresh();
+    $blocking->refresh();
+    expect($tooFar->external_id)->toBeNull()
+        ->and($blocking->external_id)->toBe('other-bill')
+        ->and(CardStatement::query()->where('account_id', $this->card->id)->count())->toBe(2);
+});

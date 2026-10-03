@@ -16,6 +16,7 @@ use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -108,12 +109,7 @@ final class SyncTransactions
     {
         $threshold = $syncStartedAt->subDays(self::STALE_PENDING_DAYS)->toDateString();
 
-        $oldestStaleDate = Transaction::query()
-            ->where('account_id', $account->id)
-            ->where('source', TransactionSource::Pluggy->value)
-            ->where('status', TransactionStatus::Pending->value)
-            ->where('date', '<', $threshold)
-            ->min('date');
+        $oldestStaleDate = $this->stalePendingQuery($account, $threshold)->min('date');
 
         if ($oldestStaleDate === null) {
             return;
@@ -156,7 +152,11 @@ final class SyncTransactions
             'source' => ImportFormat::Pluggy->source()->value,
             'filename' => 'Sincronização '.$syncStartedAt->toDateString(),
             'status' => ImportBatchStatus::Pending,
-            'rows' => array_map(fn (ParsedRow $row) => $row->toArray(), $rows),
+            // null, não as linhas: IngestTransactions::handle() recebe $rows
+            // por parâmetro (não relê a coluna) e um lote pluggy nunca passa
+            // por ConfirmImportBatch (o único caminho que releria isso) —
+            // só o stats final importa para este formato.
+            'rows' => null,
             'stats' => [],
         ]);
 
@@ -199,18 +199,35 @@ final class SyncTransactions
      */
     private function deleteStalePending(Account $account, array $receivedIds, string $threshold): void
     {
-        Transaction::query()
-            ->where('account_id', $account->id)
-            ->where('source', TransactionSource::Pluggy->value)
-            ->where('status', TransactionStatus::Pending->value)
-            ->where('date', '<', $threshold)
-            // Parcela e perna de transferência nunca somem num delete em
-            // lote: quem decide o destino delas é
-            // App\Domain\Transactions\Actions\DeleteTransaction.
-            ->whereNull('installment_plan_id')
-            ->whereNull('transfer_id')
+        $this->stalePendingQuery($account, $threshold)
             ->whereRaw('external_id <> ALL(?::text[])', [self::pgTextArray($receivedIds)])
             ->delete();
+    }
+
+    /**
+     * Pendente (de qualquer status "ainda não resolvido") antiga, candidata
+     * à limpeza da regra 6 — a mesma base para decidir a data mais antiga
+     * (min('date')) e para o delete em si, senão as duas poderiam enxergar
+     * conjuntos diferentes. `status` inclui Projected (não só Pending): uma
+     * pendente futura que nunca chegou a lançar (ver
+     * App\Domain\Imports\Data\ParsedRow::status()) também pode ter sido
+     * cancelada pelo banco. Parcela (`installment_plan_id`) e perna de
+     * transferência (`transfer_id`) nunca entram aqui, mesmo antigas e
+     * pendentes: quem decide o destino delas é
+     * App\Domain\Transactions\Actions\DeleteTransaction, não uma limpeza
+     * automática.
+     *
+     * @return Builder<Transaction>
+     */
+    private function stalePendingQuery(Account $account, string $threshold): Builder
+    {
+        return Transaction::query()
+            ->where('account_id', $account->id)
+            ->where('source', TransactionSource::Pluggy->value)
+            ->whereIn('status', [TransactionStatus::Pending->value, TransactionStatus::Projected->value])
+            ->where('date', '<', $threshold)
+            ->whereNull('installment_plan_id')
+            ->whereNull('transfer_id');
     }
 
     /**

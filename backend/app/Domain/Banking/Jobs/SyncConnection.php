@@ -173,11 +173,25 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
 
             return;
         } catch (ProviderUnavailable $e) {
+            // Última tentativa: resolve aqui mesmo (grava o erro, sob a
+            // mesma proteção de writeStatus()) em vez de deixar o Laravel
+            // "estourar" o job — failed() só existe para exceção/timeout
+            // inesperado, não para esta falha transitória já identificada.
+            if ($this->attempts() >= $this->tries) {
+                $this->writeStatus(ConnectionStatus::Error, 'Não foi possível falar com o banco. Tentaremos de novo.');
+
+                return;
+            }
+
             // Transitória: solta o job de volta na fila com a espera que o
             // próprio provedor pediu (Retry-After de um 429), quando
-            // informada — mais precisa do que o backoff fixo padrão.
-            if ($e->retryAfter !== null) {
-                $this->release($e->retryAfter);
+            // informada — mais precisa do que o backoff fixo padrão. Nunca
+            // mais que 15 minutos: um Retry-After absurdamente alto não
+            // pode travar o retry além do que $backoff já prevê no pior caso.
+            $retryAfter = $e->retryAfter !== null ? min($e->retryAfter, 900) : null;
+
+            if ($retryAfter !== null) {
+                $this->release($retryAfter);
 
                 return;
             }
@@ -265,9 +279,14 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
 
         $usesFullHistory = $fresh->provider_history_synced_at === null;
         $dateFrom = $usesFullHistory ? $this->firstSyncFloor($fresh) : null;
+        // last_synced_at da conexão é o normal; sem ele (não deveria
+        // acontecer, já que provider_history_synced_at desta conta implica
+        // que algum sync da conexão já terminou — mas por segurança), cai
+        // para o próprio instante do histórico desta conta, melhor
+        // estimativa do que "agora", que traria praticamente nada.
         $createdAtFrom = $usesFullHistory
             ? null
-            : ($connection->last_synced_at ?? CarbonImmutable::now())->subDays(14);
+            : ($connection->last_synced_at ?? $fresh->provider_history_synced_at ?? CarbonImmutable::now())->subDays(14);
 
         $transactions = $provider->transactions($fresh->external_id, $fresh->isCreditCard(), $dateFrom, $createdAtFrom);
         $syncTransactions->handle($fresh, $transactions, $syncStartedAt, $categoriesById);
@@ -339,11 +358,33 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             : 'O banco recusou a sincronização.';
     }
 
+    /**
+     * Trava e lê a conexão no início do job, e aproveita a mesma trava para
+     * registrar `settings.sync_meta` (quando o status achado já deixa a
+     * sincronização seguir): o status de partida e o instante em que esta
+     * tentativa começou. failed() — que pode rodar bem depois, numa
+     * instância recém-deserializada que nunca passou por aqui — lê essas
+     * duas informações de volta do banco para decidir se ainda vale gravar
+     * um erro (ver writeStatus() e failed()).
+     */
     private function lockedConnection(): ?BankConnection
     {
-        return DB::transaction(
-            fn () => BankConnection::query()->whereKey($this->connectionId)->lockForUpdate()->first(),
-        );
+        return DB::transaction(function () {
+            $locked = BankConnection::query()->whereKey($this->connectionId)->lockForUpdate()->first();
+
+            if ($locked === null || ! in_array($locked->status, [ConnectionStatus::Active, ConnectionStatus::Error], true)) {
+                return $locked;
+            }
+
+            $settings = $locked->settings ?? [];
+            $settings['sync_meta'] = [
+                'sync_started_at' => CarbonImmutable::now()->toIso8601String(),
+                'start_status' => $locked->status->value,
+            ];
+            $locked->update(['settings' => $settings]);
+
+            return $locked;
+        });
     }
 
     /**
@@ -356,12 +397,15 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
      * início mas JÁ está `active` agora (outra execução — reconexão do
      * usuário ou outro job — terminou no meio do caminho) é que o
      * resultado desta execução, calculado com um estado mais antigo, é
-     * descartado para não regredir o mais novo.
+     * descartado para não regredir o mais novo. Nunca sobrescreve
+     * `needs_reauth`/`pending_link` com `error`: um destino mais específico
+     * decidido por outra coisa (reconexão, desconexão) vale mais do que "não
+     * deu pra falar com o banco".
      *
      * failed() roda numa instância recém-deserializada do payload original
      * do job (de antes do primeiro handle()): $this->startStatus nunca foi
-     * de fato setado ali, então essa proteção não se aplica — grava sempre,
-     * esgotadas as tentativas é o melhor sinal que se tem.
+     * de fato setado ali — por isso tem sua própria lógica, lendo
+     * settings.sync_meta direto do banco em vez desta propriedade.
      */
     private function writeStatus(ConnectionStatus $status, ?string $error, ?CarbonImmutable $syncedAt = null): void
     {
@@ -371,6 +415,11 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             $locked = BankConnection::query()->whereKey($this->connectionId)->lockForUpdate()->first();
 
             if ($locked === null) {
+                return;
+            }
+
+            if ($status === ConnectionStatus::Error
+                && in_array($locked->status, [ConnectionStatus::NeedsReauth, ConnectionStatus::PendingLink], true)) {
                 return;
             }
 
@@ -392,11 +441,21 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
     }
 
     /**
-     * Esgotadas as tentativas (erro transitório persistente — ProviderUnavailable
-     * sem Retry-After, ou qualquer outra falha inesperada): marca a conexão
-     * com erro e loga. ProviderAuthFailed/ProviderRequestFailed nunca chegam
-     * aqui — handle() já resolve os dois sem deixar a exceção escapar (sem
-     * retry).
+     * Só para exceção inesperada ou timeout (o job matado por estourar
+     * $timeout nunca passa pelo catch(ProviderUnavailable) de sync() —
+     * Laravel chama failed() direto): marca a conexão com erro e loga.
+     * ProviderAuthFailed/ProviderRequestFailed/ProviderUnavailable (esta
+     * última já na última tentativa) nunca chegam aqui — sync() já resolve
+     * os três sem deixar a exceção escapar.
+     *
+     * Lê settings.sync_meta (gravado por lockedConnection() na tentativa que
+     * está terminando agora) direto do banco, porque esta é uma instância
+     * nova, sem $this->startStatus: pula a gravação quando a conexão já
+     * está `needs_reauth`/`pending_link` (outra coisa já decidiu o destino
+     * dela) ou quando ela está `active` e ficou assim depois que esta
+     * tentativa começou (reconectada, ou já sincronizada de novo com
+     * sucesso) — não regride um estado mais novo e melhor com um erro de
+     * uma tentativa velha.
      */
     public function failed(Throwable $exception): void
     {
@@ -419,7 +478,68 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
                 'message' => $exception->getMessage(),
             ]);
 
-            $this->writeStatus(ConnectionStatus::Error, 'Não foi possível falar com o banco. Tentaremos de novo.');
+            DB::transaction(function () {
+                $locked = BankConnection::query()->whereKey($this->connectionId)->lockForUpdate()->first();
+
+                if ($locked === null
+                    || in_array($locked->status, [ConnectionStatus::NeedsReauth, ConnectionStatus::PendingLink], true)) {
+                    return;
+                }
+
+                if ($locked->status === ConnectionStatus::Active && $this->supersededByNewerSync($locked)) {
+                    return;
+                }
+
+                $locked->update(['status' => ConnectionStatus::Error, 'last_error' => 'Não foi possível falar com o banco. Tentaremos de novo.']);
+            });
         });
+    }
+
+    /**
+     * @return array{sync_started_at: ?CarbonImmutable, start_status: ?ConnectionStatus}
+     */
+    private function syncMeta(BankConnection $connection): array
+    {
+        $meta = $connection->settings['sync_meta'] ?? null;
+
+        if (! is_array($meta)) {
+            return ['sync_started_at' => null, 'start_status' => null];
+        }
+
+        $startedAt = $meta['sync_started_at'] ?? null;
+        $startStatus = $meta['start_status'] ?? null;
+
+        return [
+            'sync_started_at' => is_string($startedAt) ? CarbonImmutable::parse($startedAt) : null,
+            'start_status' => is_string($startStatus) ? ConnectionStatus::tryFrom($startStatus) : null,
+        ];
+    }
+
+    /**
+     * A conexão já está `active` agora, mas settings.sync_meta (gravado por
+     * lockedConnection() quando esta tentativa começou) mostra que ela NÃO
+     * estava `active` no início, ou que já tem um sync mais recente
+     * (last_synced_at depois de sync_started_at) — nos dois casos, outra
+     * execução (reconexão, ou um sync mais novo que conseguiu terminar) já
+     * deixou a conexão num estado melhor do que o erro que esta tentativa
+     * traria. Sem sync_meta nenhum (não passou por lockedConnection() nesta
+     * execução — ex.: o job nem chegou a rodar handle()), não há indício de
+     * regressão: grava o erro normalmente.
+     */
+    private function supersededByNewerSync(BankConnection $connection): bool
+    {
+        ['sync_started_at' => $syncStartedAt, 'start_status' => $startStatus] = $this->syncMeta($connection);
+
+        if ($startStatus === null) {
+            return false;
+        }
+
+        if ($startStatus !== ConnectionStatus::Active) {
+            return true;
+        }
+
+        return $syncStartedAt !== null
+            && $connection->last_synced_at !== null
+            && $connection->last_synced_at->greaterThan($syncStartedAt);
     }
 }

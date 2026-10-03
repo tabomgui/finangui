@@ -272,7 +272,7 @@ it('syncs seguintes usam createdAtFrom = last_synced_at − 14 dias, para uma co
     $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => '2026-09-20 10:00:00']);
     // provider_history_synced_at já preenchido: é isso (por conta, não a
     // conexão) que decide createdAtFrom em vez de dateFrom — ver
-    // App\Domain\Banking\Jobs\SyncConnection e a nota I9 da revisão.
+    // App\Domain\Banking\Jobs\SyncConnection.
     Account::factory()->create([
         'user_id' => $this->user->id, 'connection_id' => $connection->id, 'external_id' => 'acc-1',
         'provider_history_synced_at' => '2026-09-20 10:00:00',
@@ -488,4 +488,83 @@ it('nunca ajusta o saldo de abertura de um cartão (fica sempre zero)', function
     $card->refresh();
     expect($card->opening_balance->cents)->toBe(0)
         ->and($card->provider_opening_set_at)->toBeNull();
+});
+
+describe('última tentativa e proteção de failed() contra regressão', function () {
+    it('ProviderUnavailable na última tentativa grava erro direto, sem liberar de novo nem relançar', function () {
+        $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId]);
+        app()->instance(BankProvider::class, providerFailingOn(new FakeBankProvider, 'item', new ProviderUnavailable('fora do ar')));
+
+        $job = (new SyncConnection($connection->id))->withFakeQueueInteractions();
+        $job->job->attempts = 3;
+
+        app()->call([$job, 'handle']);
+
+        $job->assertNotReleased();
+        expect($connection->refresh()->status)->toBe(ConnectionStatus::Error)
+            ->and($connection->last_error)->toBe('Não foi possível falar com o banco. Tentaremos de novo.');
+    });
+
+    it('clampa retryAfter em 900s no máximo antes de liberar de volta na fila', function () {
+        $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId]);
+        app()->instance(BankProvider::class, providerFailingOn(new FakeBankProvider, 'item', new ProviderUnavailable('429', retryAfter: 3600)));
+
+        $job = (new SyncConnection($connection->id))->withFakeQueueInteractions();
+        app()->call([$job, 'handle']);
+
+        $job->assertReleased(900);
+    });
+
+    it('failed() não sobrescreve uma conexão que já virou needs_reauth', function () {
+        $connection = BankConnection::factory()->needsReauth()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId]);
+
+        (new SyncConnection($connection->id))->failed(new ProviderUnavailable('timeout'));
+
+        expect($connection->refresh()->status)->toBe(ConnectionStatus::NeedsReauth);
+    });
+
+    it('failed() não sobrescreve uma conexão que já virou pending_link', function () {
+        $connection = BankConnection::factory()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'status' => 'pending_link']);
+
+        (new SyncConnection($connection->id))->failed(new ProviderUnavailable('timeout'));
+
+        expect($connection->refresh()->status)->toBe(ConnectionStatus::PendingLink);
+    });
+
+    it('failed() não sobrescreve uma reconexão concorrente (active) ocorrida depois que esta tentativa começou', function () {
+        $connection = BankConnection::factory()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'status' => 'error', 'last_error' => 'erro antigo']);
+        app()->instance(BankProvider::class, providerFailingOn(new FakeBankProvider, 'item', new ProviderUnavailable('fora do ar')));
+
+        // handle(): lockedConnection() grava settings.sync_meta (start_status
+        // = error) antes de falar com o provedor; a falha propaga (não é a
+        // última tentativa, sem retryAfter) — ver sync().
+        try {
+            app()->call([new SyncConnection($connection->id), 'handle']);
+        } catch (ProviderUnavailable) {
+            // esperado.
+        }
+
+        // Reconecta (outra execução) enquanto este retry ainda estava de pé.
+        BankConnection::query()->withoutGlobalScopes()->whereKey($connection->id)->update(['status' => 'active', 'last_error' => null]);
+
+        (new SyncConnection($connection->id))->failed(new ProviderUnavailable('timeout'));
+
+        expect($connection->refresh()->status)->toBe(ConnectionStatus::Active)
+            ->and($connection->last_error)->toBeNull();
+    });
+
+    it('failed() grava o erro quando a conexão continua active e sem sync mais novo depois do início desta tentativa', function () {
+        $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()->subHours(1)]);
+        app()->instance(BankProvider::class, providerFailingOn(new FakeBankProvider, 'item', new ProviderUnavailable('fora do ar')));
+
+        try {
+            app()->call([new SyncConnection($connection->id), 'handle']);
+        } catch (ProviderUnavailable) {
+            // esperado.
+        }
+
+        (new SyncConnection($connection->id))->failed(new ProviderUnavailable('timeout'));
+
+        expect($connection->refresh()->status)->toBe(ConnectionStatus::Error);
+    });
 });
