@@ -56,13 +56,15 @@ Route::prefix('v1')->group(function () {
         Route::patch('installment-plans/{plan}', [InstallmentPlanController::class, 'update'])->whereNumber('plan');
         Route::post('installment-plans/{plan}/cancel', [InstallmentPlanController::class, 'cancel'])->whereNumber('plan');
 
-        // rules/order antes de rules/{rule}, por clareza (o whereNumber já
-        // evita a colisão com "order").
+        // rules/order e rules/preview antes de rules/{rule}, por clareza (o
+        // whereNumber já evita a colisão com esses literais).
         Route::put('rules/order', [RuleController::class, 'reorder']);
+        Route::post('rules/preview', [RuleController::class, 'preview']);
         Route::get('rules', [RuleController::class, 'index']);
         Route::post('rules', [RuleController::class, 'store']);
         Route::get('rules/{rule}', [RuleController::class, 'show'])->whereNumber('rule');
         Route::patch('rules/{rule}', [RuleController::class, 'update'])->whereNumber('rule');
         Route::delete('rules/{rule}', [RuleController::class, 'destroy'])->whereNumber('rule');
+        Route::post('rules/{rule}/apply', [RuleController::class, 'apply'])->whereNumber('rule');
     });
 });
