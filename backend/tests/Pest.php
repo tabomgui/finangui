@@ -21,3 +21,16 @@ function importFixture(string $name): string
 {
     return Content::normalize(file_get_contents(base_path("tests/Fixtures/imports/{$name}")));
 }
+
+/**
+ * Corpo decodificado de um arquivo em tests/Fixtures/pluggy.
+ *
+ * @return array<string, mixed>
+ */
+function pluggyFixture(string $name): array
+{
+    /** @var array<string, mixed> $decoded */
+    $decoded = json_decode(file_get_contents(base_path("tests/Fixtures/pluggy/{$name}")), true);
+
+    return $decoded;
+}

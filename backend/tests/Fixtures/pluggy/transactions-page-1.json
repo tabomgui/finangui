@@ -1,0 +1,31 @@
+{
+  "results": [
+    {
+      "id": "00000000-0000-0000-0000-0000000000b1",
+      "date": "2026-09-20T02:00:00.000Z",
+      "description": "Supermercado Bom Preço",
+      "descriptionRaw": "SUPERMERCADO BOM PRECO LTDA",
+      "amount": 150.32,
+      "currencyCode": "BRL",
+      "status": "POSTED",
+      "type": "DEBIT",
+      "categoryId": "16000000",
+      "category": "Supermercado",
+      "creditCardMetadata": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-0000000000b2",
+      "date": "2026-09-21T10:00:00.000Z",
+      "description": "Salário",
+      "descriptionRaw": "PIX RECEBIDO SALARIO",
+      "amount": 5000.00,
+      "currencyCode": "BRL",
+      "status": "PENDING",
+      "type": "CREDIT",
+      "categoryId": null,
+      "category": null,
+      "creditCardMetadata": null
+    }
+  ],
+  "next": "accountId=00000000-0000-0000-0000-0000000000a1&after=00000000-0000-0000-0000-0000000000b2"
+}
