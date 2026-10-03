@@ -111,8 +111,14 @@ trait ValidatesRuleDefinition
 
             if ($type === RuleActionType::SetCategory) {
                 $categoryId = $action['category_id'] ?? null;
-                if (is_int($categoryId) && ! Category::query()->whereKey($categoryId)->exists()) {
-                    $validator->errors()->add("{$itemPath}.category_id", 'Categoria não encontrada.');
+                if (is_int($categoryId)) {
+                    $category = Category::query()->whereKey($categoryId)->first();
+
+                    if ($category === null) {
+                        $validator->errors()->add("{$itemPath}.category_id", 'Categoria não encontrada.');
+                    } elseif ($category->is_archived) {
+                        $validator->errors()->add("{$itemPath}.category_id", 'Categoria arquivada.');
+                    }
                 }
             } elseif ($type === RuleActionType::AddTag) {
                 $tagId = $action['tag_id'] ?? null;

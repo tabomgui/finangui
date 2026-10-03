@@ -106,6 +106,17 @@ it('422 quando set_category referencia categoria de outro usuário', function ()
     ]))->assertStatus(422)->assertJsonValidationErrors('actions.0.category_id');
 });
 
+it('422 quando set_category referencia categoria arquivada', function () {
+    actingAsUser();
+    $archived = Category::factory()->create(['is_archived' => true]);
+
+    $this->postJson('/api/v1/rules', validRulePayload([
+        'actions' => [
+            ['type' => 'set_category', 'category_id' => $archived->id],
+        ],
+    ]))->assertStatus(422)->assertJsonValidationErrors(['actions.0.category_id' => 'Categoria arquivada.']);
+});
+
 it('422 quando add_tag referencia tag de outro usuário', function () {
     actingAsUser();
     $other = User::factory()->create();
