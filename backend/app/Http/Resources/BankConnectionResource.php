@@ -21,6 +21,12 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * ainda espera o vínculo — permite a tela retomar o fluxo sem recriar a
  * conexão.
  *
+ * `unlinked_accounts` (mesmo formato de `pending_accounts`, com sugestão de
+ * vínculo): contas que o banco passou a reportar depois do vínculo inicial
+ * (ver App\Domain\Banking\Actions\SyncAccounts) — sempre lista, vazia
+ * quando não há nenhuma. App\Domain\Banking\Actions\LinkAccounts aceita
+ * vincular só algumas delas por vez numa conexão já `active`.
+ *
  * @mixin BankConnection
  */
 final class BankConnectionResource extends JsonResource
@@ -50,6 +56,7 @@ final class BankConnectionResource extends JsonResource
                 'provider_balance' => $account->provider_balance?->cents,
             ])->all(),
             'pending_accounts' => ProviderAccountResource::collection(PendingProviderAccounts::suggestionsFor($this->resource)),
+            'unlinked_accounts' => ProviderAccountResource::collection(PendingProviderAccounts::suggestionsFor($this->resource, 'unlinked_accounts')),
         ];
     }
 }

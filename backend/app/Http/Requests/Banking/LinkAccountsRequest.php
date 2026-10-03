@@ -14,17 +14,24 @@ use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 
 /**
- * As contas do banco (e seu tipo/moeda) vêm de settings.pending_accounts,
- * gravado por App\Domain\Banking\Actions\CreateConnection — aqui só
- * validamos o formato do pedido; a gravação em si (criar/vincular conta,
- * trocar o status) é App\Domain\Banking\Actions\LinkAccounts, sob lock.
+ * As contas do banco (e seu tipo/moeda) vêm de settings.pending_accounts
+ * (vínculo inicial, gravado por App\Domain\Banking\Actions\CreateConnection)
+ * ou settings.unlinked_accounts (conexão já `active`, contas que o banco
+ * passou a reportar depois — gravado por
+ * App\Domain\Banking\Actions\SyncAccounts); aqui só validamos o formato do
+ * pedido, a gravação em si (criar/vincular conta, trocar o status) é
+ * App\Domain\Banking\Actions\LinkAccounts, sob lock.
  *
- * Quando a conexão não está `pending_link` (já vinculada antes, ou nem
- * existe mais `pending_accounts`), as regras ficam soltas de propósito: a
- * checagem de cobertura/tipo/moeda não faz sentido sem as contas do banco
- * em mãos, e quem deve rejeitar o pedido é a Action (409
- * connection_not_pending_link), não um 422 de validação que mascararia a
- * causa real.
+ * Cobertura total das contas pendentes só é exigida no vínculo inicial
+ * (`pending_link`): uma conexão já `active` aceita vincular só algumas das
+ * `unlinked_accounts` por vez (o resto continua pendente para um próximo
+ * vínculo).
+ *
+ * Quando a conexão não está em nenhum desses dois estados com contas
+ * pendentes, as regras ficam soltas de propósito: a checagem de
+ * cobertura/tipo/moeda não faz sentido sem as contas do banco em mãos, e
+ * quem deve rejeitar o pedido é a Action (409 connection_not_pending_link),
+ * não um 422 de validação que mascararia a causa real.
  */
 final class LinkAccountsRequest extends ApiRequest
 {
@@ -33,7 +40,7 @@ final class LinkAccountsRequest extends ApiRequest
      */
     public function rules(): array
     {
-        $connection = $this->pendingConnection();
+        $connection = $this->targetConnection();
 
         if ($connection === null) {
             return [
@@ -43,15 +50,20 @@ final class LinkAccountsRequest extends ApiRequest
             ];
         }
 
-        $pendingByExternalId = self::pendingByExternalId($connection);
+        $pendingByExternalId = self::pendingByExternalId($connection, $this->settingsKey($connection));
         $externalIds = $pendingByExternalId->keys()->all();
 
+        $linksRules = [
+            'required', 'array', 'max:'.count($externalIds),
+            self::accountIdsAreDistinct(),
+        ];
+
+        if ($connection->status === ConnectionStatus::PendingLink) {
+            $linksRules[] = $this->coversAllAccounts($externalIds);
+        }
+
         return [
-            'links' => [
-                'required', 'array', 'max:'.count($externalIds),
-                $this->coversAllAccounts($externalIds),
-                self::accountIdsAreDistinct(),
-            ],
+            'links' => $linksRules,
             'links.*.external_id' => ['required', 'string', Rule::in($externalIds), 'distinct'],
             'links.*.account_id' => ['nullable', 'integer', $this->accountIsLinkable($pendingByExternalId)],
         ];
@@ -59,30 +71,37 @@ final class LinkAccountsRequest extends ApiRequest
 
     /**
      * Null quando a conexão não existe (Scramble gerando a doc sem rota
-     * real), não está `pending_link`, ou está sem `pending_accounts`
-     * (estado inconsistente, mas tratado do mesmo jeito solto).
+     * real), ou não está em nenhum dos dois estados com contas pendentes
+     * de vínculo (estado inconsistente nesse caso, mas tratado do mesmo
+     * jeito solto).
      */
-    private function pendingConnection(): ?BankConnection
+    private function targetConnection(): ?BankConnection
     {
         // Scramble chama rules() fora de uma request real (sem rota) para
         // gerar a doc da API: $connection precisa ser null-safe, como em
         // UpdateStatementRequest.
         $connection = $this->route('connection');
 
-        if (! $connection instanceof BankConnection || $connection->status !== ConnectionStatus::PendingLink) {
+        if (! $connection instanceof BankConnection
+            || ! in_array($connection->status, [ConnectionStatus::PendingLink, ConnectionStatus::Active], true)) {
             return null;
         }
 
-        return filled($connection->settings['pending_accounts'] ?? null) ? $connection : null;
+        return filled($connection->settings[$this->settingsKey($connection)] ?? null) ? $connection : null;
+    }
+
+    private function settingsKey(BankConnection $connection): string
+    {
+        return $connection->status === ConnectionStatus::PendingLink ? 'pending_accounts' : 'unlinked_accounts';
     }
 
     /**
      * @return Collection<string, ProviderAccount>
      */
-    private static function pendingByExternalId(BankConnection $connection): Collection
+    private static function pendingByExternalId(BankConnection $connection, string $settingsKey): Collection
     {
         /** @var list<array<string, mixed>> $rows */
-        $rows = $connection->settings['pending_accounts'] ?? [];
+        $rows = $connection->settings[$settingsKey] ?? [];
 
         return collect(PendingProviderAccounts::fromSettings($rows))->keyBy(fn (ProviderAccount $account) => $account->id);
     }

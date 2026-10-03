@@ -60,16 +60,21 @@ final class PendingProviderAccounts
      * vez — a primeira conta do banco que bater "ganha" a sugestão, as
      * seguintes não podem repetir a mesma conta manual.
      *
+     * $settingsKey: `pending_accounts` (vínculo inicial, conexão
+     * `pending_link`) ou `unlinked_accounts` (contas do banco que
+     * apareceram depois do vínculo inicial, numa conexão já `active` — ver
+     * App\Domain\Banking\Actions\SyncAccounts).
+     *
      * @return list<ProviderAccountSuggestion>
      */
-    public static function suggestionsFor(BankConnection $connection): array
+    public static function suggestionsFor(BankConnection $connection, string $settingsKey = 'pending_accounts'): array
     {
         // settings pode ser null (conexão já vinculada — LinkAccounts
         // apaga pending_accounts, e pode até zerar settings por completo):
         // indexar null diretamente ainda funciona em PHP, mas com aviso.
         $settings = $connection->settings ?? [];
         /** @var list<array<string, mixed>> $rows */
-        $rows = $settings['pending_accounts'] ?? [];
+        $rows = $settings[$settingsKey] ?? [];
         $accounts = self::fromSettings($rows);
 
         if ($accounts === []) {

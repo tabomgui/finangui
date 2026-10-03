@@ -8,9 +8,11 @@ use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Data\ProviderItem;
 use App\Domain\Banking\Enums\ConnectionStatus;
 use App\Domain\Banking\Errors\AccountNoLongerLinkable;
+use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Banking\Jobs\SyncConnection;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Providers\FakeBankProvider;
+use App\Domain\Banking\Support\PendingProviderAccounts;
 use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
@@ -86,6 +88,15 @@ describe('connect-token', function () {
 
         $this->postJson('/api/v1/bank-connections/connect-token', ['connection_id' => $connection->id])
             ->assertNotFound();
+    });
+
+    it('ProviderUnavailable (banco fora do ar) vira 503 provider_unavailable', function () {
+        $this->fake->failNext(new ProviderUnavailable('fora do ar'));
+
+        $this->postJson('/api/v1/bank-connections/connect-token')
+            ->assertStatus(503)
+            ->assertJsonPath('code', 'provider_unavailable')
+            ->assertJsonPath('message', 'O banco não respondeu. Tente de novo em instantes.');
     });
 });
 
@@ -483,6 +494,81 @@ describe('vincular contas', function () {
 
         $this->postJson("/api/v1/bank-connections/{$othersConnection->id}/link-accounts", ['links' => []])
             ->assertNotFound();
+    });
+});
+
+describe('contas novas do banco numa conexão já active (unlinked_accounts)', function () {
+    beforeEach(function () {
+        $this->connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id]);
+    });
+
+    it('unlinked_accounts vem vazio por padrão', function () {
+        $this->getJson('/api/v1/bank-connections')
+            ->assertOk()
+            ->assertJsonPath('data.0.unlinked_accounts', []);
+    });
+
+    it('expõe as contas novas do banco (settings.unlinked_accounts) com sugestão de vínculo', function () {
+        $manual = Account::factory()->create(['name' => $this->connection->institution_name, 'type' => AccountType::Checking, 'currency' => 'BRL']);
+        $this->connection->update(['settings' => [
+            'unlinked_accounts' => PendingProviderAccounts::toSettings([providerAccount(['id' => 'acc-new', 'number' => '9999'])]),
+        ]]);
+
+        $this->getJson('/api/v1/bank-connections')
+            ->assertOk()
+            ->assertJsonPath('data.0.unlinked_accounts.0.external_id', 'acc-new')
+            ->assertJsonPath('data.0.unlinked_accounts.0.suggested_account_id', $manual->id);
+    });
+
+    it('vincula só algumas das contas novas por vez, mantendo as outras em unlinked_accounts', function () {
+        $this->connection->update(['settings' => [
+            'unlinked_accounts' => PendingProviderAccounts::toSettings([
+                providerAccount(['id' => 'acc-new-1']),
+                providerAccount(['id' => 'acc-new-2']),
+            ]),
+        ]]);
+
+        $this->postJson("/api/v1/bank-connections/{$this->connection->id}/link-accounts", [
+            'links' => [['external_id' => 'acc-new-1']],
+        ])->assertOk()->assertJsonPath('data.status', ConnectionStatus::Active->value);
+
+        expect(Account::query()->where('external_id', 'acc-new-1')->exists())->toBeTrue()
+            ->and(Account::query()->where('external_id', 'acc-new-2')->exists())->toBeFalse();
+
+        $settings = $this->connection->refresh()->settings;
+        expect($settings['unlinked_accounts'])->toHaveCount(1)
+            ->and($settings['unlinked_accounts'][0]['id'])->toBe('acc-new-2');
+    });
+
+    it('vincular a última conta nova limpa settings.unlinked_accounts', function () {
+        $this->connection->update(['settings' => [
+            'unlinked_accounts' => PendingProviderAccounts::toSettings([providerAccount(['id' => 'acc-new-1'])]),
+        ]]);
+
+        $this->postJson("/api/v1/bank-connections/{$this->connection->id}/link-accounts", [
+            'links' => [['external_id' => 'acc-new-1']],
+        ])->assertOk();
+
+        // "unlinked_accounts" some de settings; o sync que o vínculo
+        // enfileira na hora ainda grava settings.sync_meta — não checa o
+        // settings inteiro, só a chave desta feature.
+        expect($this->connection->refresh()->settings['unlinked_accounts'] ?? null)->toBeNull();
+    });
+
+    it('external_id fora de unlinked_accounts → 422', function () {
+        $this->connection->update(['settings' => [
+            'unlinked_accounts' => PendingProviderAccounts::toSettings([providerAccount(['id' => 'acc-new-1'])]),
+        ]]);
+
+        $this->postJson("/api/v1/bank-connections/{$this->connection->id}/link-accounts", [
+            'links' => [['external_id' => 'nao-existe']],
+        ])->assertUnprocessable()->assertJsonValidationErrors('links.0.external_id');
+    });
+
+    it('sem nenhuma conta nova do banco para vincular → 409 connection_not_pending_link', function () {
+        $this->postJson("/api/v1/bank-connections/{$this->connection->id}/link-accounts", [
+            'links' => [['external_id' => 'acc-x']],
+        ])->assertStatus(409)->assertJsonPath('code', 'connection_not_pending_link');
     });
 });
 

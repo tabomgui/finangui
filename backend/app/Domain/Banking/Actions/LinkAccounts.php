@@ -13,12 +13,17 @@ use App\Domain\Banking\Support\PendingProviderAccounts;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Segundo passo do fluxo de conexão: para cada conta do banco, cria uma
- * conta nova ou vincula a uma conta manual existente (o formato do pedido
- * já foi validado pelo App\Http\Requests\Banking\LinkAccountsRequest —
- * cobertura, tipo e moeda). Tudo numa transação com `lockForUpdate` na
- * conexão: dois POSTs de vínculo em paralelo não podem ambos passar pela
- * checagem de `pending_link` e criar contas em duplicidade.
+ * Segundo passo do fluxo de conexão (vínculo inicial, conexão `pending_link`)
+ * ou vínculo de contas novas que o banco passou a reportar depois (conexão
+ * já `active`, `settings.unlinked_accounts` — ver
+ * App\Domain\Banking\Actions\SyncAccounts): para cada conta do banco, cria
+ * uma conta nova ou vincula a uma conta manual existente (o formato do
+ * pedido já foi validado pelo App\Http\Requests\Banking\LinkAccountsRequest
+ * — cobertura, tipo e moeda; cobertura total só é exigida no vínculo
+ * inicial, uma conexão `active` aceita vincular só algumas das contas
+ * pendentes por vez). Tudo numa transação com `lockForUpdate` na conexão:
+ * dois POSTs de vínculo em paralelo não podem ambos passar pela checagem
+ * de status e criar contas em duplicidade.
  */
 final class LinkAccounts
 {
@@ -33,17 +38,30 @@ final class LinkAccounts
             /** @var BankConnection $locked */
             $locked = BankConnection::query()->whereKey($connection->id)->lockForUpdate()->firstOrFail();
 
-            if ($locked->status !== ConnectionStatus::PendingLink) {
+            if (! in_array($locked->status, [ConnectionStatus::PendingLink, ConnectionStatus::Active], true)) {
                 throw new ConnectionNotPendingLink;
             }
 
+            $isInitialLink = $locked->status === ConnectionStatus::PendingLink;
+            $settingsKey = $isInitialLink ? 'pending_accounts' : 'unlinked_accounts';
+
             /** @var list<array<string, mixed>> $pendingRows */
-            $pendingRows = $locked->settings['pending_accounts'] ?? [];
+            $pendingRows = $locked->settings[$settingsKey] ?? [];
             $pendingByExternalId = [];
 
             foreach (PendingProviderAccounts::fromSettings($pendingRows) as $account) {
                 $pendingByExternalId[$account->id] = $account;
             }
+
+            if ($pendingByExternalId === []) {
+                // Vínculo inicial já feito (pending_accounts não existe
+                // mais) ou conexão active sem nenhuma conta nova do banco
+                // para vincular: nada a fazer, e silenciar isso com 200
+                // esconderia um pedido que não bate com a realidade atual.
+                throw new ConnectionNotPendingLink;
+            }
+
+            $linkedExternalIds = [];
 
             foreach ($links as $link) {
                 $providerAccount = $pendingByExternalId[$link['external_id']] ?? null;
@@ -55,6 +73,8 @@ final class LinkAccounts
                     // ignorar a linha do que criar algo a partir de nada.
                     continue;
                 }
+
+                $linkedExternalIds[] = $providerAccount->id;
 
                 // ?? null (não $link['account_id'] direto): a chave pode
                 // nem vir no corpo quando o cliente só manda external_id
@@ -69,16 +89,47 @@ final class LinkAccounts
                 }
             }
 
-            $settings = $locked->settings ?? [];
-            unset($settings['pending_accounts']);
-
             $locked->update([
                 'status' => ConnectionStatus::Active,
-                'settings' => $settings === [] ? null : $settings,
+                'settings' => $this->settingsAfterLinking($locked, $settingsKey, $pendingRows, $linkedExternalIds),
             ]);
 
             return $locked;
         });
+    }
+
+    /**
+     * Vínculo inicial: apaga `pending_accounts` por completo (o FormRequest
+     * já exige cobertura total). Conexão já `active`: tira de
+     * `unlinked_accounts` só as contas vinculadas agora — o que ainda não
+     * foi vinculado continua lá, para um próximo vínculo parcial.
+     *
+     * @param  list<array<string, mixed>>  $pendingRows
+     * @param  list<string>  $linkedExternalIds
+     * @return array<string, mixed>|null
+     */
+    private function settingsAfterLinking(BankConnection $connection, string $settingsKey, array $pendingRows, array $linkedExternalIds): ?array
+    {
+        $settings = $connection->settings ?? [];
+
+        if ($settingsKey === 'pending_accounts') {
+            unset($settings['pending_accounts']);
+
+            return $settings === [] ? null : $settings;
+        }
+
+        $remaining = array_values(array_filter(
+            $pendingRows,
+            fn (array $row) => ! in_array($row['id'], $linkedExternalIds, true),
+        ));
+
+        if ($remaining === []) {
+            unset($settings['unlinked_accounts']);
+        } else {
+            $settings['unlinked_accounts'] = $remaining;
+        }
+
+        return $settings === [] ? null : $settings;
     }
 
     /**

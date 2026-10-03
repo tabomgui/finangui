@@ -40,7 +40,10 @@ final class ProviderAccountResource extends JsonResource
             // provedor): o frontend já sabe lidar com AccountType.
             'kind' => AccountMapper::accountTypeFor($account->kind),
             'currency' => $account->currency,
-            'balance' => $account->balanceCents,
+            // Sinal do app, não o do provedor: em cartão, o valor devido já
+            // sai negativo aqui, como o saldo calculado da conta vai ficar
+            // depois do vínculo — ver AccountMapper::appBalanceCents().
+            'balance' => AccountMapper::appBalanceCents($account),
             'suggested_account_id' => $suggestion->suggestedAccountId,
         ];
     }
