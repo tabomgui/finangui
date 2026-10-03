@@ -66,3 +66,57 @@ it('reimportar o mesmo conteúdo gera os mesmos ids', function () {
     expect(array_map(fn ($row) => $row->externalId, $a->rows))
         ->toBe(array_map(fn ($row) => $row->externalId, $b->rows));
 });
+
+it('não extrai parcela de um pagamento/estorno (entrada), mesmo com o texto de parcela no título', function () {
+    $content = "date,title,amount\n2026-03-05,Estorno Parcela 2/10,-59.90";
+
+    $result = (new NubankCardParser)->parse($content, true);
+
+    expect($result->rows[0]->direction)->toBe(Direction::In)
+        ->and($result->rows[0]->description)->toBe('Estorno Parcela 2/10')
+        ->and($result->rows[0]->installment)->toBeNull();
+});
+
+it('reconhece o cabeçalho em caixa alta', function () {
+    $content = "DATE,TITLE,AMOUNT\n2026-03-02,Loja Ficticia,59.90";
+
+    $parser = new NubankCardParser;
+
+    expect($parser->accepts($content))->toBeTrue();
+
+    $result = $parser->parse($content, false);
+
+    expect($result->rows)->toHaveCount(1)
+        ->and($result->failed)->toBe([]);
+});
+
+it('falha com "Cabeçalho não encontrado." quando nenhuma linha casa com o cabeçalho esperado', function () {
+    $content = "a,b,c\n1,2,3";
+
+    $result = (new NubankCardParser)->parse($content, false);
+
+    expect($result->rows)->toBe([])
+        ->and($result->failed)->toBe([
+            ['line' => 1, 'reason' => 'Cabeçalho não encontrado.'],
+        ]);
+});
+
+it('pula linha de saldo/total mesmo com data válida, sem contar como falha', function () {
+    $content = "date,title,amount\n2026-03-02,Loja Ficticia,59.90\n2026-03-31,SALDO ANTERIOR,0.00";
+
+    $result = (new NubankCardParser)->parse($content, false);
+
+    expect($result->rows)->toHaveCount(1)
+        ->and($result->failed)->toBe([]);
+});
+
+it('rejeita datas fora do intervalo 1900-2100', function () {
+    $content = "date,title,amount\n1899-03-02,Loja Ficticia,59.90";
+
+    $result = (new NubankCardParser)->parse($content, false);
+
+    expect($result->rows)->toBe([])
+        ->and($result->failed)->toBe([
+            ['line' => 2, 'reason' => 'Data inválida.'],
+        ]);
+});

@@ -87,3 +87,114 @@ it('reimportar o mesmo conteúdo gera os mesmos ids', function () {
     expect(array_map(fn ($row) => $row->externalId, $a->rows))
         ->toBe(array_map(fn ($row) => $row->externalId, $b->rows));
 });
+
+it('parseia um OFX sintético com 7000 blocos rapidamente (contagem de linha incremental, não um re-scan por bloco)', function () {
+    $blocks = [];
+    for ($i = 1; $i <= 7000; $i++) {
+        $blocks[] = "<STMTTRN>\n<DTPOSTED>20260305\n<TRNAMT>-".sprintf('%d.%02d', intdiv($i, 100) + 1, $i % 100)."\n<FITID>FIT-{$i}\n<NAME>Loja {$i}\n";
+    }
+    $content = "<OFX>\n<BANKTRANLIST>\n".implode('', $blocks).'</BANKTRANLIST>';
+
+    $start = microtime(true);
+    $result = (new OfxParser)->parse($content, false);
+    $elapsed = microtime(true) - $start;
+
+    expect($result->rows)->toHaveCount(7000)
+        ->and($result->failed)->toBe([])
+        ->and($elapsed)->toBeLessThan(1.0);
+});
+
+it('lê o último bloco mesmo sem nenhuma tag de fechamento (arquivo truncado)', function () {
+    $content = "<OFX>\n<BANKTRANLIST>\n<STMTTRN>\n<DTPOSTED>20260305\n<TRNAMT>-10.00\n<FITID>FIT-TRUNC";
+
+    $result = (new OfxParser)->parse($content, false);
+
+    expect($result->rows)->toHaveCount(1)
+        ->and($result->rows[0]->externalId)->toBe('FIT-TRUNC')
+        ->and($result->rows[0]->amount)->toBe(1000);
+});
+
+it('lê blocos SGML consecutivos mesmo sem tag de fechamento de bloco nem de lista envolvente', function () {
+    $content = "<OFX>\n<STMTTRN>\n<DTPOSTED>20260305\n<TRNAMT>-10.00\n<FITID>FIT-1\n<STMTTRN>\n<DTPOSTED>20260306\n<TRNAMT>20.00\n<FITID>FIT-2";
+
+    $result = (new OfxParser)->parse($content, false);
+
+    expect($result->rows)->toHaveCount(2)
+        ->and($result->rows[0]->externalId)->toBe('FIT-1')
+        ->and($result->rows[1]->externalId)->toBe('FIT-2');
+});
+
+it('reporta falha em vez de devolver vazio silenciosamente quando o regex não consegue ler o conteúdo', function () {
+    $content = '<OFX>'.str_repeat('<STMTTRN>abcdefgh', 50).'</BANKTRANLIST>';
+
+    $previous = ini_set('pcre.backtrack_limit', '1');
+
+    try {
+        $result = (new OfxParser)->parse($content, false);
+
+        expect($result->rows)->toBe([])
+            ->and($result->failed)->toBe([
+                ['line' => 1, 'reason' => 'Não foi possível ler o arquivo OFX.'],
+            ]);
+    } finally {
+        ini_set('pcre.backtrack_limit', $previous);
+    }
+});
+
+it('usa o id sintético quando o FITID se repete no mesmo arquivo', function () {
+    $content = "<OFX>\n<BANKTRANLIST>\n"
+        ."<STMTTRN>\n<DTPOSTED>20260305\n<TRNAMT>-10.00\n<FITID>FIT-DUP\n<NAME>Loja A\n"
+        ."<STMTTRN>\n<DTPOSTED>20260306\n<TRNAMT>-20.00\n<FITID>FIT-DUP\n<NAME>Loja B\n"
+        .'</BANKTRANLIST>';
+
+    $result = (new OfxParser)->parse($content, false);
+
+    expect($result->rows[0]->externalId)->toBe('FIT-DUP')
+        ->and($result->rows[1]->externalId)->not->toBe('FIT-DUP')
+        ->and($result->rows[1]->externalId)->toStartWith('h:');
+});
+
+it('usa o hash do FITID quando ele passa de 255 caracteres', function () {
+    $longId = str_repeat('a', 300);
+    $content = "<OFX>\n<BANKTRANLIST>\n<STMTTRN>\n<DTPOSTED>20260305\n<TRNAMT>-10.00\n<FITID>{$longId}\n".'</BANKTRANLIST>';
+
+    $result = (new OfxParser)->parse($content, false);
+
+    expect(mb_strlen($result->rows[0]->externalId))->toBeLessThan(300)
+        ->and($result->rows[0]->externalId)->toStartWith('h:');
+});
+
+it('não extrai parcela quando a direção é entrada, mesmo com o texto de parcela no MEMO', function () {
+    $content = "<OFX>\n<BANKTRANLIST>\n<STMTTRN>\n<DTPOSTED>20260305\n<TRNAMT>10.00\n<FITID>FIT-1\n<MEMO>ESTORNO PARC 02/06\n".'</BANKTRANLIST>';
+
+    $result = (new OfxParser)->parse($content, true);
+
+    expect($result->rows[0]->direction)->toBe(Direction::In)
+        ->and($result->rows[0]->description)->toBe('ESTORNO PARC 02/06')
+        ->and($result->rows[0]->installment)->toBeNull();
+});
+
+it('decodifica entidades HTML em NAME/MEMO', function () {
+    $content = "<OFX>\n<BANKTRANLIST>\n<STMTTRN>\n<DTPOSTED>20260305\n<TRNAMT>-10.00\n<FITID>FIT-1\n<NAME>Padaria &amp; Confeitaria\n".'</BANKTRANLIST>';
+
+    $result = (new OfxParser)->parse($content, false);
+
+    expect($result->rows[0]->description)->toBe('Padaria & Confeitaria');
+});
+
+it('não aceita conteúdo que só menciona <STMTTRN> sem nenhum marcador de arquivo OFX', function () {
+    $content = 'um texto qualquer que por acaso cita <STMTTRN> mas não é um arquivo OFX';
+
+    expect((new OfxParser)->accepts($content))->toBeFalse();
+});
+
+it('rejeita datas fora do intervalo 1900-2100', function () {
+    $content = "<OFX>\n<BANKTRANLIST>\n<STMTTRN>\n<DTPOSTED>18990305\n<TRNAMT>-10.00\n<FITID>FIT-1\n".'</BANKTRANLIST>';
+
+    $result = (new OfxParser)->parse($content, false);
+
+    expect($result->rows)->toBe([])
+        ->and($result->failed)->toBe([
+            ['line' => 3, 'reason' => 'Data inválida.'],
+        ]);
+});

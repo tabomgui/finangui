@@ -15,14 +15,18 @@ use App\Domain\Transactions\Enums\Direction;
  * OFX genérico (SGML 1.x ou XML 2.x), conta ou cartão: blocos <STMTTRN>
  * lidos por regex (tolerante a tags sem fechamento e a espaços/quebras de
  * linha entre elas), sem depender de um parser XML (o SGML não é XML
- * válido). TRNAMT negativo é sempre saída. FITID é o id próprio; quando
- * ausente, usa o sintético.
+ * válido). Um bloco termina no fechamento de </STMTTRN>, no início do
+ * próximo <STMTTRN>, no fechamento da lista que os envolve
+ * (</BANKTRANLIST>, </STMTRS> ou </CCSTMTRS>) ou no fim do conteúdo — um
+ * arquivo truncado ainda assim lê o último bloco. TRNAMT negativo é
+ * sempre saída. FITID é o id próprio; quando ausente (ou repetido dentro
+ * do mesmo arquivo), usa o sintético.
  */
 final class OfxParser implements Parser
 {
     use ParserHelpers;
 
-    private const BLOCK_PATTERN = '/<STMTTRN>(.*?)(?:<\/STMTTRN>|(?=<STMTTRN>)|(?=<\/BANKTRANLIST>))/si';
+    private const BLOCK_PATTERN = '/<STMTTRN>(.*?)(?:<\/STMTTRN>|(?=<STMTTRN>)|(?=<\/(?:BANKTRANLIST|STMTRS|CCSTMTRS)>)|\z)/si';
 
     public function format(): ImportFormat
     {
@@ -31,7 +35,11 @@ final class OfxParser implements Parser
 
     public function accepts(string $content): bool
     {
-        return stripos($content, '<STMTTRN') !== false;
+        if (stripos($content, '<STMTTRN') === false) {
+            return false;
+        }
+
+        return stripos($content, 'OFXHEADER') !== false || stripos($content, '<OFX') !== false;
     }
 
     public function parse(string $content, bool $creditCard): ParseResult
@@ -39,11 +47,20 @@ final class OfxParser implements Parser
         $rows = [];
         $failed = [];
         $counts = [];
+        $usedGivenIds = [];
 
-        preg_match_all(self::BLOCK_PATTERN, $content, $matches, PREG_OFFSET_CAPTURE);
+        $matched = preg_match_all(self::BLOCK_PATTERN, $content, $matches, PREG_OFFSET_CAPTURE);
+
+        if ($matched === false) {
+            return new ParseResult([], [['line' => 1, 'reason' => 'Não foi possível ler o arquivo OFX.']]);
+        }
+
+        $line = 1;
+        $previousOffset = 0;
 
         foreach ($matches[1] as [$block, $offset]) {
-            $line = substr_count($content, "\n", 0, $offset) + 1;
+            $line += substr_count($content, "\n", $previousOffset, $offset - $previousOffset);
+            $previousOffset = $offset;
 
             $date = self::extractDate($block);
             if ($date === null) {
@@ -72,12 +89,12 @@ final class OfxParser implements Parser
             $description = self::combineNameMemo(self::tag($block, 'NAME'), self::tag($block, 'MEMO'));
 
             $installment = null;
-            if ($creditCard) {
+            if ($creditCard && $direction === Direction::Out) {
                 [$description, $installment] = InstallmentSuffix::extract($description);
             }
 
             $fitId = self::tag($block, 'FITID');
-            $externalId = $this->resolveExternalId($fitId, $counts, $this->format(), $date, $amount, $direction, $description);
+            $externalId = $this->resolveExternalId($fitId, $usedGivenIds, $counts, $this->format(), $date, $amount, $direction, $description);
 
             $rows[] = new ParsedRow(
                 line: $line,
@@ -99,7 +116,7 @@ final class OfxParser implements Parser
             return null;
         }
 
-        return trim($m[1]);
+        return trim(html_entity_decode($m[1], ENT_QUOTES | ENT_XML1, 'UTF-8'));
     }
 
     private static function extractDate(string $block): ?string
@@ -111,7 +128,7 @@ final class OfxParser implements Parser
 
         [, $year, $month, $day] = $m;
 
-        if (! checkdate((int) $month, (int) $day, (int) $year)) {
+        if (! self::yearInBounds((int) $year) || ! checkdate((int) $month, (int) $day, (int) $year)) {
             return null;
         }
 
@@ -123,12 +140,10 @@ final class OfxParser implements Parser
         $name = $name === '' ? null : $name;
         $memo = $memo === '' ? null : $memo;
 
-        if ($name !== null && $memo !== null) {
-            return TextNormalizer::normalize($name) === TextNormalizer::normalize($memo)
-                ? $name
-                : $name.' - '.$memo;
+        if ($name !== null && $memo !== null && TextNormalizer::normalize($name) === TextNormalizer::normalize($memo)) {
+            $memo = null;
         }
 
-        return $name ?? $memo ?? '';
+        return self::joinDescriptionParts([$name, $memo]);
     }
 }

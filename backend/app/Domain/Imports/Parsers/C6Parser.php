@@ -7,6 +7,7 @@ use App\Domain\Imports\Data\ParseResult;
 use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Parsers\Concerns\ParserHelpers;
 use App\Domain\Imports\Support\BrazilianNumber;
+use App\Domain\Imports\Support\CsvReader;
 use App\Domain\Imports\Support\InstallmentSuffix;
 use App\Domain\Transactions\Enums\Direction;
 
@@ -19,7 +20,10 @@ final class C6Parser implements Parser
 {
     use ParserHelpers;
 
-    private const HEADER = 'Data Lançamento,Data Contábil,Título,Descrição,Entrada(R$),Saída(R$),Saldo do Dia(R$)';
+    /** @var list<string> */
+    private const HEADER_CELLS = [
+        'Data Lançamento', 'Data Contábil', 'Título', 'Descrição', 'Entrada(R$)', 'Saída(R$)', 'Saldo do Dia(R$)',
+    ];
 
     public function format(): ImportFormat
     {
@@ -28,7 +32,7 @@ final class C6Parser implements Parser
 
     public function accepts(string $content): bool
     {
-        return str_contains($content, self::HEADER);
+        return $this->hasHeaderRow(CsvReader::rows($content, ','), self::HEADER_CELLS);
     }
 
     public function parse(string $content, bool $creditCard): ParseResult
@@ -36,17 +40,24 @@ final class C6Parser implements Parser
         $rows = [];
         $failed = [];
         $counts = [];
+        $usedGivenIds = [];
         $headerFound = false;
 
-        foreach ($this->csvRowsWithLineNumbers($content, ',') as $entry) {
+        foreach (CsvReader::rows($content, ',') as $entry) {
             $line = $entry['line'];
             $cells = $entry['cells'];
 
             if (! $headerFound) {
-                if ($this->isHeader($cells)) {
+                if ($this->cellsMatchHeader($cells, self::HEADER_CELLS)) {
                     $headerFound = true;
                 }
 
+                continue;
+            }
+
+            $titulo = trim($cells[2] ?? '');
+
+            if ($this->isBalanceOrTotalRow($titulo)) {
                 continue;
             }
 
@@ -64,16 +75,25 @@ final class C6Parser implements Parser
 
             $entradaRaw = trim($cells[4] ?? '');
             $saidaRaw = trim($cells[5] ?? '');
-            $entrada = $entradaRaw === '' ? 0 : BrazilianNumber::toCents($entradaRaw);
-            $saida = $saidaRaw === '' ? 0 : BrazilianNumber::toCents($saidaRaw);
+            $entradaCents = $entradaRaw === '' ? 0 : BrazilianNumber::toCents($entradaRaw);
+            $saidaCents = $saidaRaw === '' ? 0 : BrazilianNumber::toCents($saidaRaw);
 
-            if ($entrada === null || $saida === null) {
+            if ($entradaCents === null || $saidaCents === null) {
                 $failed[] = ['line' => $line, 'reason' => 'Valor inválido.'];
 
                 continue;
             }
 
-            if ($entrada <= 0 && $saida <= 0) {
+            $entrada = abs($entradaCents);
+            $saida = abs($saidaCents);
+
+            if ($entrada > 0 && $saida > 0) {
+                $failed[] = ['line' => $line, 'reason' => 'Valor inválido.'];
+
+                continue;
+            }
+
+            if ($entrada === 0 && $saida === 0) {
                 $failed[] = ['line' => $line, 'reason' => 'Valor zerado.'];
 
                 continue;
@@ -87,18 +107,16 @@ final class C6Parser implements Parser
                 $amount = $saida;
             }
 
-            $titulo = trim($cells[2] ?? '');
-            $descricao = trim($cells[3] ?? '');
-            $description = mb_strtolower($titulo) === mb_strtolower($descricao) || $descricao === ''
-                ? $titulo
-                : $titulo.' - '.$descricao;
+            $descricaoCell = trim($cells[3] ?? '');
+            $descricaoForJoin = mb_strtolower($titulo) === mb_strtolower($descricaoCell) ? null : $descricaoCell;
+            $description = self::joinDescriptionParts([$titulo, $descricaoForJoin]);
 
             $installment = null;
-            if ($creditCard) {
+            if ($creditCard && $direction === Direction::Out) {
                 [$description, $installment] = InstallmentSuffix::extract($description);
             }
 
-            $externalId = $this->resolveExternalId(null, $counts, $this->format(), $date, $amount, $direction, $description);
+            $externalId = $this->resolveExternalId(null, $usedGivenIds, $counts, $this->format(), $date, $amount, $direction, $description);
 
             $rows[] = new ParsedRow(
                 line: $line,
@@ -111,14 +129,10 @@ final class C6Parser implements Parser
             );
         }
 
-        return new ParseResult($rows, $failed);
-    }
+        if (! $headerFound) {
+            $failed[] = ['line' => 1, 'reason' => 'Cabeçalho não encontrado.'];
+        }
 
-    /**
-     * @param  list<string>  $cells
-     */
-    private function isHeader(array $cells): bool
-    {
-        return mb_strtolower(trim($cells[0] ?? '')) === 'data lançamento' && count($cells) >= 7;
+        return new ParseResult($rows, $failed);
     }
 }

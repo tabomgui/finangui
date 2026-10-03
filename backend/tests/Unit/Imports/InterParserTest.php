@@ -63,3 +63,68 @@ it('a mesma conta, gravada em Windows-1252, gera os mesmos dados após normaliza
         ->toBe(array_map(fn ($row) => $row->toArray(), $utf8->rows))
         ->and($latin1->failed)->toBe($utf8->failed);
 });
+
+it('reconhece o cabeçalho sem acento e em caixa baixa', function () {
+    $content = "data lancamento;historico;descricao;valor;saldo\n05/03/2026;Pix enviado;Padaria Exemplo;-15,90;100,00";
+
+    $parser = new InterParser;
+
+    expect($parser->accepts($content))->toBeTrue();
+
+    $result = $parser->parse($content, false);
+
+    expect($result->rows)->toHaveCount(1)
+        ->and($result->failed)->toBe([]);
+});
+
+it('falha com "Cabeçalho não encontrado." quando nenhuma linha casa com o cabeçalho esperado', function () {
+    $content = "isso;não;é;um;extrato\n1;2;3;4;5";
+
+    $result = (new InterParser)->parse($content, false);
+
+    expect($result->rows)->toBe([])
+        ->and($result->failed)->toBe([
+            ['line' => 1, 'reason' => 'Cabeçalho não encontrado.'],
+        ]);
+});
+
+it('pula linha de saldo/total mesmo com data válida, sem contar como falha', function () {
+    $content = "Data Lançamento;Histórico;Descrição;Valor;Saldo\n"
+        ."05/03/2026;Pix enviado;Padaria Exemplo;-15,90;100,00\n"
+        ."31/03/2026;Saldo do dia;;0,00;100,00\n"
+        .'31/03/2026;Total do mês;;0,00;100,00';
+
+    $result = (new InterParser)->parse($content, false);
+
+    expect($result->rows)->toHaveCount(1)
+        ->and($result->failed)->toBe([]);
+});
+
+it('só extrai parcela quando a direção é saída', function () {
+    $content = "Data Lançamento;Histórico;Descrição;Valor;Saldo\n"
+        ."05/03/2026;Compra Parcelada;Loja Exemplo Parcela 2/10;-100,00;100,00\n"
+        .'06/03/2026;Reembolso Parcela 2/10;Loja Exemplo;100,00;200,00';
+
+    $result = (new InterParser)->parse($content, true);
+
+    expect($result->rows[0]->direction)->toBe(Direction::Out)
+        ->and($result->rows[0]->description)->toBe('Compra Parcelada - Loja Exemplo')
+        ->and($result->rows[0]->installment)->toBe(['number' => 2, 'total' => 10])
+        ->and($result->rows[1]->direction)->toBe(Direction::In)
+        ->and($result->rows[1]->description)->toBe('Reembolso Parcela 2/10 - Loja Exemplo')
+        ->and($result->rows[1]->installment)->toBeNull();
+});
+
+it('rejeita datas fora do intervalo 1900-2100', function () {
+    $content = "Data Lançamento;Histórico;Descrição;Valor;Saldo\n"
+        ."05/03/1899;Pix enviado;Padaria Exemplo;-15,90;100,00\n"
+        .'05/03/2101;Pix enviado;Padaria Exemplo;-15,90;100,00';
+
+    $result = (new InterParser)->parse($content, false);
+
+    expect($result->rows)->toBe([])
+        ->and($result->failed)->toBe([
+            ['line' => 2, 'reason' => 'Data inválida.'],
+            ['line' => 3, 'reason' => 'Data inválida.'],
+        ]);
+});

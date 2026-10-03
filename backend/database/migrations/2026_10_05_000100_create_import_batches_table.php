@@ -24,6 +24,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index(['user_id', 'status', 'created_at']);
+            $table->index('account_id');
         });
 
         Schema::table('transactions', function (Blueprint $table) {
@@ -33,6 +34,7 @@ return new class extends Migration
 
         Schema::table('installment_plans', function (Blueprint $table) {
             $table->foreignId('import_batch_id')->nullable()->constrained()->nullOnDelete();
+            $table->index('import_batch_id');
         });
     }
 

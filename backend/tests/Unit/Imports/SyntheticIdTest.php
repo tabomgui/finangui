@@ -26,6 +26,13 @@ it('gera o mesmo id para descrição com acento/caixa diferente', function () {
     expect($a)->toBe($b);
 });
 
+it('gera o mesmo id quando a descrição só muda em espaços extras entre as palavras', function () {
+    $a = SyntheticId::for(ImportFormat::Inter, '2026-01-05', 1000, Direction::Out, 'Padaria   São   João', 0);
+    $b = SyntheticId::for(ImportFormat::Inter, '2026-01-05', 1000, Direction::Out, 'Padaria São João', 0);
+
+    expect($a)->toBe($b);
+});
+
 it('gera ids diferentes para formatos, datas, valores ou direções diferentes', function () {
     $base = SyntheticId::for(ImportFormat::Inter, '2026-01-05', 1000, Direction::Out, 'Padaria', 0);
 

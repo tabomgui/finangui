@@ -7,6 +7,7 @@ use App\Domain\Imports\Data\ParseResult;
 use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Parsers\Concerns\ParserHelpers;
 use App\Domain\Imports\Support\BrazilianNumber;
+use App\Domain\Imports\Support\CsvReader;
 use App\Domain\Imports\Support\InstallmentSuffix;
 use App\Domain\Transactions\Enums\Direction;
 
@@ -19,7 +20,8 @@ final class NubankCardParser implements Parser
 {
     use ParserHelpers;
 
-    private const HEADER = 'date,title,amount';
+    /** @var list<string> */
+    private const HEADER_CELLS = ['date', 'title', 'amount'];
 
     public function format(): ImportFormat
     {
@@ -28,7 +30,7 @@ final class NubankCardParser implements Parser
 
     public function accepts(string $content): bool
     {
-        return str_contains($content, self::HEADER);
+        return $this->hasHeaderRow(CsvReader::rows($content, ','), self::HEADER_CELLS);
     }
 
     public function parse(string $content, bool $creditCard): ParseResult
@@ -36,17 +38,24 @@ final class NubankCardParser implements Parser
         $rows = [];
         $failed = [];
         $counts = [];
+        $usedGivenIds = [];
         $headerFound = false;
 
-        foreach ($this->csvRowsWithLineNumbers($content, ',') as $entry) {
+        foreach (CsvReader::rows($content, ',') as $entry) {
             $line = $entry['line'];
             $cells = $entry['cells'];
 
             if (! $headerFound) {
-                if ($this->isHeader($cells)) {
+                if ($this->cellsMatchHeader($cells, self::HEADER_CELLS)) {
                     $headerFound = true;
                 }
 
+                continue;
+            }
+
+            $title = trim($cells[1] ?? '');
+
+            if ($this->isBalanceOrTotalRow($title)) {
                 continue;
             }
 
@@ -77,14 +86,14 @@ final class NubankCardParser implements Parser
 
             $direction = $cents > 0 ? Direction::Out : Direction::In;
             $amount = abs($cents);
-            $description = trim($cells[1] ?? '');
+            $description = $title;
 
             $installment = null;
-            if ($creditCard) {
+            if ($creditCard && $direction === Direction::Out) {
                 [$description, $installment] = InstallmentSuffix::extract($description);
             }
 
-            $externalId = $this->resolveExternalId(null, $counts, $this->format(), $date, $amount, $direction, $description);
+            $externalId = $this->resolveExternalId(null, $usedGivenIds, $counts, $this->format(), $date, $amount, $direction, $description);
 
             $rows[] = new ParsedRow(
                 line: $line,
@@ -97,15 +106,11 @@ final class NubankCardParser implements Parser
             );
         }
 
-        return new ParseResult($rows, $failed);
-    }
+        if (! $headerFound) {
+            $failed[] = ['line' => 1, 'reason' => 'Cabeçalho não encontrado.'];
+        }
 
-    /**
-     * @param  list<string>  $cells
-     */
-    private function isHeader(array $cells): bool
-    {
-        return mb_strtolower(trim($cells[0] ?? '')) === 'date' && count($cells) >= 3;
+        return new ParseResult($rows, $failed);
     }
 
     private static function parseIsoDate(string $raw): ?string
@@ -116,7 +121,7 @@ final class NubankCardParser implements Parser
 
         [, $year, $month, $day] = $m;
 
-        if (! checkdate((int) $month, (int) $day, (int) $year)) {
+        if (! self::yearInBounds((int) $year) || ! checkdate((int) $month, (int) $day, (int) $year)) {
             return null;
         }
 
