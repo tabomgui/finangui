@@ -3,18 +3,12 @@
 namespace App\Http\Requests\Rules;
 
 use App\Http\Requests\ApiRequest;
+use App\Http\Requests\Rules\Concerns\NormalizesOverwrite;
 
 // Corpo de POST /rules/{rule}/apply: só "overwrite" opcional.
 final class ApplyRuleRequest extends ApiRequest
 {
-    protected function prepareForValidation(): void
-    {
-        if ($this->has('overwrite')) {
-            $this->merge([
-                'overwrite' => filter_var($this->input('overwrite'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
-            ]);
-        }
-    }
+    use NormalizesOverwrite;
 
     /**
      * @return array<string, mixed>

@@ -4,6 +4,7 @@ namespace App\Http\Requests\Rules;
 
 use App\Domain\Rules\Models\Rule;
 use App\Http\Requests\ApiRequest;
+use App\Http\Requests\Rules\Concerns\DocumentsConditionsAndActions;
 use App\Http\Requests\Rules\Concerns\ValidatesRuleDefinition;
 
 // Atualização parcial (PATCH): cada campo é `sometimes`. Quando
@@ -12,6 +13,7 @@ use App\Http\Requests\Rules\Concerns\ValidatesRuleDefinition;
 // nova ação), por exemplo.
 final class UpdateRuleRequest extends ApiRequest
 {
+    use DocumentsConditionsAndActions;
     use ValidatesRuleDefinition;
 
     /**
@@ -24,7 +26,9 @@ final class UpdateRuleRequest extends ApiRequest
             'is_active' => ['sometimes', 'boolean'],
             'match' => ['sometimes', 'required', 'in:all,any'],
             'conditions' => ['sometimes', 'required', 'array', 'min:1'],
+            ...self::conditionItemRules('conditions.*'),
             'actions' => ['sometimes', 'required', 'array', 'min:1'],
+            ...self::actionItemRules(),
         ];
     }
 

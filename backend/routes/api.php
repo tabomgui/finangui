@@ -59,7 +59,7 @@ Route::prefix('v1')->group(function () {
         // rules/order e rules/preview antes de rules/{rule}, por clareza (o
         // whereNumber já evita a colisão com esses literais).
         Route::put('rules/order', [RuleController::class, 'reorder']);
-        Route::post('rules/preview', [RuleController::class, 'preview']);
+        Route::post('rules/preview', [RuleController::class, 'preview'])->middleware('throttle:60,1');
         Route::get('rules', [RuleController::class, 'index']);
         Route::post('rules', [RuleController::class, 'store']);
         Route::get('rules/{rule}', [RuleController::class, 'show'])->whereNumber('rule');

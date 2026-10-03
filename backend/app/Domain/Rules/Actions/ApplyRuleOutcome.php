@@ -11,9 +11,20 @@ use Illuminate\Support\Facades\DB;
 /**
  * Grava numa transação o que uma avaliação de regras (RuleOutcome) decidiu.
  * Nunca mexe em perna de transferência.
+ *
+ * Memoiza por instância se uma categoria/tag ainda existe e está usável:
+ * PreviewRule e ApplyRuleRetroactively reaproveitam a mesma instância ao
+ * longo de todo o scan, e a mesma categoria/tag de uma regra se repete em
+ * toda transação que casa — sem isso seria uma query a mais por linha.
  */
 final class ApplyRuleOutcome
 {
+    /** @var array<int, bool> */
+    private array $categoryUsable = [];
+
+    /** @var array<int, bool> */
+    private array $tagExists = [];
+
     /**
      * Só o que de fato mudaria: categoria/tag que não existem mais (regra
      * salva antes de excluí-las) ou categoria arquivada são ignoradas em
@@ -31,7 +42,7 @@ final class ApplyRuleOutcome
 
         if ($outcome->categoryId !== null
             && $outcome->categoryId !== $transaction->category_id
-            && Category::query()->whereKey($outcome->categoryId)->where('is_archived', false)->exists()) {
+            && $this->categoryUsable($outcome->categoryId)) {
             $changes['category_id'] = $outcome->categoryId;
         }
 
@@ -112,12 +123,16 @@ final class ApplyRuleOutcome
         $existing = $transaction->tags->pluck('id')->all();
         $candidates = array_values(array_diff($tagIds, $existing));
 
-        if ($candidates === []) {
-            return [];
-        }
+        return array_values(array_filter($candidates, fn (int $tagId) => $this->tagExists($tagId)));
+    }
 
-        $valid = Tag::query()->whereIn('id', $candidates)->pluck('id')->all();
+    private function categoryUsable(int $categoryId): bool
+    {
+        return $this->categoryUsable[$categoryId] ??= Category::query()->whereKey($categoryId)->where('is_archived', false)->exists();
+    }
 
-        return array_values(array_intersect($candidates, $valid));
+    private function tagExists(int $tagId): bool
+    {
+        return $this->tagExists[$tagId] ??= Tag::query()->whereKey($tagId)->exists();
     }
 }

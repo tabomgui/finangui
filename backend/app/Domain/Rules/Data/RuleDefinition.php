@@ -2,6 +2,7 @@
 
 namespace App\Domain\Rules\Data;
 
+use App\Domain\Rules\Enums\RuleActionType;
 use App\Domain\Rules\Models\Rule;
 
 /**
@@ -33,5 +34,21 @@ final readonly class RuleDefinition
     public static function fromInput(array $input): self
     {
         return new self(null, (string) $input['match'], array_values($input['conditions']), array_values($input['actions']));
+    }
+
+    /**
+     * Carregar a relação de tags custa uma query a mais por lote no scan de
+     * PreviewRule/ApplyRuleRetroactively; só vale a pena quando a regra tem
+     * add_tag (as outras ações nunca tocam $transaction->tags).
+     */
+    public function usesAddTag(): bool
+    {
+        foreach ($this->actions as $action) {
+            if (($action['type'] ?? null) === RuleActionType::AddTag->value) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

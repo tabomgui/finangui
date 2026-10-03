@@ -2,14 +2,19 @@
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Categories\Models\Category;
+use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Jobs\ApplyRuleRetroactively;
 use App\Domain\Rules\Models\Rule;
+use App\Domain\Rules\Queries\PreviewRule;
 use App\Domain\Tags\Models\Tag;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 function uberRule(array $overrides = []): Rule
 {
@@ -50,6 +55,24 @@ it('regra inativa também pode ser aplicada', function () {
     $this->postJson("/api/v1/rules/{$rule->id}/apply")->assertStatus(202);
 
     Bus::assertDispatched(ApplyRuleRetroactively::class, fn (ApplyRuleRetroactively $job) => $job->ruleId === $rule->id);
+});
+
+it('422 quando overwrite não é booleano', function () {
+    actingAsUser();
+    $rule = uberRule();
+
+    $this->postJson("/api/v1/rules/{$rule->id}/apply", ['overwrite' => 'abc'])
+        ->assertStatus(422)->assertJsonValidationErrors('overwrite');
+});
+
+it('aceita overwrite como string "true" normalizada', function () {
+    Bus::fake();
+    actingAsUser();
+    $rule = uberRule();
+
+    $this->postJson("/api/v1/rules/{$rule->id}/apply", ['overwrite' => 'true'])->assertStatus(202);
+
+    Bus::assertDispatched(ApplyRuleRetroactively::class, fn (ApplyRuleRetroactively $job) => $job->overwrite === true);
 });
 
 it('404 ao aplicar regra de outro usuário', function () {
@@ -141,10 +164,12 @@ it('regra excluída antes do job rodar: não faz nada', function () {
     $rule = uberRule();
     $ruleId = $rule->id;
     $rule->delete();
+    $transaction = Transaction::factory()->create(['description' => 'Uber *trip', 'category_id' => null]);
 
     ApplyRuleRetroactively::dispatch($ruleId, $user->id);
 
     expect(Rule::query()->withoutGlobalScopes()->find($ruleId))->toBeNull();
+    expect($transaction->refresh()->category_id)->toBeNull();
 });
 
 it('não toca em pernas de transferência', function () {
@@ -169,4 +194,87 @@ it('restaura o guard sem usuário autenticado depois de rodar', function () {
     ApplyRuleRetroactively::dispatch($rule->id, $user->id);
 
     expect(Auth::hasUser())->toBeFalse();
+});
+
+it('é único por regra: despachar duas vezes só enfileira uma', function () {
+    Queue::fake();
+    $user = actingAsUser();
+    $rule = uberRule();
+
+    ApplyRuleRetroactively::dispatch($rule->id, $user->id);
+    ApplyRuleRetroactively::dispatch($rule->id, $user->id);
+
+    Queue::assertPushed(ApplyRuleRetroactively::class, 1);
+});
+
+it('duas regras diferentes não são bloqueadas uma pela outra', function () {
+    Queue::fake();
+    $user = actingAsUser();
+    $a = uberRule();
+    $b = uberRule();
+
+    ApplyRuleRetroactively::dispatch($a->id, $user->id);
+    ApplyRuleRetroactively::dispatch($b->id, $user->id);
+
+    Queue::assertPushed(ApplyRuleRetroactively::class, 2);
+});
+
+it('falha registra um aviso no log com o id da regra', function () {
+    Log::spy();
+    $rule = uberRule();
+    $job = new ApplyRuleRetroactively($rule->id, 1);
+
+    $job->failed(new RuntimeException('falha simulada'));
+
+    Log::shouldHaveReceived('warning')->once()->withArgs(
+        fn (string $message, array $context) => $context['rule_id'] === $rule->id,
+    );
+});
+
+it('consistência: a prévia conta tantas mudanças quanto o job de fato aplica, com e sem overwrite', function () {
+    $user = actingAsUser();
+    $category = Category::factory()->create();
+    $archivedTarget = Category::factory()->create(['is_archived' => true]);
+    $tag = Tag::factory()->create();
+
+    // Mistura: manual (protegida), por histórico (substituível com overwrite),
+    // descrição travada (set_description não se aplica), tag já presente,
+    // já ignorada e uma que casaria mas a categoria alvo está arquivada.
+    Transaction::factory()->create(['description' => 'Uber *trip 1', 'category_id' => null]);
+    Transaction::factory()->create([
+        'description' => 'Uber *trip 2', 'category_id' => Category::factory()->create()->id, 'categorized_by' => 'manual',
+    ]);
+    Transaction::factory()->create([
+        'description' => 'Uber *trip 3', 'category_id' => Category::factory()->create()->id, 'categorized_by' => 'history',
+    ]);
+    $locked = Transaction::factory()->create([
+        'description' => 'Uber *trip 4', 'category_id' => null, 'description_locked' => true,
+    ]);
+    $taggedAlready = Transaction::factory()->create(['description' => 'Uber *trip 5', 'category_id' => null]);
+    $taggedAlready->tags()->attach($tag->id);
+    Transaction::factory()->create(['description' => 'Uber *trip 6', 'category_id' => null, 'is_ignored' => true]);
+
+    $rule = uberRule([
+        'actions' => [
+            ['type' => 'set_category', 'category_id' => $category->id],
+            ['type' => 'set_description', 'value' => 'Uber'],
+            ['type' => 'add_tag', 'tag_id' => $tag->id],
+        ],
+    ]);
+    $ruleArchivedCategory = uberRule(['actions' => [['type' => 'set_category', 'category_id' => $archivedTarget->id]]]);
+
+    foreach ([$rule, $ruleArchivedCategory] as $r) {
+        foreach ([false, true] as $overwrite) {
+            $definition = RuleDefinition::fromRule($r);
+            $preview = app(PreviewRule::class)->handle($definition, $overwrite);
+
+            ApplyRuleRetroactively::dispatch($r->id, $user->id, $overwrite);
+
+            expect($preview->changed)->toBe($r->refresh()->last_applied_changes);
+        }
+    }
+
+    // A ação set_description nunca se aplica à travada; a tag não conta de novo na já marcada.
+    expect($locked->refresh()->description)->toBe('Uber *trip 4');
+    expect($taggedAlready->refresh()->tags->pluck('id')->all())->toBe([$tag->id]);
 });

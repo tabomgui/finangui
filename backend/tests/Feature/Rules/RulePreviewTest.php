@@ -2,8 +2,10 @@
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Categories\Models\Category;
+use App\Domain\Tags\Models\Tag;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 function previewPayload(array $overrides = []): array
@@ -81,12 +83,17 @@ it('amostra fica limitada a 20, só com as que mudam, mais recentes primeiro', f
     actingAsUser();
     $target = Category::factory()->create();
 
+    // Data explícita (crescente com $i): a amostra ordena por data, não pela
+    // ordem de leitura (que é por id) — sem isso o teste dependeria da data
+    // aleatória da factory.
     $ids = [];
     for ($i = 0; $i < 25; $i++) {
-        $ids[] = Transaction::factory()->create(['description' => "Uber *trip {$i}", 'category_id' => null])->id;
+        $ids[] = Transaction::factory()->create([
+            'description' => "Uber *trip {$i}", 'category_id' => null, 'date' => now()->subDays(30 - $i)->toDateString(),
+        ])->id;
     }
     // Uma transação que casa mas não muda nada (mesma categoria já aplicada): não entra na amostra nem conta como changed.
-    Transaction::factory()->create(['description' => 'Uber *trip extra', 'category_id' => $target->id]);
+    Transaction::factory()->create(['description' => 'Uber *trip extra', 'category_id' => $target->id, 'date' => now()->toDateString()]);
 
     $response = $this->postJson('/api/v1/rules/preview', previewPayload([
         'actions' => [['type' => 'set_category', 'category_id' => $target->id]],
@@ -136,6 +143,75 @@ it('não grava nada no banco', function () {
     expect($transaction->category_id)->toBeNull();
     expect($transaction->updated_at->equalTo($updatedAt))->toBeTrue();
     expect(Transaction::count())->toBe($countBefore);
+});
+
+it('não executa nenhum comando de escrita, mesmo com todas as ações', function () {
+    actingAsUser();
+    $category = Category::factory()->create();
+    $tag = Tag::factory()->create();
+    Transaction::factory()->create(['description' => 'Uber *trip', 'category_id' => null]);
+
+    // Monta o corpo sem o helper previewPayload(): o default dele cria uma
+    // categoria nova a cada chamada (mesmo sobrescrevendo "actions" depois),
+    // e isso apareceria como escrita capturada pelo DB::listen abaixo.
+    $payload = [
+        'match' => 'all',
+        'conditions' => [
+            ['field' => 'description', 'op' => 'contains', 'value' => 'uber'],
+        ],
+        'actions' => [
+            ['type' => 'set_category', 'category_id' => $category->id],
+            ['type' => 'set_description', 'value' => 'Uber'],
+            ['type' => 'set_payee', 'value' => 'Uber BV'],
+            ['type' => 'add_tag', 'tag_id' => $tag->id],
+            ['type' => 'ignore'],
+        ],
+    ];
+
+    $queries = [];
+    DB::listen(function ($query) use (&$queries): void {
+        $queries[] = $query->sql;
+    });
+
+    $this->postJson('/api/v1/rules/preview', $payload)->assertOk();
+
+    $writes = array_values(array_filter($queries, fn (string $sql) => ! preg_match('/^\s*select\b/i', $sql)));
+    expect($writes)->toBe([]);
+    expect($queries)->not->toBeEmpty();
+});
+
+it('422 quando set_category na prévia referencia categoria de outro usuário', function () {
+    actingAsUser();
+    $other = User::factory()->create();
+    $otherCategory = Category::factory()->create(['user_id' => $other->id]);
+
+    $this->postJson('/api/v1/rules/preview', previewPayload([
+        'actions' => [['type' => 'set_category', 'category_id' => $otherCategory->id]],
+    ]))->assertStatus(422)->assertJsonValidationErrors('actions.0.category_id');
+});
+
+it('422 quando overwrite não é booleano', function () {
+    actingAsUser();
+
+    $this->postJson('/api/v1/rules/preview', previewPayload(['overwrite' => 'abc']))
+        ->assertStatus(422)->assertJsonValidationErrors('overwrite');
+});
+
+it('aceita overwrite como string "true" normalizada', function () {
+    actingAsUser();
+    $current = Category::factory()->create();
+    $new = Category::factory()->create();
+
+    Transaction::factory()->create([
+        'description' => 'Uber *trip', 'category_id' => $current->id, 'categorized_by' => 'rule:1',
+    ]);
+
+    $response = $this->postJson('/api/v1/rules/preview', previewPayload([
+        'actions' => [['type' => 'set_category', 'category_id' => $new->id]],
+        'overwrite' => 'true',
+    ]))->assertOk();
+
+    expect($response->json('data.changed'))->toBe(1);
 });
 
 it('pernas de transferência ficam fora da prévia', function () {

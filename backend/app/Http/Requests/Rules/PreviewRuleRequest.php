@@ -3,27 +3,17 @@
 namespace App\Http\Requests\Rules;
 
 use App\Http\Requests\ApiRequest;
+use App\Http\Requests\Rules\Concerns\DocumentsConditionsAndActions;
+use App\Http\Requests\Rules\Concerns\NormalizesOverwrite;
 use App\Http\Requests\Rules\Concerns\ValidatesRuleDefinition;
 
 // Mesmo corpo de StoreRuleRequest sem "name" (a regra ainda não existe),
 // mais "overwrite" opcional, com a mesma semântica da aplicação retroativa.
 final class PreviewRuleRequest extends ApiRequest
 {
+    use DocumentsConditionsAndActions;
+    use NormalizesOverwrite;
     use ValidatesRuleDefinition;
-
-    /**
-     * O corpo chega em JSON (não em query string), mas normaliza do mesmo
-     * jeito: aceitar "true"/"false" como string também, sem abrir mão da
-     * regra "boolean" usada pelo Scramble para documentar o parâmetro.
-     */
-    protected function prepareForValidation(): void
-    {
-        if ($this->has('overwrite')) {
-            $this->merge([
-                'overwrite' => filter_var($this->input('overwrite'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE),
-            ]);
-        }
-    }
 
     /**
      * @return array<string, mixed>
@@ -33,7 +23,9 @@ final class PreviewRuleRequest extends ApiRequest
         return [
             'match' => ['required', 'in:all,any'],
             'conditions' => ['required', 'array', 'min:1'],
+            ...self::conditionItemRules('conditions.*'),
             'actions' => ['required', 'array', 'min:1'],
+            ...self::actionItemRules(),
             'overwrite' => ['sometimes', 'boolean'],
         ];
     }

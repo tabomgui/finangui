@@ -32,15 +32,20 @@ final class PreviewRule
         $changed = 0;
         $sample = [];
 
-        Transaction::query()->whereNull('transfer_id')->with('tags')->lazyByIdDesc(500)
+        // Carregar tags custa uma query a mais por lote; só compensa no scan
+        // inteiro quando a regra tem add_tag (as outras ações nunca tocam
+        // $transaction->tags). Sem add_tag, a amostra ainda carrega tags,
+        // mas só para quem entrou nela (abaixo).
+        $needsTags = $definition->usesAddTag();
+
+        $query = Transaction::query()->whereNull('transfer_id');
+        if ($needsTags) {
+            $query->with('tags');
+        }
+
+        $query->lazyByIdDesc(500)
             ->each(function (Transaction $transaction) use ($definition, $overwrite, &$matched, &$changed, &$sample): void {
-                $context = new RuleContext(
-                    hasCategory: $transaction->category_id !== null,
-                    categoryManual: $transaction->categorized_by === 'manual',
-                    descriptionLocked: $transaction->description_locked,
-                    overwrite: $overwrite,
-                    onlyCategory: false,
-                );
+                $context = RuleContext::forExisting($transaction, $overwrite);
 
                 $outcome = RuleEngine::evaluate(RuleSubject::fromTransaction($transaction), [$definition], $context);
 
@@ -64,10 +69,19 @@ final class PreviewRule
             });
 
         if ($sample !== []) {
-            // Carrega as relações que a amostra exibe só para quem entrou nela:
-            // load() preenche os mesmos objetos referenciados em $sample.
-            (new Collection(array_map(fn (RulePreviewSample $item) => $item->transaction, $sample)))
-                ->load(['account', 'category.parent', 'installmentPlan']);
+            // Mais recentes primeiro pela data do lançamento (não pela ordem
+            // de leitura, que é por id): id só é critério de desempate.
+            usort($sample, fn (RulePreviewSample $a, RulePreviewSample $b): int => [$b->transaction->date, $b->transaction->id] <=> [$a->transaction->date, $a->transaction->id]);
+
+            // Carrega as relações que a amostra exibe só para quem entrou
+            // nela: load() preenche os mesmos objetos referenciados em
+            // $sample. "tags" entra aqui só se ainda não veio do scan acima.
+            $relations = ['account', 'category.parent', 'installmentPlan'];
+            if (! $needsTags) {
+                $relations[] = 'tags';
+            }
+
+            (new Collection(array_map(fn (RulePreviewSample $item) => $item->transaction, $sample)))->load($relations);
         }
 
         return new RulePreviewResult($matched, $changed, $sample);
