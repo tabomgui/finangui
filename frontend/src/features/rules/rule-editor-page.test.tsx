@@ -27,6 +27,10 @@ vi.mock('@/api/queries/rules', () => ({
   useCreateRule: () => ({ mutateAsync: createMutateAsync }),
   useUpdateRule: () => ({ mutateAsync: updateMutateAsync }),
   useDeleteRule: () => ({ mutateAsync: deleteMutateAsync }),
+  // A prévia ao vivo e o diálogo de aplicar têm testes próprios (rule-preview-card.test.tsx,
+  // apply-rule-dialog.test.tsx); aqui só o suficiente para RuleEditorPage renderizar sem rede.
+  useRulePreview: () => ({ data: undefined, isPending: false, isPlaceholderData: false, isError: false, error: null, refetch: vi.fn() }),
+  useApplyRule: () => ({ mutateAsync: vi.fn() }),
 }))
 
 let mockTransaction: Transaction | undefined

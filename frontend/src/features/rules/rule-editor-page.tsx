@@ -20,8 +20,10 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { applyFieldErrors, notifyError } from '@/lib/form-errors'
 import { ActionList } from './action-list'
+import { ApplyRuleDialog } from './apply-rule-dialog'
 import { ConditionList } from './condition-list'
 import { ruleDefaults, ruleDefaultsFromTransaction, ruleSchema, toRuleBody, type RuleFormValues } from './rule-form-values'
+import { RulePreviewCard } from './rule-preview-card'
 
 export function RuleEditorPage() {
   const params = useParams()
@@ -29,7 +31,13 @@ export function RuleEditorPage() {
   return ruleId === null ? <NewRulePage /> : <EditRulePage id={ruleId} />
 }
 
-function RuleFormBody({ form }: { form: ReturnType<typeof useForm<RuleFormValues>> }) {
+type RuleFormBodyProps = {
+  form: ReturnType<typeof useForm<RuleFormValues>>
+  overwrite: boolean
+  onOverwriteChange: (value: boolean) => void
+}
+
+function RuleFormBody({ form, overwrite, onOverwriteChange }: RuleFormBodyProps) {
   const { errors } = form.formState
 
   return (
@@ -65,7 +73,7 @@ function RuleFormBody({ form }: { form: ReturnType<typeof useForm<RuleFormValues
           <ActionList form={form} />
         </div>
 
-        {/* Prévia ao vivo (quantas transações casam/mudariam) entra aqui. */}
+        <RulePreviewCard form={form} overwrite={overwrite} onOverwriteChange={onOverwriteChange} />
       </CardContent>
     </Card>
   )
@@ -77,6 +85,7 @@ function NewRulePage() {
   const { data: transaction, isPending } = useTransaction(transactionId)
   const create = useCreateRule()
   const navigate = useNavigate()
+  const [overwrite, setOverwrite] = useState(false)
 
   const form = useForm<RuleFormValues>({ resolver: zodResolver(ruleSchema), defaultValues: ruleDefaults() })
 
@@ -108,7 +117,7 @@ function NewRulePage() {
       <PageHeader title="Nova regra" back="/regras" />
       <PageBody className="max-w-2xl space-y-4">
         <form className="space-y-4" onSubmit={submit} noValidate>
-          <RuleFormBody form={form} />
+          <RuleFormBody form={form} overwrite={overwrite} onOverwriteChange={setOverwrite} />
           <Button type="submit" className="w-full rounded-2xl py-6 text-base" disabled={form.formState.isSubmitting}>
             {form.formState.isSubmitting && <LoaderCircle className="h-4 w-4 animate-spin" />}
             Salvar regra
@@ -125,6 +134,7 @@ function EditRulePage({ id }: { id: number }) {
   const remove = useDeleteRule()
   const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [overwrite, setOverwrite] = useState(false)
 
   const notFound = isError && error instanceof ApiError && error.status === 404
 
@@ -197,12 +207,14 @@ function EditRulePage({ id }: { id: number }) {
       />
       <PageBody className="max-w-2xl space-y-4">
         <form className="space-y-4" onSubmit={submit} noValidate>
-          <RuleFormBody form={form} />
+          <RuleFormBody form={form} overwrite={overwrite} onOverwriteChange={setOverwrite} />
           <Button type="submit" className="w-full rounded-2xl py-6 text-base" disabled={form.formState.isSubmitting}>
             {form.formState.isSubmitting && <LoaderCircle className="h-4 w-4 animate-spin" />}
             Salvar regra
           </Button>
         </form>
+
+        <ApplyRuleDialog rule={rule} overwrite={overwrite} onOverwriteChange={setOverwrite} disabled={form.formState.isDirty} />
       </PageBody>
 
       <ConfirmDialog
