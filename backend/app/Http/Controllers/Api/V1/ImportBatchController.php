@@ -10,6 +10,7 @@ use App\Domain\Imports\Actions\RevertImportBatch;
 use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Models\ImportBatch;
 use App\Domain\Imports\Queries\ImportPreview;
+use App\Domain\Imports\Queries\RevertibleBatches;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Imports\ConfirmImportBatchRequest;
 use App\Http\Requests\Imports\IndexImportBatchesRequest;
@@ -24,7 +25,7 @@ final class ImportBatchController extends Controller
 {
     private const LIST_LIMIT = 50;
 
-    public function index(IndexImportBatchesRequest $request): AnonymousResourceCollection
+    public function index(IndexImportBatchesRequest $request, RevertibleBatches $revertibleBatches): AnonymousResourceCollection
     {
         $batches = ImportBatch::query()
             ->select(['id', 'user_id', 'account_id', 'format', 'filename', 'status', 'stats', 'created_at', 'completed_at', 'reverted_at'])
@@ -34,6 +35,10 @@ final class ImportBatchController extends Controller
             ->orderByDesc('id')
             ->limit(self::LIST_LIMIT)
             ->get();
+
+        $revertibleIds = $revertibleBatches->ids();
+
+        $batches->each(fn (ImportBatch $batch) => $batch->revertible = in_array($batch->id, $revertibleIds, true));
 
         return ImportBatchResource::collection($batches);
     }

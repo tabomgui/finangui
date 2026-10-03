@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property list<int>|null $created_statement_ids
  * @property CarbonImmutable|null $completed_at
  * @property CarbonImmutable|null $reverted_at
+ * @property bool|null $revertible atributo dinâmico (não é coluna), pré-calculado por ImportBatchController::index() via RevertibleBatches; ImportBatchResource recalcula quando ausente
  */
 class ImportBatch extends Model
 {

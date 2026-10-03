@@ -28,6 +28,8 @@ function batch(overrides: Partial<ImportBatch>): ImportBatch {
     filename: 'extrato.csv',
     status: 'pending',
     stats: { failed: [] },
+    summary: { new: 0, duplicate: 0, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0 },
+    revertible: false,
     created_at: '2026-10-01T10:00:00+00:00',
     completed_at: null,
     reverted_at: null,
@@ -84,6 +86,7 @@ describe('ImportHistoryCard', () => {
         batch({
           status: 'completed',
           stats: { inserted: 3, duplicates: 1, failed: [{ line: 4, reason: 'valor inválido' }] },
+          summary: { new: 3, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 1 },
         }),
       ],
       isPending: false,
@@ -96,7 +99,11 @@ describe('ImportHistoryCard', () => {
   })
 
   it('reverte um lote concluído após confirmar no diálogo', async () => {
-    batchesState = { data: [batch({ id: 7, status: 'completed', stats: { inserted: 1, failed: [] } })], isPending: false, isError: false }
+    batchesState = {
+      data: [batch({ id: 7, status: 'completed', revertible: true, stats: { inserted: 1, failed: [] } })],
+      isPending: false,
+      isError: false,
+    }
     renderCard()
 
     const trigger = screen.getByRole('button', { name: 'Ações da importação de extrato.csv' })
@@ -126,6 +133,18 @@ describe('ImportHistoryCard', () => {
     renderCard()
 
     expect(screen.queryByText(/mais recentes/)).not.toBeInTheDocument()
+  })
+
+  it('lote concluído mas não revertível (não é o mais recente da conta) não mostra menu de ações', () => {
+    batchesState = {
+      data: [batch({ status: 'completed', revertible: false, stats: { inserted: 1, failed: [] } })],
+      isPending: false,
+      isError: false,
+    }
+    renderCard()
+
+    expect(screen.getByText('Importado')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Ações da importação/ })).not.toBeInTheDocument()
   })
 
   it('lote revertido não mostra menu de ações', () => {

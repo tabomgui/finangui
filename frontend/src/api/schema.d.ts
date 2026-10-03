@@ -669,6 +669,16 @@ export interface components {
                 swapped?: number;
                 skipped?: number;
             };
+            summary: {
+                new: number;
+                duplicate: number;
+                update: number;
+                replace_installment: number;
+                adopt: number;
+                swap_pending: number;
+                failed: number;
+            };
+            revertible: boolean;
             created_at: string;
             completed_at: string | null;
             reverted_at: string | null;
@@ -710,6 +720,16 @@ export interface components {
                     swapped?: number;
                     skipped?: number;
                 };
+                summary: {
+                    new: number;
+                    duplicate: number;
+                    update: number;
+                    replace_installment: number;
+                    adopt: number;
+                    swap_pending: number;
+                    failed: number;
+                };
+                revertible: boolean;
                 created_at: string;
                 completed_at: string | null;
                 reverted_at: string | null;

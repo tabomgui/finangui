@@ -1,4 +1,4 @@
-import type { ImportBatch, ImportBatchStatus, ImportFormat, ImportOutcome, ImportPreview } from '@/api/types'
+import type { ImportBatchStatus, ImportFormat, ImportOutcome, ImportPreview } from '@/api/types'
 
 export const OUTCOME_LABELS: Record<ImportOutcome, string> = {
   new: 'Nova',
@@ -58,22 +58,4 @@ export function summaryText(summary: ImportPreview['summary']): string {
       return `${count} ${pluralize(count, singular, plural)}`
     })
     .join(' · ')
-}
-
-/**
- * `ImportBatchResource.stats` (lote concluído/revertido) usa outros nomes de chave que
- * `ImportPreviewResource.summary` (prévia ainda pendente) — ambos vêm prontos do backend, só
- * remapeia para o mesmo formato de texto usado em `summaryText`. `skipped` (linhas puladas na
- * confirmação) não tem equivalente na prévia e não entra no resumo.
- */
-export function statsSummary(stats: ImportBatch['stats']): ImportPreview['summary'] {
-  return {
-    new: stats.inserted ?? 0,
-    duplicate: stats.duplicates ?? 0,
-    update: stats.updated ?? 0,
-    replace_installment: stats.replaced ?? 0,
-    adopt: stats.adopted ?? 0,
-    swap_pending: stats.swapped ?? 0,
-    failed: stats.failed.length,
-  }
 }

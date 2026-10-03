@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
-import { BATCH_STATUS_LABELS, BATCH_STATUS_VARIANT, statsSummary, summaryText } from './import-labels'
+import { BATCH_STATUS_LABELS, BATCH_STATUS_VARIANT, summaryText } from './import-labels'
 
 // Mesmo limite de `ImportBatchController::LIST_LIMIT` no backend: a listagem não pagina, só
 // corta nos 50 lotes mais recentes — o aviso avisa que pode haver mais, sem precisar paginação.
@@ -65,7 +65,7 @@ export function ImportHistoryCard() {
                   </p>
                   {batch.status !== 'pending' && (
                     <p className="truncate text-xs text-muted-foreground">
-                      {summaryText(statsSummary(batch.stats)) || 'Nenhuma linha processada.'}
+                      {summaryText(batch.summary) || 'Nenhuma linha processada.'}
                     </p>
                   )}
                 </div>
@@ -73,7 +73,7 @@ export function ImportHistoryCard() {
                   <Button asChild variant="outline" size="sm">
                     <Link to={`/importar/${batch.id}`}>Continuar</Link>
                   </Button>
-                ) : batch.status === 'completed' ? (
+                ) : batch.status === 'completed' && batch.revertible ? (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon" aria-label={`Ações da importação de ${batch.filename}`}>

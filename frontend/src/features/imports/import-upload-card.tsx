@@ -1,8 +1,7 @@
 import { LoaderCircle, Upload } from 'lucide-react'
-import { type ChangeEvent, useRef, useState } from 'react'
+import { type ChangeEvent, useRef } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ApiError } from '@/api/errors'
 import { useUploadStatement } from '@/api/queries/imports'
 import type { ImportFormat } from '@/api/types'
 import { Field } from '@/components/form/field'
@@ -23,11 +22,6 @@ type UploadFormValues = {
 // uma viagem ao servidor só para voltar com o 413/422 de um arquivo visivelmente grande demais.
 const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024
 
-// Mensagem exata de `CreateImportBatch` (backend) quando o `FormatDetector` não reconhece o
-// cabeçalho do arquivo. Comparar a mensagem inteira, não só "existe erro em `file`": outros
-// erros nesse campo (tamanho, extensão) não têm relação com o seletor de formato.
-const UNRECOGNIZED_FORMAT_MESSAGE = 'Não reconhecemos o formato deste arquivo. Escolha o banco.'
-
 /** Conta pré-selecionada via `?conta=<id>` (link "Importar extrato" no menu de uma conta). */
 function accountFromSearch(params: URLSearchParams): number | null {
   const raw = params.get('conta')
@@ -40,9 +34,6 @@ export function ImportUploadCard() {
   const [searchParams] = useSearchParams()
   const upload = useUploadStatement()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  // A mensagem de formato não reconhecido vem no campo `file`; ela também destaca o seletor de
-  // formato (o usuário precisa escolher o banco manualmente), sem duplicar o texto nos dois campos.
-  const [highlightFormat, setHighlightFormat] = useState(false)
 
   const form = useForm<UploadFormValues>({
     defaultValues: { account_id: accountFromSearch(searchParams), file: null, format: 'auto' },
@@ -56,7 +47,6 @@ export function ImportUploadCard() {
     const next = event.target.files?.[0] ?? null
     form.setValue('file', next)
     form.clearErrors('file')
-    setHighlightFormat(false)
   }
 
   const onSubmit = form.handleSubmit(async (values) => {
@@ -77,8 +67,6 @@ export function ImportUploadCard() {
       })
       navigate(`/importar/${preview.batch.id}`)
     } catch (error) {
-      const fileMessage = error instanceof ApiError ? error.fieldErrors.file?.[0] : undefined
-      setHighlightFormat(fileMessage === UNRECOGNIZED_FORMAT_MESSAGE)
       if (!applyFieldErrors(error, form.setError, ['account_id', 'file', 'format'])) notifyError(error)
     }
   })
@@ -130,10 +118,10 @@ export function ImportUploadCard() {
               value={format}
               onValueChange={(next) => {
                 form.setValue('format', next as ImportFormat | 'auto')
-                setHighlightFormat(false)
+                form.clearErrors('format')
               }}
             >
-              <SelectTrigger {...control} aria-invalid={control['aria-invalid'] || highlightFormat || undefined} className="w-full">
+              <SelectTrigger {...control} className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

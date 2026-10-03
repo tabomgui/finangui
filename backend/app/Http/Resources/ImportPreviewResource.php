@@ -105,18 +105,7 @@ final class ImportPreviewResource extends JsonResource
         $stats = $data->batch->stats ?? [];
 
         if ($data->batch->status !== ImportBatchStatus::Pending) {
-            /** @var list<array{line: int, reason: string}> $failed */
-            $failed = $stats['failed'] ?? [];
-
-            return [
-                'new' => (int) ($stats['inserted'] ?? 0),
-                'duplicate' => (int) ($stats['duplicates'] ?? 0),
-                'update' => (int) ($stats['updated'] ?? 0),
-                'replace_installment' => (int) ($stats['replaced'] ?? 0),
-                'adopt' => (int) ($stats['adopted'] ?? 0),
-                'swap_pending' => (int) ($stats['swapped'] ?? 0),
-                'failed' => count($failed),
-            ];
+            return ImportBatchResource::summaryFromStats($stats);
         }
 
         /** @var list<array{line: int, reason: string}> $failed */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { ImportBatch, ImportPreview } from '@/api/types'
-import { BATCH_STATUS_LABELS, BATCH_STATUS_VARIANT, FORMAT_OPTIONS, OUTCOME_LABELS, statsSummary, summaryText } from './import-labels'
+import type { ImportPreview } from '@/api/types'
+import { BATCH_STATUS_LABELS, BATCH_STATUS_VARIANT, FORMAT_OPTIONS, OUTCOME_LABELS, summaryText } from './import-labels'
 
 function summary(overrides: Partial<ImportPreview['summary']>): ImportPreview['summary'] {
   return { new: 0, duplicate: 0, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0, ...overrides }
@@ -57,34 +57,5 @@ describe('summaryText', () => {
 
   it('inclui update e swap_pending quando presentes', () => {
     expect(summaryText(summary({ update: 1, swap_pending: 2 }))).toBe('1 atualizada · 2 pendentes confirmadas')
-  })
-})
-
-describe('statsSummary', () => {
-  it('remapeia as chaves de ImportBatchResource.stats para o formato de summaryText', () => {
-    const stats: ImportBatch['stats'] = {
-      inserted: 3,
-      duplicates: 1,
-      updated: 0,
-      replaced: 0,
-      adopted: 1,
-      swapped: 0,
-      skipped: 5,
-      failed: [{ line: 4, reason: 'valor inválido' }],
-    }
-    expect(statsSummary(stats)).toEqual({
-      new: 3,
-      duplicate: 1,
-      update: 0,
-      replace_installment: 0,
-      adopt: 1,
-      swap_pending: 0,
-      failed: 1,
-    })
-  })
-
-  it('trata estatísticas ausentes (lote ainda pendente) como zero', () => {
-    const stats: ImportBatch['stats'] = { failed: [] }
-    expect(summaryText(statsSummary(stats))).toBe('')
   })
 })

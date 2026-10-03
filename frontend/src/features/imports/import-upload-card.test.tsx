@@ -119,6 +119,7 @@ describe('ImportUploadCard', () => {
     mutateAsync.mockRejectedValue(
       new ApiError(422, 'Dados inválidos.', null, {
         file: ['Não reconhecemos o formato deste arquivo. Escolha o banco.'],
+        format: ['Escolha o banco manualmente.'],
       }),
     )
     renderCard()
@@ -128,6 +129,7 @@ describe('ImportUploadCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ver prévia' }))
 
     expect(await screen.findByText('Não reconhecemos o formato deste arquivo. Escolha o banco.')).toBeInTheDocument()
+    expect(await screen.findByText('Escolha o banco manualmente.')).toBeInTheDocument()
     expect(screen.getByLabelText('Banco/formato')).toHaveAttribute('aria-invalid', 'true')
   })
 

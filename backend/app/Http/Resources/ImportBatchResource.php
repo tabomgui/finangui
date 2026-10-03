@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Domain\Imports\Enums\ImportBatchStatus;
 use App\Domain\Imports\Models\ImportBatch;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -35,10 +36,64 @@ final class ImportBatchResource extends JsonResource
             'filename' => $this->filename,
             'status' => $this->status,
             'stats' => $this->statsToArray(),
+            'summary' => self::summaryFromStats($this->stats ?? []),
+            'revertible' => $this->revertible(),
             'created_at' => $this->created_at->toIso8601String(),
             'completed_at' => $this->completed_at?->toIso8601String(),
             'reverted_at' => $this->reverted_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Mesma contagem para quem já olhou `stats` (lote concluído/revertido)
+     * e para a prévia de um lote pendente (ImportPreviewResource, que soma
+     * as decisões do próprio IngestionPlanner em vez de ler `stats`): só a
+     * nomenclatura difere entre as duas origens (`inserted` vs `new`, etc.).
+     *
+     * @param  array<string, mixed>  $stats
+     * @return array{new: int, duplicate: int, update: int, replace_installment: int, adopt: int, swap_pending: int, failed: int}
+     */
+    public static function summaryFromStats(array $stats): array
+    {
+        /** @var list<array{line: int, reason: string}> $failed */
+        $failed = $stats['failed'] ?? [];
+
+        return [
+            'new' => (int) ($stats['inserted'] ?? 0),
+            'duplicate' => (int) ($stats['duplicates'] ?? 0),
+            'update' => (int) ($stats['updated'] ?? 0),
+            'replace_installment' => (int) ($stats['replaced'] ?? 0),
+            'adopt' => (int) ($stats['adopted'] ?? 0),
+            'swap_pending' => (int) ($stats['swapped'] ?? 0),
+            'failed' => count($failed),
+        ];
+    }
+
+    /**
+     * Só o lote completed mais recente da conta pode ser revertido (ver
+     * RevertImportBatch). `index()` pré-calcula isto numa única consulta
+     * agrupada por conta e grava num atributo dinâmico antes de montar a
+     * coleção (ver ImportBatchController::mostRecentCompletedIdsByAccount);
+     * sem isso (ex.: resposta de um lote só), calcula na hora.
+     */
+    private function revertible(): bool
+    {
+        $precomputed = $this->resource->getAttributes()['revertible'] ?? null;
+
+        if ($precomputed !== null) {
+            return (bool) $precomputed;
+        }
+
+        if ($this->status !== ImportBatchStatus::Completed) {
+            return false;
+        }
+
+        return ImportBatch::query()
+            ->where('account_id', $this->account_id)
+            ->where('status', ImportBatchStatus::Completed)
+            ->orderByDesc('completed_at')
+            ->orderByDesc('id')
+            ->value('id') === $this->id;
     }
 
     /**

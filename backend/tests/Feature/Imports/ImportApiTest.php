@@ -70,8 +70,21 @@ it('formato não reconhecido e sem format explícito dá 422 em file', function 
     ]);
 
     $response->assertUnprocessable();
-    $response->assertJsonValidationErrors('file');
+    $response->assertJsonValidationErrors(['file', 'format']);
     expect($response->json('message'))->toContain('Não reconhecemos o formato deste arquivo.');
+});
+
+it('conta em moeda diferente de BRL dá 422 em account_id', function () {
+    $usdAccount = Account::factory()->create(['user_id' => $this->user->id, 'currency' => 'USD']);
+
+    $response = $this->postJson('/api/v1/import-batches', [
+        'account_id' => $usdAccount->id,
+        'file' => nubankFile(importFixture('nubank.csv')),
+    ]);
+
+    $response->assertUnprocessable();
+    $response->assertJsonValidationErrors('account_id');
+    expect($response->json('message'))->toContain('Importação só disponível para contas em reais.');
 });
 
 it('formato ofx forçado sobre conteúdo csv (sem nenhum bloco STMTTRN) dá 422 em file', function () {
@@ -265,6 +278,78 @@ it('reverte um lote concluído', function () {
     $response->assertOk();
     $response->assertJsonPath('data.status', 'reverted');
     expect(Transaction::where('account_id', $this->account->id)->count())->toBe(0);
+});
+
+it('revertible só é true para o lote completed mais recente de cada conta, na listagem e no show', function () {
+    $otherAccount = Account::factory()->create(['user_id' => $this->user->id]);
+
+    $firstBatchId = $this->postJson('/api/v1/import-batches', [
+        'account_id' => $this->account->id,
+        'file' => nubankFile(importFixture('nubank.csv')),
+    ])->json('data.batch.id');
+    $this->postJson("/api/v1/import-batches/{$firstBatchId}/confirm")->assertOk();
+
+    $otherAccountBatchId = $this->postJson('/api/v1/import-batches', [
+        'account_id' => $otherAccount->id,
+        'file' => nubankFile(importFixture('nubank.csv'), 'outro.csv'),
+    ])->json('data.batch.id');
+    $this->postJson("/api/v1/import-batches/{$otherAccountBatchId}/confirm")->assertOk();
+
+    $secondBatchId = $this->postJson('/api/v1/import-batches', [
+        'account_id' => $this->account->id,
+        'file' => nubankFile(importFixture('inter.csv'), 'inter.csv'),
+    ])->json('data.batch.id');
+    $this->postJson("/api/v1/import-batches/{$secondBatchId}/confirm")->assertOk();
+
+    $list = $this->getJson('/api/v1/import-batches')->json('data');
+    $revertibleById = collect($list)->pluck('revertible', 'id');
+
+    expect($revertibleById[$firstBatchId])->toBeFalse()
+        ->and($revertibleById[$secondBatchId])->toBeTrue()
+        ->and($revertibleById[$otherAccountBatchId])->toBeTrue();
+
+    $this->getJson("/api/v1/import-batches/{$firstBatchId}")
+        ->assertJsonPath('data.batch.revertible', false);
+    $this->getJson("/api/v1/import-batches/{$secondBatchId}")
+        ->assertJsonPath('data.batch.revertible', true);
+});
+
+it('revertible volta a false depois de revertido, e o lote anterior volta a ser revertible', function () {
+    $firstBatchId = $this->postJson('/api/v1/import-batches', [
+        'account_id' => $this->account->id,
+        'file' => nubankFile(importFixture('nubank.csv')),
+    ])->json('data.batch.id');
+    $this->postJson("/api/v1/import-batches/{$firstBatchId}/confirm")->assertOk();
+
+    $secondBatchId = $this->postJson('/api/v1/import-batches', [
+        'account_id' => $this->account->id,
+        'file' => nubankFile(importFixture('inter.csv'), 'inter.csv'),
+    ])->json('data.batch.id');
+    $this->postJson("/api/v1/import-batches/{$secondBatchId}/confirm")->assertOk();
+
+    $revert = $this->postJson("/api/v1/import-batches/{$secondBatchId}/revert");
+    $revert->assertOk()->assertJsonPath('data.revertible', false);
+
+    $this->getJson("/api/v1/import-batches/{$firstBatchId}")
+        ->assertJsonPath('data.batch.revertible', true);
+});
+
+it('não permite reverter um lote que não é o mais recente concluído da conta', function () {
+    $firstBatchId = $this->postJson('/api/v1/import-batches', [
+        'account_id' => $this->account->id,
+        'file' => nubankFile(importFixture('nubank.csv')),
+    ])->json('data.batch.id');
+    $this->postJson("/api/v1/import-batches/{$firstBatchId}/confirm")->assertOk();
+
+    $secondBatchId = $this->postJson('/api/v1/import-batches', [
+        'account_id' => $this->account->id,
+        'file' => nubankFile(importFixture('inter.csv'), 'inter.csv'),
+    ])->json('data.batch.id');
+    $this->postJson("/api/v1/import-batches/{$secondBatchId}/confirm")->assertOk();
+
+    $this->postJson("/api/v1/import-batches/{$firstBatchId}/revert")
+        ->assertStatus(409)
+        ->assertJsonPath('code', 'import_batch_not_revertible');
 });
 
 it('lista não traz rows, filtra por account_id e só mostra lotes do usuário', function () {

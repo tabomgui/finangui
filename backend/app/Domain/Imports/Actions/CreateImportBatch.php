@@ -45,8 +45,12 @@ final class CreateImportBatch
         $parsed = FormatDetector::parse($raw === false ? '' : $raw, $format, $account->isCreditCard());
 
         if ($parsed['format'] === null || $this->isUnrecognized($parsed['result'])) {
+            // `format` também recebe o erro (chave estável, sem precisar
+            // comparar o texto de `file`): é o que o frontend usa para
+            // destacar o seletor de banco.
             throw ValidationException::withMessages([
                 'file' => 'Não reconhecemos o formato deste arquivo. Escolha o banco.',
+                'format' => 'Escolha o banco manualmente.',
             ]);
         }
 

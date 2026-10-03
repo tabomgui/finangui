@@ -14,7 +14,7 @@ type ImportPreviewRowProps = {
   selected: boolean
   /** `false` para `duplicate`: a linha some do lote de qualquer jeito, então não há o que marcar. */
   selectable: boolean
-  /** Nome da categoria sugerida pelas regras (já resolvido pela página, para não repetir `useCategories` por linha). */
+  /** Nome da categoria sugerida (por uma regra ou pelo histórico — já resolvido pela página, para não repetir `useCategories` por linha). */
   categoryName?: string
   onToggle: (line: number) => void
 }
