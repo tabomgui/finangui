@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Cards\Support\StatementResolver;
 use App\Domain\Categories\Models\Category;
@@ -102,6 +103,14 @@ it('excluir uma parcela exclui o parcelamento inteiro', function () {
     $this->deleteJson("/api/v1/transactions/{$id}")->assertNoContent();
 
     expect(Transaction::count())->toBe(0)->and(InstallmentPlan::count())->toBe(0);
+});
+
+it('excluir uma parcela também exclui as faturas futuras que ficaram vazias', function () {
+    $id = $this->postJson('/api/v1/transactions', purchase())->json('data.id');
+
+    $this->deleteJson("/api/v1/transactions/{$id}")->assertNoContent();
+
+    expect(CardStatement::where('account_id', $this->card->id)->count())->toBe(0);
 });
 
 it('lista mostra a parcela como n de N', function () {

@@ -5,6 +5,9 @@ namespace App\Domain\Accounts\Actions;
 use App\Domain\Accounts\Enums\AccountType;
 use App\Domain\Accounts\Errors\AccountTypeLocked;
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Models\CardStatement;
+use App\Domain\Cards\Support\InvoiceCycle;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 final class UpdateAccount
@@ -24,6 +27,8 @@ final class UpdateAccount
             // com histórico de um tipo e cartão/comum do outro.
             $account = $account->newQuery()->whereKey($account->getKey())->lockForUpdate()->firstOrFail();
             $wasCard = $account->isCreditCard();
+            $oldClosingDay = $account->closing_day;
+            $oldDueDay = $account->due_day;
 
             if (array_key_exists('type', $input)) {
                 $newType = $input['type'] instanceof AccountType ? $input['type'] : AccountType::from($input['type']);
@@ -52,7 +57,58 @@ final class UpdateAccount
 
             $account->update($input);
 
+            if ($wasCard && $newType === AccountType::CreditCard) {
+                $newClosingDay = (int) ($input['closing_day'] ?? $oldClosingDay);
+                $newDueDay = (int) ($input['due_day'] ?? $oldDueDay);
+
+                if ($newClosingDay !== $oldClosingDay || $newDueDay !== $oldDueDay) {
+                    $this->rescheduleFutureStatements($account, $newClosingDay, $newDueDay);
+                }
+            }
+
             return $account;
         });
+    }
+
+    /**
+     * Dias do cartão mudaram: as faturas futuras foram geradas para o ciclo
+     * antigo. Sem lançamento nenhum, a fatura futura não faz falta — exclui.
+     * Com lançamento, reagenda para o ciclo nominal novo do mesmo mês do
+     * fechamento atual, só quando o novo fechamento ainda está no futuro e o
+     * novo vencimento não colide com o de outra fatura; senão, fica como
+     * estava (histórico de pagamento não pode sumir, e a próxima compra vai
+     * resolver a fatura certa de qualquer forma via StatementResolver).
+     */
+    private function rescheduleFutureStatements(Account $account, int $closingDay, int $dueDay): void
+    {
+        $today = CarbonImmutable::today();
+
+        CardStatement::pruneEmptyFuture($account->id);
+
+        $remaining = CardStatement::query()
+            ->where('account_id', $account->id)
+            ->where('closing_date', '>', $today->toDateString())
+            ->orderBy('closing_date')
+            ->get();
+
+        foreach ($remaining as $statement) {
+            $cycle = InvoiceCycle::forClosingMonth($statement->closing_date->startOfMonth(), $closingDay, $dueDay);
+
+            if ($cycle->closingDate->lessThanOrEqualTo($today)) {
+                continue;
+            }
+
+            $dueTaken = CardStatement::query()
+                ->where('account_id', $account->id)
+                ->where('id', '!=', $statement->id)
+                ->where('due_date', $cycle->dueDate->toDateString())
+                ->exists();
+
+            if ($dueTaken) {
+                continue;
+            }
+
+            $statement->update(['closing_date' => $cycle->closingDate, 'due_date' => $cycle->dueDate]);
+        }
     }
 }

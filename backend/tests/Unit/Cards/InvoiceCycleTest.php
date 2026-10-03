@@ -72,3 +72,17 @@ it('ignora a hora da data da compra', function () {
 
     expect($dates->closingDate->toDateString())->toBe('2026-04-10');
 });
+
+it('forClosingMonth usa o dia de fechamento informado, clampado no mês dado', function () {
+    $dates = InvoiceCycle::forClosingMonth(CarbonImmutable::parse('2026-03-15'), 20, 28);
+
+    expect($dates->closingDate->toDateString())->toBe('2026-03-20')
+        ->and($dates->dueDate->toDateString())->toBe('2026-03-28');
+});
+
+it('forClosingMonth clampa o fechamento no fim de um mês curto', function () {
+    $dates = InvoiceCycle::forClosingMonth(CarbonImmutable::parse('2026-02-10'), 31, 10);
+
+    expect($dates->closingDate->toDateString())->toBe('2026-02-28')
+        ->and($dates->dueDate->toDateString())->toBe('2026-03-10');
+});

@@ -124,6 +124,21 @@ class CardStatement extends Model
         };
     }
 
+    /**
+     * Exclui as faturas futuras (closing_date > hoje) do cartão que não têm
+     * nenhum lançamento: refletiam um ciclo ou parcelamento que não existe
+     * mais (dias do cartão mudaram, ou um parcelamento foi cancelado/excluído).
+     * Faturas passadas, mesmo vazias, ficam — são histórico.
+     */
+    public static function pruneEmptyFuture(int $accountId): void
+    {
+        static::query()
+            ->where('account_id', $accountId)
+            ->where('closing_date', '>', CarbonImmutable::today()->toDateString())
+            ->whereDoesntHave('transactions')
+            ->delete();
+    }
+
     private function loadedTotal(string $key): mixed
     {
         if (! array_key_exists($key, $this->attributes)) {

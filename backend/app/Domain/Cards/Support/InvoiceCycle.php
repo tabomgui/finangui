@@ -45,6 +45,18 @@ final class InvoiceCycle
     }
 
     /**
+     * Ciclo nominal de fechamento no mês de $month (fechamento = $closingDay
+     * clampado nesse mês). Usado para reposicionar faturas futuras quando
+     * closing_day/due_day do cartão mudam (ver UpdateAccount).
+     */
+    public static function forClosingMonth(CarbonImmutable $month, int $closingDay, int $dueDay): StatementDates
+    {
+        $closing = self::onDay($month->startOfMonth(), $closingDay);
+
+        return new StatementDates($closing, self::dueAfter($closing, $closingDay, $dueDay));
+    }
+
+    /**
      * Vencimento nominal depois do fechamento. Quando o vencimento é pensado
      * para o mesmo mês do fechamento ($dueDay > $closingDay) mas o fim de mês
      * curto limita os dois ao mesmo dia (ex.: fechamento 28, vencimento 30:

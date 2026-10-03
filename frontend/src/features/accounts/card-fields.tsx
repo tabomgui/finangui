@@ -25,6 +25,7 @@ export function CardFields({ form }: { form: UseFormReturn<AccountFormValues> })
           <Input id="account-due-day" inputMode="numeric" maxLength={2} autoComplete="off" {...form.register('due_day')} />
         </Field>
       </div>
+      <p className="text-xs text-muted-foreground">Mudar os dias vale para as faturas futuras.</p>
       <Field label="Final do cartão" htmlFor="account-last-four" error={errors.last_four?.message} hint="Opcional: os 4 últimos dígitos.">
         <Input id="account-last-four" inputMode="numeric" maxLength={4} autoComplete="off" {...form.register('last_four')} />
       </Field>

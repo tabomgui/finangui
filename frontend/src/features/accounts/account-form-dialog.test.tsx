@@ -114,6 +114,7 @@ describe('AccountFormDialog', () => {
     expect(screen.getByLabelText('Dia de fechamento')).toBeInTheDocument()
     expect(screen.getByLabelText('Dia de vencimento')).toBeInTheDocument()
     expect(screen.getByLabelText('Final do cartão')).toBeInTheDocument()
+    expect(screen.getByText('Mudar os dias vale para as faturas futuras.')).toBeInTheDocument()
   })
 
   it('enviar cartão sem limite/dias mostra os erros e não chama a mutação', async () => {

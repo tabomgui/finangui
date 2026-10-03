@@ -2,6 +2,7 @@
 
 namespace App\Domain\Cards\Actions;
 
+use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +25,9 @@ final class CancelInstallmentPlan
 
             $locked->cancelled_at ??= now()->toImmutable();
             $locked->save();
+
+            // As parcelas projetadas excluídas podem ter deixado faturas futuras vazias.
+            CardStatement::pruneEmptyFuture($locked->account_id);
         });
     }
 }

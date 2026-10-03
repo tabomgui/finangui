@@ -2,6 +2,7 @@
 
 namespace App\Domain\Cards\Actions;
 
+use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
 use Illuminate\Support\Facades\DB;
 
@@ -14,8 +15,13 @@ final class DeleteInstallmentPlan
     public function handle(InstallmentPlan $plan): void
     {
         DB::transaction(function () use ($plan) {
+            $accountId = $plan->account_id;
+
             $plan->transactions()->delete();
             $plan->delete();
+
+            // As parcelas excluídas podem ter deixado faturas futuras vazias.
+            CardStatement::pruneEmptyFuture($accountId);
         });
     }
 }

@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Transactions\Enums\TransactionStatus;
@@ -49,6 +50,16 @@ it('cancelar exclui só as projetadas e marca o plano', function () {
         ->and($this->plan->fresh()->cancelled_at)->not->toBeNull();
 
     $this->getJson("/api/v1/cards/{$this->card->id}/installment-plans")->assertJsonPath('data.0.projected_count', 0);
+});
+
+it('cancelar exclui a fatura futura que ficou vazia, mas mantém as que ainda têm lançamento', function () {
+    // Parcelas: 2026-02-05 (lançada), 2026-03-05 (lançada), 2026-04-05 (projetada, cancelada agora).
+    $aprilStatement = Transaction::query()->where('status', TransactionStatus::Projected->value)->firstOrFail()->statement_id;
+
+    $this->deleteJson("/api/v1/installment-plans/{$this->plan->id}")->assertNoContent();
+
+    expect(CardStatement::find($aprilStatement))->toBeNull()
+        ->and(CardStatement::where('account_id', $this->card->id)->count())->toBe(2);
 });
 
 it('parcelamento de outro usuário dá 404', function () {
