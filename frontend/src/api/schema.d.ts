@@ -212,6 +212,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/import-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["importBatch.index"];
+        put?: never;
+        post: operations["importBatch.store"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import-batches/{batch}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["importBatch.show"];
+        put?: never;
+        post?: never;
+        delete: operations["importBatch.destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import-batches/{batch}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["importBatch.confirm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import-batches/{batch}/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["importBatch.revert"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/installment-plans/{plan}": {
         parameters: {
             query?: never;
@@ -570,11 +634,134 @@ export interface components {
             is_transfer_effective: boolean;
             is_archived: boolean;
         };
+        /** ConfirmImportBatchRequest */
+        ConfirmImportBatchRequest: {
+            skip_lines?: number[];
+        };
         /**
          * Direction
          * @enum {string}
          */
         Direction: "in" | "out";
+        /** ImportBatchResource */
+        ImportBatchResource: {
+            id: number;
+            account_id: number;
+            account?: {
+                id: number;
+                name: string;
+            };
+            format: components["schemas"]["ImportFormat"];
+            /** @enum {string} */
+            format_label: "Inter (conta)" | "Nubank (conta)" | "Nubank (cartão)" | "C6 (conta)" | "OFX";
+            filename: string;
+            status: components["schemas"]["ImportBatchStatus"];
+            stats: {
+                failed: {
+                    line: number;
+                    reason: string;
+                }[];
+                inserted?: number;
+                duplicates?: number;
+                updated?: number;
+                replaced?: number;
+                adopted?: number;
+                swapped?: number;
+                skipped?: number;
+            };
+            summary: {
+                new: number;
+                duplicate: number;
+                update: number;
+                replace_installment: number;
+                adopt: number;
+                swap_pending: number;
+                failed: number;
+            };
+            revertible: boolean;
+            created_at: string;
+            completed_at: string | null;
+            reverted_at: string | null;
+        };
+        /**
+         * ImportBatchStatus
+         * @enum {string}
+         */
+        ImportBatchStatus: "pending" | "completed" | "reverted";
+        /**
+         * ImportFormat
+         * @enum {string}
+         */
+        ImportFormat: "inter" | "nubank" | "nubank_card" | "c6" | "ofx";
+        /** ImportPreviewResource */
+        ImportPreviewResource: {
+            batch: {
+                id: number;
+                account_id: number;
+                account?: {
+                    id: number;
+                    name: string;
+                };
+                format: components["schemas"]["ImportFormat"];
+                /** @enum {string} */
+                format_label: "Inter (conta)" | "Nubank (conta)" | "Nubank (cartão)" | "C6 (conta)" | "OFX";
+                filename: string;
+                status: components["schemas"]["ImportBatchStatus"];
+                stats: {
+                    failed: {
+                        line: number;
+                        reason: string;
+                    }[];
+                    inserted?: number;
+                    duplicates?: number;
+                    updated?: number;
+                    replaced?: number;
+                    adopted?: number;
+                    swapped?: number;
+                    skipped?: number;
+                };
+                summary: {
+                    new: number;
+                    duplicate: number;
+                    update: number;
+                    replace_installment: number;
+                    adopt: number;
+                    swap_pending: number;
+                    failed: number;
+                };
+                revertible: boolean;
+                created_at: string;
+                completed_at: string | null;
+                reverted_at: string | null;
+            };
+            rows: {
+                line: number;
+                date: string;
+                amount: number;
+                direction: components["schemas"]["Direction"];
+                description: string;
+                outcome: components["schemas"]["RowOutcome"];
+                installment?: {
+                    number: number;
+                    total: number;
+                };
+                match?: {
+                    id: number;
+                    date: string;
+                    description: string;
+                };
+                suggested_category_id?: number;
+            }[];
+            summary: {
+                new: number;
+                duplicate: number;
+                update: number;
+                replace_installment: number;
+                adopt: number;
+                swap_pending: number;
+                failed: number;
+            };
+        };
         /** InstallmentPlanResource */
         InstallmentPlanResource: {
             id: number;
@@ -646,6 +833,12 @@ export interface components {
         ReorderRulesRequest: {
             ids: number[];
         };
+        /**
+         * RowOutcome
+         * @description Destino de uma linha decidido pela cascata de dedup (ver IngestionPlanner).
+         * @enum {string}
+         */
+        RowOutcome: "new" | "duplicate" | "update" | "replace_installment" | "adopt" | "swap_pending";
         /** RulePreviewResource */
         RulePreviewResource: {
             matched: number;
@@ -727,6 +920,16 @@ export interface components {
             icon?: string | null;
             color?: string | null;
             is_transfer?: boolean;
+        };
+        /** StoreImportBatchRequest */
+        StoreImportBatchRequest: {
+            account_id: number;
+            /**
+             * Format: binary
+             * @description Maximum file size: 2048 kilobytes.
+             */
+            file: string;
+            format?: components["schemas"]["ImportFormat"];
         };
         /** StoreRuleRequest */
         StoreRuleRequest: {
@@ -1668,6 +1871,206 @@ export interface operations {
             };
             401: components["responses"]["AuthenticationException"];
             422: components["responses"]["ValidationException"];
+        };
+    };
+    "importBatch.index": {
+        parameters: {
+            query?: {
+                account_id?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Array of `ImportBatchResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ImportBatchResource"][];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "importBatch.store": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["StoreImportBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description `ImportPreviewResource` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ImportPreviewResource"] & Record<string, never>;
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "importBatch.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The batch ID */
+                batch: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `ImportPreviewResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ImportPreviewResource"] & Record<string, never>;
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "importBatch.destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The batch ID */
+                batch: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "import_batch_not_pending";
+                        message: string;
+                    };
+                };
+            };
+        };
+    };
+    "importBatch.confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The batch ID */
+                batch: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConfirmImportBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description `ImportBatchResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ImportBatchResource"] & Record<string, never>;
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "import_batch_not_pending";
+                        message: string;
+                    };
+                };
+            };
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "importBatch.revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The batch ID */
+                batch: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `ImportBatchResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ImportBatchResource"] & Record<string, never>;
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "import_batch_not_revertible";
+                        message: string;
+                    };
+                };
+            };
         };
     };
     "installmentPlan.update": {

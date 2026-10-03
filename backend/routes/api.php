@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\CardController;
 use App\Http\Controllers\Api\V1\CardStatementController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\ImportBatchController;
 use App\Http\Controllers\Api\V1\InstallmentPlanController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\RuleController;
@@ -66,5 +67,12 @@ Route::prefix('v1')->group(function () {
         Route::patch('rules/{rule}', [RuleController::class, 'update'])->whereNumber('rule');
         Route::delete('rules/{rule}', [RuleController::class, 'destroy'])->whereNumber('rule');
         Route::post('rules/{rule}/apply', [RuleController::class, 'apply'])->whereNumber('rule');
+
+        Route::get('import-batches', [ImportBatchController::class, 'index']);
+        Route::post('import-batches', [ImportBatchController::class, 'store'])->middleware('throttle:20,1');
+        Route::get('import-batches/{batch}', [ImportBatchController::class, 'show'])->whereNumber('batch');
+        Route::post('import-batches/{batch}/confirm', [ImportBatchController::class, 'confirm'])->whereNumber('batch');
+        Route::delete('import-batches/{batch}', [ImportBatchController::class, 'destroy'])->whereNumber('batch');
+        Route::post('import-batches/{batch}/revert', [ImportBatchController::class, 'revert'])->whereNumber('batch');
     });
 });

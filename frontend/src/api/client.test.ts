@@ -28,6 +28,24 @@ describe('xsrfMiddleware', () => {
 
     expect(result.headers.get('X-XSRF-TOKEN')).toBeNull()
   })
+
+  // Upload de extrato (`useUploadStatement`) envia `multipart/form-data`: o `Request` já marca o
+  // boundary sozinho a partir do `FormData` (padrão da Fetch API, não é o middleware que faz
+  // isso) — o que importa verificar aqui é que o middleware de XSRF não interfere nesse header
+  // ao acrescentar o dele.
+  it('mantém o boundary do multipart e ainda inclui o token XSRF num upload', async () => {
+    document.cookie = 'XSRF-TOKEN=abc'
+    const form = new FormData()
+    form.set('account_id', '3')
+    form.set('file', new File(['conteudo'], 'extrato.csv', { type: 'text/csv' }))
+    const request = new Request('http://localhost/api/v1/import-batches', { method: 'POST', body: form })
+    expect(request.headers.get('content-type')).toMatch(/^multipart\/form-data; boundary=/)
+
+    const result = (await xsrfMiddleware.onRequest!({ request } as RequestParams)) as Request
+
+    expect(result.headers.get('content-type')).toMatch(/^multipart\/form-data; boundary=/)
+    expect(result.headers.get('X-XSRF-TOKEN')).toBe('abc')
+  })
 })
 
 describe('falha de rede', () => {

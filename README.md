@@ -2,7 +2,7 @@
 
 Gerenciador financeiro pessoal, self-hosted. Backend Laravel 13 + Postgres; frontend React em `frontend/`.
 
-Telas disponíveis: Início (dashboard do mês), Transações (com filtros e edição em massa), Regras (condições e grupos para categorizar automaticamente, com prévia ao vivo, aplicação retroativa às transações já existentes e sugestão por histórico quando nenhuma regra casa), Cartões (faturas com datas reais e editáveis, pagamento como transferência, parcelamentos e limite disponível), Contas, Categorias, Tags e Configurações.
+Telas disponíveis: Início (dashboard do mês), Transações (com filtros e edição em massa), Regras (condições e grupos para categorizar automaticamente, com prévia ao vivo, aplicação retroativa às transações já existentes e sugestão por histórico quando nenhuma regra casa), Cartões (faturas com datas reais e editáveis, pagamento como transferência, parcelamentos e limite disponível), Importar extrato (CSV do Inter, Nubank conta e cartão e C6, ou OFX genérico; prévia mostra novas, duplicadas, adoção de lançamento manual e parcelas antes de confirmar; lote importado pode ser revertido), Contas, Categorias, Tags e Configurações.
 
 ## Desenvolvimento
 
@@ -23,6 +23,8 @@ make front-check              # lint + typecheck + testes do frontend
 Portas do host: backend em `:8001` (configurável por `BACKEND_PORT`), banco em `:5432`, frontend em `:5174` (configurável por `FRONTEND_PORT`).
 
 O frontend também roda em container (`make up` já sobe o serviço `frontend`), mas tipos e editor (TypeScript, oxlint) precisam das dependências instaladas no host: `cd frontend && npm install`. Se `frontend/package.json` mudar, reconstrua a imagem do serviço: `docker compose build frontend && docker compose up -d -V frontend`.
+
+Mudança em `docker/php/**` (ex.: `uploads.ini`, `Dockerfile`) também não aparece com só um restart: `docker compose build backend && docker compose up -d -V backend`.
 
 Documentação interativa da API (Scramble) em http://localhost:8001/docs/api — só disponível em ambiente local (`APP_ENV=local`); em outros ambientes a rota fica bloqueada.
 

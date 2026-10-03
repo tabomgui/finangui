@@ -1,5 +1,6 @@
-import { Archive, ArchiveRestore, EllipsisVertical, Landmark, Pencil, Plus, Trash2, TriangleAlert } from 'lucide-react'
+import { Archive, ArchiveRestore, EllipsisVertical, FileUp, Landmark, Pencil, Plus, Trash2, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAccounts, useDeleteAccount, useUpdateAccount } from '@/api/queries/accounts'
 import { useMe } from '@/api/queries/auth'
@@ -28,6 +29,7 @@ import { AccountFormDialog } from './account-form-dialog'
 import { ACCOUNT_TYPE_LABELS } from './account-labels'
 
 export function AccountsPage() {
+  const navigate = useNavigate()
   const [showArchived, setShowArchived] = useState(false)
   const { data: accounts, isPending, isError, refetch } = useAccounts(showArchived)
   const { data: me } = useMe()
@@ -114,6 +116,12 @@ export function AccountsPage() {
                         <Pencil className="h-4 w-4" />
                         Editar
                       </DropdownMenuItem>
+                      {!account.is_archived && (
+                        <DropdownMenuItem onSelect={() => navigate(`/importar?conta=${account.id}`)}>
+                          <FileUp className="h-4 w-4" />
+                          Importar extrato
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem onSelect={() => toggleArchive(account)}>
                         {account.is_archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
                         {account.is_archived ? 'Desarquivar' : 'Arquivar'}

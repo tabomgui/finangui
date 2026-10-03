@@ -20,6 +20,7 @@ describe('toApiError', () => {
 
   it.each([
     [0, 'Sem conexão com o servidor.'],
+    [413, 'Arquivo grande demais.'],
     [419, 'Sua sessão expirou. Recarregue a página.'],
     [429, 'Muitas tentativas. Aguarde um minuto e tente de novo.'],
     [500, 'Erro inesperado no servidor. Tente novamente.'],
