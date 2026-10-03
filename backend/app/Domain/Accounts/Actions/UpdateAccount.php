@@ -75,8 +75,11 @@ final class UpdateAccount
      * antigo. Sem lançamento nenhum, a fatura futura não faz falta — exclui.
      * Com lançamento, reagenda para o ciclo nominal novo do mesmo mês do
      * fechamento atual, só quando o novo fechamento ainda está no futuro e o
-     * novo vencimento não colide com o de outra fatura; senão, fica como
-     * estava (histórico de pagamento não pode sumir, e a próxima compra vai
+     * novo fechamento e vencimento ficam estritamente entre os da vizinha
+     * anterior e os da seguinte (como elas estão nesse momento do laço —
+     * processado em ordem, a anterior já foi decidida, a seguinte ainda não);
+     * senão, fica como estava (histórico de pagamento não pode sumir, a ordem
+     * cronológica das faturas não pode se inverter, e a próxima compra vai
      * resolver a fatura certa de qualquer forma via StatementResolver).
      */
     private function rescheduleFutureStatements(Account $account, int $closingDay, int $dueDay): void
@@ -98,13 +101,25 @@ final class UpdateAccount
                 continue;
             }
 
-            $dueTaken = CardStatement::query()
+            $previous = CardStatement::query()
                 ->where('account_id', $account->id)
-                ->where('id', '!=', $statement->id)
-                ->where('due_date', $cycle->dueDate->toDateString())
-                ->exists();
+                ->where('closing_date', '<', $statement->closing_date->toDateString())
+                ->orderByDesc('closing_date')
+                ->first();
 
-            if ($dueTaken) {
+            if ($previous !== null
+                && ($cycle->closingDate->lessThanOrEqualTo($previous->closing_date) || $cycle->dueDate->lessThanOrEqualTo($previous->due_date))) {
+                continue;
+            }
+
+            $next = CardStatement::query()
+                ->where('account_id', $account->id)
+                ->where('closing_date', '>', $statement->closing_date->toDateString())
+                ->orderBy('closing_date')
+                ->first();
+
+            if ($next !== null
+                && ($cycle->closingDate->greaterThanOrEqualTo($next->closing_date) || $cycle->dueDate->greaterThanOrEqualTo($next->due_date))) {
                 continue;
             }
 

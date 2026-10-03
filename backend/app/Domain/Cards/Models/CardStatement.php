@@ -128,13 +128,17 @@ class CardStatement extends Model
      * Exclui as faturas futuras (closing_date > hoje) do cartão que não têm
      * nenhum lançamento: refletiam um ciclo ou parcelamento que não existe
      * mais (dias do cartão mudaram, ou um parcelamento foi cancelado/excluído).
-     * Faturas passadas, mesmo vazias, ficam — são histórico.
+     * Faturas passadas, mesmo vazias, ficam — são histórico. Uma fatura com
+     * total informado ou external_id (importada/editada à mão) também fica:
+     * mesmo sem lançamento, carrega um dado que o usuário colocou de propósito.
      */
     public static function pruneEmptyFuture(int $accountId): void
     {
         static::query()
             ->where('account_id', $accountId)
             ->where('closing_date', '>', CarbonImmutable::today()->toDateString())
+            ->whereNull('reported_total')
+            ->whereNull('external_id')
             ->whereDoesntHave('transactions')
             ->delete();
     }
