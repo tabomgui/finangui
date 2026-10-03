@@ -70,7 +70,12 @@ final class TransactionResource extends JsonResource
      * desconhecido: nulo. O id da regra é validado por um padrão estrito
      * (sem zero à esquerda, até 19 dígitos) para nunca estourar um int.
      *
-     * @return array{source: 'manual'|'rule'|'history'|'pluggy', rule_id: int|null}|null
+     * `rule_id` só existe quando `source` é `rule` (omitido nos outros casos,
+     * nunca `null`): uma propriedade tipada só como `null` desaparece do lado
+     * do cliente — o `Readable<T>` do openapi-fetch remove qualquer chave cujo
+     * tipo seja exatamente `null` (`NonNullable<null>` vira `never`).
+     *
+     * @return array{source: 'manual'|'history'|'pluggy'}|array{source: 'rule', rule_id: int}|null
      */
     private function categorization(): ?array
     {
@@ -84,9 +89,9 @@ final class TransactionResource extends JsonResource
             : 0;
 
         return match (true) {
-            $categorizedBy === 'manual' => ['source' => 'manual', 'rule_id' => null],
-            $categorizedBy === 'history' => ['source' => 'history', 'rule_id' => null],
-            $categorizedBy === 'pluggy' => ['source' => 'pluggy', 'rule_id' => null],
+            $categorizedBy === 'manual' => ['source' => 'manual'],
+            $categorizedBy === 'history' => ['source' => 'history'],
+            $categorizedBy === 'pluggy' => ['source' => 'pluggy'],
             $ruleId > 0 => ['source' => 'rule', 'rule_id' => $ruleId],
             default => null,
         };

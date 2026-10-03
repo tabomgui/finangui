@@ -53,53 +53,67 @@ export const ACTION_LABELS: Record<string, string> = {
   ignore: 'Ignorar lançamento',
 }
 
-const DIRECTION_VALUE_LABELS: Record<string, string> = { in: 'entrada', out: 'saída' }
+const DIRECTION_VALUE_LABELS: Record<string, string> = { in: 'Entrada', out: 'Saída' }
+
+// Enquanto as listas de categorias/tags/contas ainda não carregaram, um id sem nome não significa
+// "excluído" — significa "ainda não sabemos". `loading` distingue os dois casos; sem ele, toda regra
+// mostraria "categoria excluída" por um instante a cada carregamento da tela.
+const LOADING_PLACEHOLDER = '…'
 
 export type RuleLookups = {
   categoryName: (id: number) => string | undefined
   tagName: (id: number) => string | undefined
+  accountName: (id: number) => string | undefined
+  loading: boolean
 }
 
 function isGroup(condition: RuleCondition): condition is RuleConditionGroup {
   return 'conditions' in condition
 }
 
-function formatConditionValue(condition: RuleSimpleCondition): string {
+function missingLabel(lookups: RuleLookups, whenLoaded: string): string {
+  return lookups.loading ? LOADING_PLACEHOLDER : whenLoaded
+}
+
+function formatConditionValue(condition: RuleSimpleCondition, lookups: RuleLookups): string {
   const { field, value } = condition
   if (field === 'amount' && typeof value === 'number') return formatMoney(value)
   if (field === 'date' && typeof value === 'string') return formatDate(value)
   if (field === 'direction') return DIRECTION_VALUE_LABELS[String(value)] ?? String(value)
-  return `"${value}"`
+  if (field === 'account_id' && typeof value === 'number') {
+    return lookups.accountName(value) ?? missingLabel(lookups, 'conta excluída')
+  }
+  return `“${value}”`
 }
 
-function describeSimpleCondition(condition: RuleSimpleCondition): string {
+function describeSimpleCondition(condition: RuleSimpleCondition, lookups: RuleLookups): string {
   const field = FIELD_LABELS[condition.field] ?? condition.field
   const operator = OPERATOR_LABELS[condition.op] ?? condition.op
-  return `${field} ${operator} ${formatConditionValue(condition)}`
+  return `${field} ${operator} ${formatConditionValue(condition, lookups)}`
 }
 
-function describeCondition(condition: RuleCondition): string {
+function describeCondition(condition: RuleCondition, lookups: RuleLookups): string {
   if (isGroup(condition)) {
     const connector = condition.match === 'any' ? ' ou ' : ' e '
-    return `(${condition.conditions.map(describeSimpleCondition).join(connector)})`
+    return `(${condition.conditions.map((child) => describeSimpleCondition(child, lookups)).join(connector)})`
   }
-  return describeSimpleCondition(condition)
+  return describeSimpleCondition(condition, lookups)
 }
 
 function describeAction(action: RuleAction, lookups: RuleLookups): string | null {
   switch (action.type) {
     case 'set_category': {
       if (action.category_id === undefined) return null
-      return lookups.categoryName(action.category_id) ?? 'categoria excluída'
+      return lookups.categoryName(action.category_id) ?? missingLabel(lookups, 'categoria excluída')
     }
     case 'set_description':
-      return action.value ? `descrição "${action.value}"` : null
+      return action.value ? `descrição “${action.value}”` : null
     case 'set_payee':
-      return action.value ? `favorecido "${action.value}"` : null
+      return action.value ? `favorecido “${action.value}”` : null
     case 'add_tag': {
       if (action.tag_id === undefined) return null
       const name = lookups.tagName(action.tag_id)
-      return name ? `+#${name}` : '+tag excluída'
+      return name ? `+#${name}` : missingLabel(lookups, '+tag excluída')
     }
     case 'ignore':
       return 'ignorar'
@@ -108,10 +122,10 @@ function describeAction(action: RuleAction, lookups: RuleLookups): string | null
   }
 }
 
-/** Resumo em uma linha usado na lista de regras: condições + a primeira ação de cada tipo. */
+/** Resumo em uma linha usado na lista de regras: as condições seguidas das ações, na ordem em que aparecem na regra. */
 export function describeRule(rule: Rule, lookups: RuleLookups): string {
   const connector = rule.match === 'any' ? ' ou ' : ' e '
-  const conditions = rule.conditions.map(describeCondition).join(connector)
+  const conditions = rule.conditions.map((condition) => describeCondition(condition, lookups)).join(connector)
   const actions = rule.actions
     .map((action) => describeAction(action, lookups))
     .filter((text): text is string => text !== null)

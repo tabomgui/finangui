@@ -18,13 +18,18 @@ import { describeRule, type RuleLookups } from './rule-labels'
 type SortableRuleRowProps = {
   rule: Rule
   lookups: RuleLookups
+  /** A troca do switch "ativa" desta regra está em voo: desabilita só esta linha. */
+  pending: boolean
   onToggleActive: (rule: Rule, isActive: boolean) => void
   onDelete: (rule: Rule) => void
 }
 
-export function SortableRuleRow({ rule, lookups, onToggleActive, onDelete }: SortableRuleRowProps) {
+export function SortableRuleRow({ rule, lookups, pending, onToggleActive, onDelete }: SortableRuleRowProps) {
   const navigate = useNavigate()
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: rule.id })
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: rule.id,
+    attributes: { roleDescription: 'regra reordenável' },
+  })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -55,6 +60,7 @@ export function SortableRuleRow({ rule, lookups, onToggleActive, onDelete }: Sor
       <Switch
         aria-label={`Ativar ${rule.name}`}
         checked={rule.is_active}
+        disabled={pending}
         onCheckedChange={(checked) => onToggleActive(rule, checked)}
       />
       <DropdownMenu>

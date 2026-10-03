@@ -14,10 +14,11 @@ const deleteMutateAsync = vi.fn()
 const reorderMutate = vi.fn()
 
 let rulesState: { data: Rule[] | undefined; isPending: boolean; isError: boolean }
+let updateState: { isPending: boolean; variables?: { id: number } }
 
 vi.mock('@/api/queries/rules', () => ({
   useRules: () => ({ ...rulesState, refetch }),
-  useUpdateRule: () => ({ mutateAsync: updateMutateAsync, isPending: false }),
+  useUpdateRule: () => ({ mutateAsync: updateMutateAsync, ...updateState }),
   useDeleteRule: () => ({ mutateAsync: deleteMutateAsync, isPending: false }),
   useReorderRules: () => ({ mutate: reorderMutate, isPending: false }),
 }))
@@ -28,6 +29,10 @@ vi.mock('@/api/queries/categories', () => ({
 
 vi.mock('@/api/queries/tags', () => ({
   useTags: () => ({ data: [{ id: 1, name: 'viagem' }] }),
+}))
+
+vi.mock('@/api/queries/accounts', () => ({
+  useAccounts: () => ({ data: [{ id: 1, name: 'Nubank' }] }),
 }))
 
 function rule(overrides: Partial<Rule>): Rule {
@@ -63,12 +68,14 @@ beforeEach(() => {
   reorderMutate.mockReset()
   vi.mocked(toast.success).mockReset()
   rulesState = { data: undefined, isPending: true, isError: false }
+  updateState = { isPending: false }
 })
 
 describe('RulesPage', () => {
   it('mostra skeletons enquanto carrega', () => {
-    renderPage()
+    const { container } = renderPage()
     expect(screen.queryByText('Nenhuma regra ainda')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3)
   })
 
   it('renderiza nomes e resumos das regras na ordem recebida', () => {
@@ -84,7 +91,7 @@ describe('RulesPage', () => {
 
     const names = screen.getAllByRole('link', { name: /Uber|Mercado/ }).map((link) => link.textContent)
     expect(names).toEqual(['Uber', 'Mercado'])
-    expect(screen.getByText('Descrição contém "uber" → Transporte')).toBeInTheDocument()
+    expect(screen.getByText('Descrição contém “uber” → Transporte')).toBeInTheDocument()
   })
 
   it('chama update com is_active: false ao desligar o switch', () => {
@@ -94,6 +101,19 @@ describe('RulesPage', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'Ativar Uber' }))
 
     expect(updateMutateAsync).toHaveBeenCalledWith({ id: 1, body: { is_active: false } })
+  })
+
+  it('desabilita só o switch da regra cuja troca de ativa está em voo', () => {
+    rulesState = {
+      data: [rule({ id: 1, name: 'Uber' }), rule({ id: 2, name: 'Mercado' })],
+      isPending: false,
+      isError: false,
+    }
+    updateState = { isPending: true, variables: { id: 1 } }
+    renderPage()
+
+    expect(screen.getByRole('switch', { name: 'Ativar Uber' })).toBeDisabled()
+    expect(screen.getByRole('switch', { name: 'Ativar Mercado' })).not.toBeDisabled()
   })
 
   it('exclui a regra após confirmar no diálogo', async () => {

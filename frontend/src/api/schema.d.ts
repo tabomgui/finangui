@@ -610,14 +610,24 @@ export interface components {
             /** @enum {string} */
             match: "all" | "any";
             conditions: {
-                field?: string;
-                op?: string;
+                /** @enum {string} */
+                field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                /** @enum {string} */
+                op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
                 value?: string;
-                match?: string;
-                conditions?: string[][];
+                /** @enum {string} */
+                match?: "all" | "any";
+                conditions?: {
+                    /** @enum {string} */
+                    field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                    /** @enum {string} */
+                    op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
+                    value?: string;
+                }[];
             }[];
             actions: {
-                type?: string;
+                /** @enum {string} */
+                type?: "set_category" | "set_description" | "set_payee" | "add_tag" | "ignore";
                 category_id?: number;
                 tag_id?: number;
                 value?: string;
@@ -657,21 +667,28 @@ export interface components {
             name: string;
             priority: number;
             is_active: boolean;
-            match: string;
+            /** @enum {string} */
+            match: "all" | "any";
             conditions: ({
-                field: string;
-                op: string;
+                /** @enum {string} */
+                field: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                /** @enum {string} */
+                op: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
                 value: string | number;
             } | {
-                match: string;
+                /** @enum {string} */
+                match: "all" | "any";
                 conditions: {
-                    field: string;
-                    op: string;
+                    /** @enum {string} */
+                    field: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                    /** @enum {string} */
+                    op: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
                     value: string | number;
                 }[];
             })[];
             actions: {
-                type: string;
+                /** @enum {string} */
+                type: "set_category" | "set_description" | "set_payee" | "add_tag" | "ignore";
                 category_id?: number;
                 tag_id?: number;
                 value?: string;
@@ -718,14 +735,24 @@ export interface components {
             /** @enum {string} */
             match: "all" | "any";
             conditions: {
-                field?: string;
-                op?: string;
+                /** @enum {string} */
+                field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                /** @enum {string} */
+                op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
                 value?: string;
-                match?: string;
-                conditions?: string[][];
+                /** @enum {string} */
+                match?: "all" | "any";
+                conditions?: {
+                    /** @enum {string} */
+                    field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                    /** @enum {string} */
+                    op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
+                    value?: string;
+                }[];
             }[];
             actions: {
-                type?: string;
+                /** @enum {string} */
+                type?: "set_category" | "set_description" | "set_payee" | "add_tag" | "ignore";
                 category_id?: number;
                 tag_id?: number;
                 value?: string;
@@ -804,15 +831,12 @@ export interface components {
             categorization: {
                 /** @constant */
                 source: "manual";
-                rule_id: null;
             } | {
                 /** @constant */
                 source: "history";
-                rule_id: null;
             } | {
                 /** @constant */
                 source: "pluggy";
-                rule_id: null;
             } | {
                 /** @constant */
                 source: "rule";
@@ -892,14 +916,24 @@ export interface components {
             /** @enum {string} */
             match?: "all" | "any";
             conditions?: {
-                field?: string;
-                op?: string;
+                /** @enum {string} */
+                field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                /** @enum {string} */
+                op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
                 value?: string;
-                match?: string;
-                conditions?: string[][];
+                /** @enum {string} */
+                match?: "all" | "any";
+                conditions?: {
+                    /** @enum {string} */
+                    field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                    /** @enum {string} */
+                    op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
+                    value?: string;
+                }[];
             }[];
             actions?: {
-                type?: string;
+                /** @enum {string} */
+                type?: "set_category" | "set_description" | "set_payee" | "add_tag" | "ignore";
                 category_id?: number;
                 tag_id?: number;
                 value?: string;

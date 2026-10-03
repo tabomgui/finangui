@@ -9,8 +9,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * @property list<array{field: string, op: string, value: string|int}|array{match: string, conditions: list<array{field: string, op: string, value: string|int}>}> $conditions
- * @property list<array{type: string, category_id?: int, tag_id?: int, value?: string}> $actions
+ * @property 'all'|'any' $match
+ * @property list<array{field: 'description'|'original_description'|'payee'|'notes'|'amount'|'direction'|'account_id'|'date', op: 'contains'|'not_contains'|'starts_with'|'ends_with'|'equals'|'not_equals'|'regex'|'gt'|'gte'|'lt'|'lte', value: string|int}|array{match: 'all'|'any', conditions: list<array{field: 'description'|'original_description'|'payee'|'notes'|'amount'|'direction'|'account_id'|'date', op: 'contains'|'not_contains'|'starts_with'|'ends_with'|'equals'|'not_equals'|'regex'|'gt'|'gte'|'lt'|'lte', value: string|int}>}> $conditions
+ * @property list<array{type: 'set_category'|'set_description'|'set_payee'|'add_tag'|'ignore', category_id?: int, tag_id?: int, value?: string}> $actions
  */
 class Rule extends Model
 {

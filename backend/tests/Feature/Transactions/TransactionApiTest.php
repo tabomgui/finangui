@@ -223,9 +223,9 @@ it('decompõe categorized_by em categorization (source e rule_id)', function (?s
         ->assertOk()
         ->assertJsonPath('data.categorization', $expected);
 })->with([
-    'manual' => ['manual', true, ['source' => 'manual', 'rule_id' => null]],
-    'history' => ['history', true, ['source' => 'history', 'rule_id' => null]],
-    'pluggy' => ['pluggy', true, ['source' => 'pluggy', 'rule_id' => null]],
+    'manual' => ['manual', true, ['source' => 'manual']],
+    'history' => ['history', true, ['source' => 'history']],
+    'pluggy' => ['pluggy', true, ['source' => 'pluggy']],
     'rule:N' => ['rule:42', true, ['source' => 'rule', 'rule_id' => 42]],
     'rule malformada (zero à esquerda)' => ['rule:007', true, null],
     'lixo' => ['qualquer-coisa', true, null],

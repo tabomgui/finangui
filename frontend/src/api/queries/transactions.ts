@@ -2,7 +2,6 @@ import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClie
 import { api, expectOk, unwrap } from '@/api/client'
 import { compactFilters, invalidateLedger, queryKeys, type TransactionFilters } from '@/api/query-keys'
 import type { components } from '@/api/schema'
-import type { Transaction } from '@/api/types'
 import { runInBatches } from '@/lib/batches'
 import { today } from '@/lib/date'
 
@@ -11,28 +10,16 @@ type UpdateTransactionRequest = components['schemas']['UpdateTransactionRequest'
 
 const PAGE_SIZE = 30
 
-/**
- * O gerador de tipos instancia `TransactionResource` de um jeito ligeiramente diferente em cada
- * endpoint (lista paginada vs. recurso único); numa união com tantos ramos quanto `categorization`,
- * o TypeScript por vezes trata essas instâncias como tipos "sem relação" mesmo sendo estruturalmente
- * iguais. Normaliza para o alias canônico já na saída da API, antes de qualquer outro código tocar o valor.
- */
-function asTransaction(data: unknown): Transaction {
-  return data as Transaction
-}
-
 export function useTransactions(filters: TransactionFilters) {
   return useInfiniteQuery({
     queryKey: queryKeys.transactions(filters),
     initialPageParam: null as string | null,
-    queryFn: async ({ pageParam }) => {
-      const page = await unwrap(
+    queryFn: async ({ pageParam }) =>
+      unwrap(
         api.GET('/transactions', {
           params: { query: { ...compactFilters(filters), per_page: PAGE_SIZE, ...(pageParam ? { cursor: pageParam } : {}) } },
         }),
-      )
-      return { ...page, data: page.data.map(asTransaction) }
-    },
+      ),
     getNextPageParam: (lastPage) => lastPage.meta.next_cursor,
     placeholderData: keepPreviousData,
   })
@@ -42,10 +29,7 @@ export function useTransactions(filters: TransactionFilters) {
 export function useRecentTransactions(limit = 5) {
   return useQuery({
     queryKey: queryKeys.recentTransactions(),
-    queryFn: async () => {
-      const { data } = await unwrap(api.GET('/transactions', { params: { query: { per_page: limit, to: today() } } }))
-      return data.map(asTransaction)
-    },
+    queryFn: async () => (await unwrap(api.GET('/transactions', { params: { query: { per_page: limit, to: today() } } }))).data,
   })
 }
 
@@ -53,10 +37,8 @@ export function useTransaction(id: number | null) {
   return useQuery({
     queryKey: queryKeys.transaction(id ?? 0),
     enabled: id !== null,
-    queryFn: async () => {
-      const { data } = await unwrap(api.GET('/transactions/{transaction}', { params: { path: { transaction: id ?? 0 } } }))
-      return asTransaction(data)
-    },
+    queryFn: async () =>
+      (await unwrap(api.GET('/transactions/{transaction}', { params: { path: { transaction: id ?? 0 } } }))).data,
   })
 }
 

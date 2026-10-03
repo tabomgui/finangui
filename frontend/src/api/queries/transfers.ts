@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '@/api/client'
 import { invalidateLedger, queryKeys } from '@/api/query-keys'
 import type { components } from '@/api/schema'
-import type { Transfer } from '@/api/types'
 
 type StoreTransferRequest = components['schemas']['StoreTransferRequest']
 type UpdateTransferRequest = components['schemas']['UpdateTransferRequest']
@@ -11,11 +10,8 @@ export function useTransfer(id: string | null) {
   return useQuery({
     queryKey: queryKeys.transfer(id ?? ''),
     enabled: id !== null,
-    queryFn: async () => {
-      const { data } = await unwrap(api.GET('/transfers/{transfer}', { params: { path: { transfer: id ?? '' } } }))
-      // Mesmo caso de `asTransaction` em `api/queries/transactions.ts`: normaliza para o alias canônico.
-      return data as unknown as Transfer
-    },
+    queryFn: async () =>
+      (await unwrap(api.GET('/transfers/{transfer}', { params: { path: { transfer: id ?? '' } } }))).data,
   })
 }
 

@@ -91,7 +91,7 @@ const transaction = {
   status: 'posted',
   source: 'manual',
   categorized_by: 'manual',
-  categorization: { source: 'manual', rule_id: null },
+  categorization: { source: 'manual' },
   is_ignored: false,
   transfer_id: null,
   statement_id: null,

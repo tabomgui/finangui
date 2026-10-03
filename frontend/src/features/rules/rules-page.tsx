@@ -1,9 +1,10 @@
-import { closestCenter, DndContext, type DragEndEvent, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { type Announcements, closestCenter, DndContext, type DragEndEvent, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { Plus, TriangleAlert, Wand2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
+import { useAccounts } from '@/api/queries/accounts'
 import { useCategories } from '@/api/queries/categories'
 import { useDeleteRule, useReorderRules, useRules, useUpdateRule } from '@/api/queries/rules'
 import { useTags } from '@/api/queries/tags'
@@ -19,10 +20,18 @@ import { notifyError } from '@/lib/form-errors'
 import { reorderIds, type RuleLookups } from './rule-labels'
 import { SortableRuleRow } from './sortable-rule-row'
 
+// Instrução lida uma vez por quem navega pelo teclado com leitor de tela; "announcements" abaixo
+// narra cada passo do arrasto (também usado pelo `KeyboardSensor`, que arrasta sem mouse).
+const screenReaderInstructions = {
+  draggable:
+    'Para reordenar uma regra, pressione espaço ou enter. Use as setas para cima e para baixo para mover a regra na lista. Pressione espaço ou enter de novo para confirmar a nova posição, ou esc para cancelar.',
+}
+
 export function RulesPage() {
   const { data: rules, isPending, isError, refetch } = useRules()
   const { data: categories } = useCategories(true)
   const { data: tags } = useTags()
+  const { data: accounts } = useAccounts(true)
   const update = useUpdateRule()
   const remove = useDeleteRule()
   const reorder = useReorderRules()
@@ -31,7 +40,13 @@ export function RulesPage() {
   const lookups: RuleLookups = {
     categoryName: (id) => categories?.find((category) => category.id === id)?.name,
     tagName: (id) => tags?.find((tag) => tag.id === id)?.name,
+    accountName: (id) => accounts?.find((account) => account.id === id)?.name,
+    loading: categories === undefined || tags === undefined || accounts === undefined,
   }
+
+  // Só a regra com a troca do switch "ativa" em voo fica desabilitada — as outras continuam
+  // respondendo normalmente enquanto essa requisição não termina.
+  const pendingRuleId = update.isPending ? update.variables?.id : undefined
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -53,6 +68,20 @@ export function RulesPage() {
     reorder.mutate(reorderIds(ids, Number(active.id), Number(over.id)))
   }
 
+  const ruleName = (id: number | string) => rules?.find((rule) => rule.id === id)?.name ?? ''
+  const positionOf = (id: number | string) => (rules?.findIndex((rule) => rule.id === id) ?? -1) + 1
+
+  const announcements: Announcements = {
+    onDragStart: ({ active }) => `Pegou a regra ${ruleName(active.id)}.`,
+    onDragOver: ({ active, over }) =>
+      over && rules ? `Regra ${ruleName(active.id)} movida para a posição ${positionOf(over.id)} de ${rules.length}.` : undefined,
+    onDragEnd: ({ active, over }) =>
+      over && rules
+        ? `Regra ${ruleName(active.id)} movida para a posição ${positionOf(over.id)} de ${rules.length}.`
+        : `Soltou a regra ${ruleName(active.id)} sem mudar a posição.`,
+    onDragCancel: ({ active }) => `Reordenação da regra ${ruleName(active.id)} cancelada.`,
+  }
+
   return (
     <>
       <PageHeader
@@ -68,7 +97,7 @@ export function RulesPage() {
         }
       />
       <PageBody>
-        {isError ? (
+        {isError && !rules ? (
           <EmptyState
             icon={TriangleAlert}
             title="Não foi possível carregar as regras."
@@ -87,7 +116,12 @@ export function RulesPage() {
         ) : rules && rules.length > 0 ? (
           <>
             <Card className="rounded-2xl p-2 shadow-card">
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+                accessibility={{ screenReaderInstructions, announcements }}
+              >
                 <SortableContext items={rules.map((rule) => rule.id)} strategy={verticalListSortingStrategy}>
                   <ul className="divide-y divide-border">
                     {rules.map((rule) => (
@@ -95,6 +129,7 @@ export function RulesPage() {
                         key={rule.id}
                         rule={rule}
                         lookups={lookups}
+                        pending={pendingRuleId === rule.id}
                         onToggleActive={toggleActive}
                         onDelete={setDeleting}
                       />
