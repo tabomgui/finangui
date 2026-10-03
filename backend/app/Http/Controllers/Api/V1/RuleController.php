@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Domain\Rules\Actions\CreateRule;
+use App\Domain\Rules\Actions\QueueRuleApplication;
 use App\Domain\Rules\Actions\ReorderRules;
 use App\Domain\Rules\Actions\UpdateRule;
 use App\Domain\Rules\Data\RuleDefinition;
-use App\Domain\Rules\Jobs\ApplyRuleRetroactively;
 use App\Domain\Rules\Models\Rule;
 use App\Domain\Rules\Queries\PreviewRule;
 use App\Http\Controllers\Controller;
@@ -67,12 +67,12 @@ final class RuleController extends Controller
         return RulePreviewResource::make($previewRule->handle($definition, $request->boolean('overwrite')));
     }
 
-    public function apply(ApplyRuleRequest $request, Rule $rule): JsonResponse
+    public function apply(ApplyRuleRequest $request, Rule $rule, QueueRuleApplication $queueRuleApplication): JsonResponse
     {
         /** @var User $user */
         $user = $request->user();
 
-        ApplyRuleRetroactively::dispatch($rule->id, $user->id, $request->boolean('overwrite'));
+        $queueRuleApplication->handle($rule, $user->id, $request->boolean('overwrite'));
 
         return response()->json(['data' => ['queued' => true]], 202);
     }

@@ -207,6 +207,20 @@ it('é único por regra: despachar duas vezes só enfileira uma', function () {
     Queue::assertPushed(ApplyRuleRetroactively::class, 1);
 });
 
+it('aplicar duas vezes em seguida: a segunda responde 409 em vez de enfileirar em silêncio', function () {
+    Queue::fake();
+    actingAsUser();
+    $rule = uberRule();
+
+    $this->postJson("/api/v1/rules/{$rule->id}/apply")->assertStatus(202);
+
+    $this->postJson("/api/v1/rules/{$rule->id}/apply")
+        ->assertStatus(409)
+        ->assertJsonPath('code', 'rule_apply_in_progress');
+
+    Queue::assertPushed(ApplyRuleRetroactively::class, 1);
+});
+
 it('duas regras diferentes não são bloqueadas uma pela outra', function () {
     Queue::fake();
     $user = actingAsUser();
