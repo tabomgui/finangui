@@ -12,7 +12,10 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 let mockAccounts: Account[] = []
 
 vi.mock('@/api/queries/accounts', () => ({
-  useAccounts: () => ({ data: mockAccounts, isPending: false }),
+  useAccounts: (includeArchived: boolean) => ({
+    data: includeArchived ? mockAccounts : mockAccounts.filter((account) => !account.is_archived),
+    isPending: false,
+  }),
 }))
 
 vi.mock('@/api/queries/cards', () => ({
@@ -140,6 +143,28 @@ describe('TransactionFormPage', () => {
     renderPage(['/transacoes/nova?conta=2'])
 
     expect(screen.getByLabelText('Conta')).toHaveTextContent('Nubank')
+  })
+
+  it('criação: "?conta=" aceita uma conta arquivada', () => {
+    mockAccounts = [
+      account({ id: 1, name: 'Inter' }),
+      account({ id: 2, name: 'Conta antiga', is_archived: true }),
+    ]
+
+    renderPage(['/transacoes/nova?conta=2'])
+
+    expect(screen.getByLabelText('Conta')).toHaveTextContent('Conta antiga')
+  })
+
+  it('criação: sem "?conta=" válido, usa a primeira conta ativa, não uma arquivada', () => {
+    mockAccounts = [
+      account({ id: 1, name: 'Conta antiga', is_archived: true }),
+      account({ id: 2, name: 'Inter' }),
+    ]
+
+    renderPage(['/transacoes/nova'])
+
+    expect(screen.getByLabelText('Conta')).toHaveTextContent('Inter')
   })
 
   it('salvar volta para o location.state.from', async () => {

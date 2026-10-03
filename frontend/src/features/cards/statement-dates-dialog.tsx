@@ -12,13 +12,12 @@ import { MoneyInput } from '@/components/shared/money-input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { applyFieldErrors, notifyError } from '@/lib/form-errors'
-
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+import { isDateOnly } from '@/lib/date'
 
 const schema = z
   .object({
-    closing_date: z.string().regex(DATE_PATTERN, 'Informe a data.'),
-    due_date: z.string().regex(DATE_PATTERN, 'Informe a data.'),
+    closing_date: z.string().refine(isDateOnly, 'Informe a data.'),
+    due_date: z.string().refine(isDateOnly, 'Informe a data.'),
     reported_total: z.number().nullable(),
   })
   .refine((values) => values.closing_date < values.due_date, {

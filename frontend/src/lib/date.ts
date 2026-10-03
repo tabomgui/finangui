@@ -6,12 +6,17 @@ import { ptBR } from 'date-fns/locale'
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
+/** Só confere o formato "YYYY-MM-DD" (sem validar o calendário; para isso, parseDateOnly). */
+export function isDateOnly(value: string): boolean {
+  return DATE_ONLY.test(value)
+}
+
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
 export function parseDateOnly(value: string): Date {
-  if (!DATE_ONLY.test(value)) throw new Error(`Data inválida: "${value}"`)
+  if (!isDateOnly(value)) throw new Error(`Data inválida: "${value}"`)
   const [year, month, day] = value.split('-').map(Number)
   const date = new Date(year, month - 1, day)
   if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {

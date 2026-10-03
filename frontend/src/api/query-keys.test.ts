@@ -49,11 +49,11 @@ describe('query keys', () => {
     ])
   })
 
-  it('invalidateCategories invalida categorias, transações e dashboard', async () => {
+  it('invalidateCategories invalida categorias, transações, dashboard e parcelamentos', async () => {
     const client = new QueryClient()
     seed(client)
     await invalidateCategories(client)
-    expect(invalidated(client)).toEqual(['categories', 'dashboard', 'transactions'])
+    expect(invalidated(client)).toEqual(['categories', 'dashboard', 'installment-plans', 'transactions'])
   })
 
   it('invalidateTags invalida tags e transações', async () => {

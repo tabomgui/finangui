@@ -53,9 +53,9 @@ export function invalidateLedger(queryClient: QueryClient) {
   ])
 }
 
-/** Nome, ícone e flag de transferência aparecem nas transações e nas top categorias do mês. */
+/** Nome, ícone e flag de transferência aparecem nas transações, nas top categorias do mês e nos parcelamentos. */
 export function invalidateCategories(queryClient: QueryClient) {
-  return invalidate(queryClient, ['categories', 'transactions', 'dashboard'])
+  return invalidate(queryClient, ['categories', 'transactions', 'dashboard', 'installment-plans'])
 }
 
 export function invalidateTags(queryClient: QueryClient) {

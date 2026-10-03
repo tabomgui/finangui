@@ -1,11 +1,10 @@
 import { z } from 'zod'
 import type { components } from '@/api/schema'
 import type { Direction, Transaction, Transfer } from '@/api/types'
+import { isDateOnly } from '@/lib/date'
 
 type StoreTransactionRequest = components['schemas']['StoreTransactionRequest']
 type StoreTransferRequest = components['schemas']['StoreTransferRequest']
-
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
 const amount = z
   .number()
@@ -14,7 +13,7 @@ const amount = z
 
 const description = z.string().trim().min(1, 'Informe a descrição.').max(255, 'Use no máximo 255 caracteres.')
 const notes = z.string().max(2000, 'Use no máximo 2000 caracteres.')
-const date = z.string().regex(DATE_ONLY, 'Informe a data.')
+const date = z.string().refine(isDateOnly, 'Informe a data.')
 
 export const entrySchema = z.object({
   direction: z.enum(['in', 'out']),

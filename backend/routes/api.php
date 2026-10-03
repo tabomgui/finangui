@@ -53,6 +53,6 @@ Route::prefix('v1')->group(function () {
         Route::patch('card-statements/{statement}', [CardStatementController::class, 'update'])->whereNumber('statement');
         Route::post('card-statements/{statement}/payments', [CardStatementController::class, 'pay'])->whereNumber('statement');
         Route::patch('installment-plans/{plan}', [InstallmentPlanController::class, 'update'])->whereNumber('plan');
-        Route::delete('installment-plans/{plan}', [InstallmentPlanController::class, 'destroy'])->whereNumber('plan');
+        Route::post('installment-plans/{plan}/cancel', [InstallmentPlanController::class, 'cancel'])->whereNumber('plan');
     });
 });

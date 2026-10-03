@@ -11,7 +11,7 @@ use LogicException;
 
 /**
  * Acha (ou cria) a fatura de uma data, ancorado nos fechamentos já gravados:
- * o período de uma fatura é (fechamento anterior, próprio fechamento] —
+ * o período de uma fatura é [fechamento anterior, próprio fechamento) —
  * compra no dia do fechamento vai para a próxima fatura. Faturas já gravadas
  * têm prioridade sobre as datas nominais do InvoiceCycle (o usuário ou o
  * banco pode ter antecipado ou adiado o fechamento); o ciclo nominal só

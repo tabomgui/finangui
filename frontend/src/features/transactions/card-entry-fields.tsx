@@ -4,12 +4,10 @@ import { useCardStatements, useStatementPreview } from '@/api/queries/cards'
 import { Field } from '@/components/form/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { STATUS_LABELS } from '@/features/cards/statement-labels'
-import { formatDate } from '@/lib/date'
+import { formatDate, isDateOnly } from '@/lib/date'
 import type { EntryValues } from './form-values'
 
 const INSTALLMENT_OPTIONS = Array.from({ length: 48 }, (_, index) => index + 1)
-
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
 type CardEntryFieldsProps = {
   form: UseFormReturn<EntryValues>
@@ -49,7 +47,7 @@ export function CardEntryFields({
   const statementOverridden = statementId !== initialStatementId
   const showStatementSelect = mode === 'edit' && isCreditCard && sameAccount && (sameDate || statementOverridden)
 
-  const dateValid = typeof date === 'string' && DATE_ONLY.test(date)
+  const dateValid = typeof date === 'string' && isDateOnly(date)
   const previewEnabled = isCreditCard && !showStatementSelect && accountId !== null && dateValid
   const preview = useStatementPreview(previewEnabled ? accountId : null, previewEnabled ? date : null)
   // `useStatementPreview` usa `placeholderData: keepPreviousData` (único uso do hook) pra não

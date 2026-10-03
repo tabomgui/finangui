@@ -37,13 +37,16 @@ function NewTransactionPage() {
   const [searchParams] = useSearchParams()
   const [kind, setKind] = useState<TransactionKind>(KIND_FROM_PARAM[searchParams.get('tipo') ?? ''] ?? 'out')
   const { data: accounts, isPending } = useAccounts(false)
+  // O "?conta=" pode apontar para uma conta já arquivada (ex.: link antigo); busca entre
+  // todas para aceitar, mas o default (sem "?conta=" válido) continua só entre as ativas.
+  const { data: allAccounts, isPending: isPendingAll } = useAccounts(true)
   const createTransaction = useCreateTransaction()
   const createTransfer = useCreateTransfer()
   const navigate = useNavigate()
 
-  if (isPending) return <FullPageSpinner />
+  if (isPending || isPendingAll) return <FullPageSpinner />
   const contaParam = Number(searchParams.get('conta'))
-  const accountFromParam = accounts?.find((account) => account.id === contaParam)
+  const accountFromParam = allAccounts?.find((account) => account.id === contaParam)
   const firstAccountId = accountFromParam?.id ?? accounts?.[0]?.id ?? null
   const backTo = backDestination(location.state?.from)
 

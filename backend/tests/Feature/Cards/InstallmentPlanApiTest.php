@@ -44,7 +44,7 @@ it('editar o parcelamento muda só as parcelas projetadas', function () {
 });
 
 it('cancelar exclui só as projetadas e marca o plano', function () {
-    $this->deleteJson("/api/v1/installment-plans/{$this->plan->id}")->assertNoContent();
+    $this->postJson("/api/v1/installment-plans/{$this->plan->id}/cancel")->assertNoContent();
 
     expect(Transaction::count())->toBe(2)
         ->and($this->plan->fresh()->cancelled_at)->not->toBeNull();
@@ -56,7 +56,7 @@ it('cancelar exclui a fatura futura que ficou vazia, mas mantém as que ainda t�
     // Parcelas: 2026-02-05 (lançada), 2026-03-05 (lançada), 2026-04-05 (projetada, cancelada agora).
     $aprilStatement = Transaction::query()->where('status', TransactionStatus::Projected->value)->firstOrFail()->statement_id;
 
-    $this->deleteJson("/api/v1/installment-plans/{$this->plan->id}")->assertNoContent();
+    $this->postJson("/api/v1/installment-plans/{$this->plan->id}/cancel")->assertNoContent();
 
     expect(CardStatement::find($aprilStatement))->toBeNull()
         ->and(CardStatement::where('account_id', $this->card->id)->count())->toBe(2);
@@ -66,7 +66,7 @@ it('parcelamento de outro usuário dá 404', function () {
     $other = InstallmentPlan::factory()->create(['account_id' => Account::factory()->creditCard()->create(['user_id' => User::factory()->create()->id])->id]);
 
     $this->patchJson("/api/v1/installment-plans/{$other->id}", ['description' => 'x'])->assertNotFound();
-    $this->deleteJson("/api/v1/installment-plans/{$other->id}")->assertNotFound();
+    $this->postJson("/api/v1/installment-plans/{$other->id}/cancel")->assertNotFound();
 });
 
 it('categoria precisa ser do usuário', function () {
@@ -105,10 +105,10 @@ it('recusa trocar categoria de parcelamento sem parcelas projetadas', function (
 });
 
 it('cancelar é idempotente: repetir não muda cancelled_at', function () {
-    $this->deleteJson("/api/v1/installment-plans/{$this->plan->id}")->assertNoContent();
+    $this->postJson("/api/v1/installment-plans/{$this->plan->id}/cancel")->assertNoContent();
     $firstCancelledAt = $this->plan->fresh()->cancelled_at;
 
-    $this->deleteJson("/api/v1/installment-plans/{$this->plan->id}")->assertNoContent();
+    $this->postJson("/api/v1/installment-plans/{$this->plan->id}/cancel")->assertNoContent();
 
     expect($this->plan->fresh()->cancelled_at->toIso8601String())->toBe($firstCancelledAt->toIso8601String());
 });
@@ -116,7 +116,7 @@ it('cancelar é idempotente: repetir não muda cancelled_at', function () {
 it('cancelar mantém intactos os campos das parcelas já lançadas', function () {
     $before = Transaction::query()->where('status', TransactionStatus::Posted->value)->orderBy('installment_number')->get();
 
-    $this->deleteJson("/api/v1/installment-plans/{$this->plan->id}")->assertNoContent();
+    $this->postJson("/api/v1/installment-plans/{$this->plan->id}/cancel")->assertNoContent();
 
     $after = Transaction::query()->where('status', TransactionStatus::Posted->value)->orderBy('installment_number')->get();
     expect($after->pluck('description')->all())->toBe($before->pluck('description')->all())
@@ -132,7 +132,7 @@ it('cancelar um parcelamento já todo lançado só marca cancelled_at', function
     $finished = InstallmentPlan::query()->where('description', 'Finished')->firstOrFail();
     $countBefore = Transaction::count();
 
-    $this->deleteJson("/api/v1/installment-plans/{$finished->id}")->assertNoContent();
+    $this->postJson("/api/v1/installment-plans/{$finished->id}/cancel")->assertNoContent();
 
     expect(Transaction::count())->toBe($countBefore)
         ->and($finished->fresh()->cancelled_at)->not->toBeNull();
@@ -151,7 +151,7 @@ it('ordena ativos antes de quitados e cancelados por último, mesmo fora de orde
         'description' => 'Cancelado', 'installments' => 3,
     ])->assertCreated();
     $cancelled = InstallmentPlan::query()->where('description', 'Cancelado')->firstOrFail();
-    $this->deleteJson("/api/v1/installment-plans/{$cancelled->id}")->assertNoContent();
+    $this->postJson("/api/v1/installment-plans/{$cancelled->id}/cancel")->assertNoContent();
 
     // Mais antigo dos três, mas ativo tem prioridade sobre quitado.
     $this->postJson('/api/v1/transactions', [

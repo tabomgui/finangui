@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { api, expectOk, unwrap } from '@/api/client'
 import { invalidateLedger, queryKeys } from '@/api/query-keys'
 import type { components } from '@/api/schema'
+import { isDateOnly } from '@/lib/date'
 
 type UpdateStatementRequest = components['schemas']['UpdateStatementRequest']
 type PayStatementRequest = components['schemas']['PayStatementRequest']
@@ -40,7 +41,7 @@ export function useCardStatements(cardId: number | null) {
 export function useStatementPreview(cardId: number | null, date: string | null) {
   return useQuery({
     queryKey: queryKeys.statementPreview(cardId ?? 0, date ?? ''),
-    enabled: cardId !== null && date !== null && /^\d{4}-\d{2}-\d{2}$/.test(date),
+    enabled: cardId !== null && date !== null && isDateOnly(date),
     queryFn: async () =>
       (
         await unwrap(
@@ -92,7 +93,7 @@ export function useCancelInstallmentPlan() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (id: number) => {
-      await expectOk(api.DELETE('/installment-plans/{plan}', { params: { path: { plan: id } } }))
+      await expectOk(api.POST('/installment-plans/{plan}/cancel', { params: { path: { plan: id } } }))
     },
     onSuccess: () => invalidateLedger(queryClient),
   })

@@ -20,7 +20,7 @@ final class InstallmentPlanController extends Controller
         return InstallmentPlanResource::make($list->find($plan->id));
     }
 
-    public function destroy(InstallmentPlan $plan, CancelInstallmentPlan $cancelPlan): Response
+    public function cancel(InstallmentPlan $plan, CancelInstallmentPlan $cancelPlan): Response
     {
         $cancelPlan->handle($plan);
 

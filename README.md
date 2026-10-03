@@ -146,6 +146,8 @@ Pontos de atenção específicos de produção:
   nunca `queue:listen` (que existe só pro Compose de dev, pra refletir mudança de código sem
   reiniciar o container).
 - **Scheduler**: `schedule:work`, igual ao Compose de dev — não precisa de cron do sistema.
+  Ele roda diariamente às 00:10 o `PostDueInstallments`, que vira parcela projetada em lançada
+  quando a data chega; sem o scheduler no ar, parcelas projetadas nunca são lançadas.
 
 ## Dados bancários
 

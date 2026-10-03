@@ -13,14 +13,14 @@ import { DateInput } from '@/components/shared/date-input'
 import { MoneyInput } from '@/components/shared/money-input'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { today } from '@/lib/date'
+import { isDateOnly, today } from '@/lib/date'
 import { applyFieldErrors, notifyError } from '@/lib/form-errors'
 import { formatMoney } from '@/lib/money'
 
 const schema = z.object({
   from_account_id: z.number().nullable().refine((value) => value !== null, 'Escolha a conta de origem.'),
   amount: z.number().nullable().refine((value) => value !== null && value > 0, 'Informe um valor maior que zero.'),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Informe a data.'),
+  date: z.string().refine(isDateOnly, 'Informe a data.'),
 })
 
 type PayStatementFormValues = z.input<typeof schema>

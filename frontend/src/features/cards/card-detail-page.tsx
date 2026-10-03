@@ -51,7 +51,7 @@ function CardDetailContent({ cardId }: { cardId: number }) {
 
   // Toast uma vez (ref) + <Navigate replace />, mesmo padrão de transaction-form-page.tsx:
   // evita duplicar sob StrictMode e a cada nova renderização. Só para 404 real: outros erros
-  // (500, rede) não existem o cartão, não devem mandar o usuário de volta para a lista.
+  // (500, rede) não significam que o cartão não existe, não devem mandar o usuário de volta para a lista.
   const toastShown = useRef(false)
   useEffect(() => {
     if (notFound && !toastShown.current) {

@@ -222,10 +222,26 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete: operations["installmentPlan.destroy"];
+        delete?: never;
         options?: never;
         head?: never;
         patch: operations["installmentPlan.update"];
+        trace?: never;
+    };
+    "/installment-plans/{plan}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["installmentPlan.cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/me": {
@@ -1413,29 +1429,6 @@ export interface operations {
             422: components["responses"]["ValidationException"];
         };
     };
-    "installmentPlan.destroy": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The plan ID */
-                plan: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No content */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            401: components["responses"]["AuthenticationException"];
-            404: components["responses"]["ModelNotFoundException"];
-        };
-    };
     "installmentPlan.update": {
         parameters: {
             query?: never;
@@ -1478,6 +1471,29 @@ export interface operations {
                 };
             };
             422: components["responses"]["ValidationException"];
+        };
+    };
+    "installmentPlan.cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The plan ID */
+                plan: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
         };
     };
     "me.show": {
