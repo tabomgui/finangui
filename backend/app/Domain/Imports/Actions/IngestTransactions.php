@@ -14,7 +14,6 @@ use App\Domain\Imports\Errors\ImportBatchNotPending;
 use App\Domain\Imports\Models\ImportBatch;
 use App\Domain\Imports\Support\ImportedInstallments;
 use App\Domain\Imports\Support\IngestionPlanner;
-use App\Domain\Imports\Support\UndoSnapshot;
 use App\Domain\Rules\Actions\CategorizeTransaction;
 use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Models\Rule;
@@ -22,7 +21,6 @@ use App\Domain\Rules\Support\HistoryCategorizer;
 use App\Domain\Rules\Support\TextNormalizer;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
-use App\Support\Money\Money;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -42,6 +40,7 @@ final class IngestTransactions
         private readonly IngestionPlanner $planner,
         private readonly HistoryCategorizer $history,
         private readonly ProjectInstallments $projectInstallments,
+        private readonly MatchedTransactionOutcomes $matchedOutcomes,
     ) {}
 
     /**
@@ -140,12 +139,12 @@ final class IngestTransactions
             match ($decision->outcome) {
                 RowOutcome::New => $this->insertNew($batch, $account, $decision->row, $rules, $historyMemo, $stats, $plansBySeedIndex, $index),
                 RowOutcome::Duplicate => $stats['duplicates']++,
-                RowOutcome::Update => $this->update($decision, $undo, $stats),
+                RowOutcome::Update => $this->matchedOutcomes->update($decision, $undo, $stats),
                 RowOutcome::ReplaceInstallment => $decision->transactionId !== null
-                    ? $this->replaceInstallmentOutcome($decision, $batch, $undo, $stats)
+                    ? $this->matchedOutcomes->replaceInstallmentOutcome($decision, $batch, $undo, $stats)
                     : $deferred[] = $decision,
-                RowOutcome::Adopt => $this->adopt($decision, $batch, $undo, $stats),
-                RowOutcome::SwapPending => $this->swapPending($decision, $undo, $stats),
+                RowOutcome::Adopt => $this->matchedOutcomes->adopt($decision, $batch, $undo, $stats),
+                RowOutcome::SwapPending => $this->matchedOutcomes->swapPending($decision, $undo, $stats),
             };
         }
 
@@ -242,7 +241,7 @@ final class IngestTransactions
             ->where('installment_number', $installment['number'])
             ->firstOrFail();
 
-        $this->replaceParcel($parcel, $decision->row, $batch, $undo);
+        $this->matchedOutcomes->replaceParcel($parcel, $decision->row, $batch, $undo);
         $stats['replaced']++;
     }
 
@@ -266,139 +265,5 @@ final class IngestTransactions
         }
 
         return $pairs;
-    }
-
-    /**
-     * @param  list<array{transaction_id: int, attributes: array<string, mixed>}>  $undo
-     * @param  array<string, int>  $stats
-     */
-    private function update(RowDecision $decision, array &$undo, array &$stats): void
-    {
-        $transaction = $decision->transaction ?? Transaction::query()->findOrFail($decision->transactionId);
-        $dateChanged = $transaction->date->toDateString() !== $decision->row->date;
-        $previousStatementId = $transaction->statement_id;
-
-        $attributes = [
-            'status' => TransactionStatus::Posted,
-            'date' => CarbonImmutable::parse($decision->row->date),
-        ];
-
-        // Pernas de transferência e parcelas de plano têm o valor travado
-        // por outras regras do domínio (simetria da transferência, total do
-        // parcelamento travado): a importação nunca sobrescreve isso.
-        if ($transaction->transfer_id === null && $transaction->installment_plan_id === null) {
-            $attributes['amount'] = Money::cents($decision->row->amount);
-        }
-
-        $changed = UndoSnapshot::applyAndDiff($transaction, $attributes);
-
-        if ($dateChanged) {
-            $this->assignStatement->handle($transaction);
-
-            if ($transaction->statement_id !== $previousStatementId) {
-                $changed['statement_id'] = $previousStatementId;
-            }
-        }
-
-        if ($changed !== []) {
-            $undo[] = ['transaction_id' => $transaction->id, 'attributes' => $changed];
-        }
-
-        $transaction->save();
-        $stats['updated']++;
-    }
-
-    /**
-     * @param  list<array{transaction_id: int, attributes: array<string, mixed>}>  $undo
-     * @param  array<string, int>  $stats
-     */
-    private function replaceInstallmentOutcome(RowDecision $decision, ImportBatch $batch, array &$undo, array &$stats): void
-    {
-        $transaction = $decision->transaction ?? Transaction::query()->findOrFail($decision->transactionId);
-        $this->replaceParcel($transaction, $decision->row, $batch, $undo);
-        $stats['replaced']++;
-    }
-
-    /**
-     * Confirma uma parcela de plano — já existente no banco
-     * (ReplaceInstallment) ou criada mais cedo neste mesmo lote
-     * (replaceSeededParcel): fica posted com a data e o valor reais, e
-     * ganha external_id/source. statement_id nunca muda aqui: é a
-     * sequência do próprio plano (StatementResolver::next a partir da
-     * fatura da parcela anterior) que decide a fatura de cada parcela —
-     * mais confiável do que recalcular pela data que o banco informou
-     * agora, que pode cair perto do fechamento de um ciclo vizinho.
-     *
-     * @param  list<array{transaction_id: int, attributes: array<string, mixed>}>  $undo
-     */
-    private function replaceParcel(Transaction $transaction, ParsedRow $row, ImportBatch $batch, array &$undo): void
-    {
-        $changed = UndoSnapshot::applyAndDiff($transaction, [
-            'external_id' => $row->externalId,
-            'source' => $batch->format->source(),
-            'status' => TransactionStatus::Posted,
-            'date' => CarbonImmutable::parse($row->date),
-            // O valor estimado (plano ÷ N ou o da própria linha semente)
-            // pode diferir do que o banco de fato cobrou nesta parcela
-            // (juros, arredondamento): adota o valor real para a fatura
-            // bater com o banco.
-            'amount' => Money::cents($row->amount),
-        ]);
-
-        if ($changed !== []) {
-            $undo[] = ['transaction_id' => $transaction->id, 'attributes' => $changed];
-        }
-
-        $transaction->save();
-    }
-
-    /**
-     * Lançamento manual que a linha do banco confirma: mantém categoria,
-     * descrição, notas e tags; ganha external_id/source/status/original_description.
-     *
-     * @param  list<array{transaction_id: int, attributes: array<string, mixed>}>  $undo
-     * @param  array<string, int>  $stats
-     */
-    private function adopt(RowDecision $decision, ImportBatch $batch, array &$undo, array &$stats): void
-    {
-        $transaction = $decision->transaction ?? Transaction::query()->findOrFail($decision->transactionId);
-
-        $changed = UndoSnapshot::applyAndDiff($transaction, [
-            'external_id' => $decision->row->externalId,
-            'source' => $batch->format->source(),
-            'status' => TransactionStatus::Posted,
-            'original_description' => $decision->row->description,
-        ]);
-
-        if ($changed !== []) {
-            $undo[] = ['transaction_id' => $transaction->id, 'attributes' => $changed];
-        }
-
-        $transaction->save();
-        $stats['adopted']++;
-    }
-
-    /**
-     * Pending da mesma conta cujo external_id o banco trocou: só troca o id
-     * e vira posted.
-     *
-     * @param  list<array{transaction_id: int, attributes: array<string, mixed>}>  $undo
-     * @param  array<string, int>  $stats
-     */
-    private function swapPending(RowDecision $decision, array &$undo, array &$stats): void
-    {
-        $transaction = $decision->transaction ?? Transaction::query()->findOrFail($decision->transactionId);
-
-        $changed = UndoSnapshot::applyAndDiff($transaction, [
-            'external_id' => $decision->row->externalId,
-            'status' => TransactionStatus::Posted,
-        ]);
-
-        if ($changed !== []) {
-            $undo[] = ['transaction_id' => $transaction->id, 'attributes' => $changed];
-        }
-
-        $transaction->save();
-        $stats['swapped']++;
     }
 }
