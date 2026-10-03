@@ -117,6 +117,22 @@ describe('ConnectionCard', () => {
     expect(onReconnect).toHaveBeenCalledWith(target)
   })
 
+  it('mostra "Vincular contas" para conexão pending_link e aciona onLinkAccounts', () => {
+    const onLinkAccounts = vi.fn()
+    const target = connection({ id: 7, status: 'pending_link' })
+    render(<ConnectionCard connection={target} onLinkAccounts={onLinkAccounts} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Vincular contas' }))
+
+    expect(onLinkAccounts).toHaveBeenCalledWith(target)
+  })
+
+  it('não mostra "Vincular contas" para conexão já ativa', () => {
+    render(<ConnectionCard connection={connection({ status: 'active' })} />)
+
+    expect(screen.queryByRole('button', { name: 'Vincular contas' })).not.toBeInTheDocument()
+  })
+
   it('desconectar abre confirmação e, ao confirmar, chama a mutação', async () => {
     render(<ConnectionCard connection={connection({ id: 3 })} />)
 

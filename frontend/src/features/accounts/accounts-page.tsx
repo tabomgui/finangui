@@ -4,8 +4,8 @@ import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAccounts, useDeleteAccount, useUpdateAccount } from '@/api/queries/accounts'
 import { useMe } from '@/api/queries/auth'
-import { useBankConnections } from '@/api/queries/bank-connections'
-import type { Account } from '@/api/types'
+import { useBankConnections, useConnectToken, useMarkReconnected } from '@/api/queries/bank-connections'
+import type { Account, BankConnection } from '@/api/types'
 import { PageBody } from '@/components/layout/page-body'
 import { headerButton, PageHeader } from '@/components/layout/page-header'
 import { CategoryIcon } from '@/components/shared/category-icon'
@@ -26,7 +26,10 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { notifyError } from '@/lib/form-errors'
+import { ConnectBankButton } from '../banking/connect-bank-button'
 import { ConnectionCard } from '../banking/connection-card'
+import { LinkAccountsDialog } from '../banking/link-accounts-dialog'
+import { PluggyWidget } from '../banking/pluggy-widget'
 import { ReauthBanner } from '../banking/reauth-banner'
 import { AccountFormDialog } from './account-form-dialog'
 import { ACCOUNT_TYPE_LABELS } from './account-labels'
@@ -39,10 +42,39 @@ export function AccountsPage() {
   const { data: connections } = useBankConnections()
   const update = useUpdateAccount()
   const remove = useDeleteAccount()
+  const connectToken = useConnectToken()
+  const markReconnected = useMarkReconnected()
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Account | undefined>()
   const [deleting, setDeleting] = useState<Account | null>(null)
+  // Reconectar (menu do ConnectionCard ou botão da ReauthBanner): busca o connect token com
+  // connection_id e só então monta o widget em modo de atualização.
+  const [reconnecting, setReconnecting] = useState<{ connection: BankConnection; token: string } | null>(null)
+  // Retomar o vínculo de uma conexão pending_link (ex.: o usuário fechou o widget antes de
+  // terminar); as contas pendentes já vêm em connection.pending_accounts.
+  const [resuming, setResuming] = useState<BankConnection | null>(null)
+
+  async function handleReconnect(connection: BankConnection) {
+    try {
+      const token = await connectToken.mutateAsync({ connection_id: connection.id })
+      setReconnecting({ connection, token })
+    } catch (error) {
+      notifyError(error)
+    }
+  }
+
+  async function handleReconnectSuccess() {
+    if (!reconnecting) return
+    const { connection } = reconnecting
+    setReconnecting(null)
+    try {
+      await markReconnected.mutateAsync(connection.id)
+      toast.success('Banco reconectado.')
+    } catch (error) {
+      notifyError(error)
+    }
+  }
 
   const openCreate = () => {
     setEditing(undefined)
@@ -68,12 +100,7 @@ export function AccountsPage() {
         subtitle="Bancos, carteira e poupança"
         actions={
           <>
-            {me?.banking_enabled && (
-              <Button className={headerButton}>
-                <Landmark className="h-4 w-4" />
-                Conectar banco
-              </Button>
-            )}
+            {me?.banking_enabled && <ConnectBankButton className={headerButton} />}
             <Button className={headerButton} onClick={openCreate}>
               <Plus className="h-4 w-4" />
               Nova conta
@@ -82,9 +109,16 @@ export function AccountsPage() {
         }
       />
       <PageBody>
-        <ReauthBanner connections={connections ?? []} />
+        <ReauthBanner connections={connections ?? []} onReconnect={handleReconnect} />
 
-        {connections?.map((connection) => <ConnectionCard key={connection.id} connection={connection} />)}
+        {connections?.map((connection) => (
+          <ConnectionCard
+            key={connection.id}
+            connection={connection}
+            onReconnect={handleReconnect}
+            onLinkAccounts={setResuming}
+          />
+        ))}
 
         {hasConnections && <h2 className="px-1 text-sm font-medium text-muted-foreground">Contas manuais</h2>}
 
@@ -195,6 +229,21 @@ export function AccountsPage() {
           toast.success('Conta excluída.')
         }}
       />
+
+      {reconnecting && (
+        <PluggyWidget
+          connectToken={reconnecting.token}
+          onSuccess={handleReconnectSuccess}
+          onClose={() => setReconnecting(null)}
+          onError={(message) => {
+            setReconnecting(null)
+            toast.error(message)
+          }}
+        />
+      )}
+      {resuming && (
+        <LinkAccountsDialog connection={resuming} open onOpenChange={(open) => !open && setResuming(null)} />
+      )}
     </>
   )
 }

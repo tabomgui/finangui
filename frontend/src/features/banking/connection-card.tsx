@@ -30,9 +30,11 @@ type ConnectionCardProps = {
   connection: BankConnection
   /** Abre o widget em modo de atualização; sem a prop, o item do menu não faz nada. */
   onReconnect?: (connection: BankConnection) => void
+  /** Reabre o diálogo de vínculo (ex.: o usuário fechou o widget antes de terminar); sem a prop, o botão não faz nada. */
+  onLinkAccounts?: (connection: BankConnection) => void
 }
 
-export function ConnectionCard({ connection, onReconnect }: ConnectionCardProps) {
+export function ConnectionCard({ connection, onReconnect, onLinkAccounts }: ConnectionCardProps) {
   const [logoFailed, setLogoFailed] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
   const sync = useSyncConnection()
@@ -101,6 +103,15 @@ export function ConnectionCard({ connection, onReconnect }: ConnectionCardProps)
           </DropdownMenuContent>
         </DropdownMenu>
       </CardHeader>
+
+      {connection.status === 'pending_link' && (
+        <CardContent className="pt-0">
+          <Button size="sm" onClick={() => onLinkAccounts?.(connection)}>
+            <Link2 className="h-4 w-4" />
+            Vincular contas
+          </Button>
+        </CardContent>
+      )}
 
       {connection.accounts.length > 0 && (
         <CardContent className="space-y-1 p-2 pt-0">

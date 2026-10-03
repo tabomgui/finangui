@@ -22,10 +22,16 @@ vi.mock('@/api/queries/auth', () => ({
   useMe: () => meState,
 }))
 
+const connectTokenMutateAsync = vi.fn()
+
 vi.mock('@/api/queries/bank-connections', () => ({
   useBankConnections: () => connectionsState,
   useSyncConnection: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDisconnect: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useConnectToken: () => ({ mutateAsync: connectTokenMutateAsync, isPending: false }),
+  useCreateConnection: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useMarkReconnected: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useLinkAccounts: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
 function renderPage(initialEntry = '/contas') {
