@@ -52,6 +52,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bank-connections/connect-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["bankConnection.connectToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["bankConnection.index"];
+        put?: never;
+        post: operations["bankConnection.store"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/{connection}/link-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["bankConnection.linkAccounts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/{connection}/reconnected": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["bankConnection.reconnected"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/{connection}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["bankConnection.sync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/{connection}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["bankConnection.destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cards": {
         parameters: {
             query?: never;
@@ -585,6 +681,28 @@ export interface components {
         ApplyRuleRequest: {
             overwrite?: boolean;
         };
+        /** BankConnectionResource */
+        BankConnectionResource: {
+            id: number;
+            provider: components["schemas"]["BankProviderName"];
+            status: components["schemas"]["ConnectionStatus"];
+            institution_name: string | null;
+            institution_logo_url: string | null;
+            last_synced_at: string | null;
+            last_error: string | null;
+            accounts: {
+                id: number;
+                name: string;
+                type: components["schemas"]["AccountType"];
+                balance: number;
+                provider_balance: number | null;
+            }[];
+        };
+        /**
+         * BankProviderName
+         * @enum {string}
+         */
+        BankProviderName: "pluggy";
         /** CardResource */
         CardResource: {
             id: number;
@@ -641,6 +759,15 @@ export interface components {
         ConfirmImportBatchRequest: {
             skip_lines?: number[];
         };
+        /** ConnectTokenRequest */
+        ConnectTokenRequest: {
+            connection_id?: number;
+        };
+        /**
+         * ConnectionStatus
+         * @enum {string}
+         */
+        ConnectionStatus: "pending_link" | "active" | "needs_reauth" | "error";
         /**
          * Direction
          * @enum {string}
@@ -781,6 +908,26 @@ export interface components {
             remaining_amount: number;
             next_date: string | null;
         };
+        /**
+         * LinkAccountsRequest
+         * @description As contas do banco (e seu tipo/moeda) vêm de settings.pending_accounts,
+         *     gravado por App\Domain\Banking\Actions\CreateConnection — aqui só
+         *     validamos o formato do pedido; a gravação em si (criar/vincular conta,
+         *     trocar o status) é App\Domain\Banking\Actions\LinkAccounts, sob lock.
+         *
+         *     Quando a conexão não está `pending_link` (já vinculada antes, ou nem
+         *     existe mais `pending_accounts`), as regras ficam soltas de propósito: a
+         *     checagem de cobertura/tipo/moeda não faz sentido sem as contas do banco
+         *     em mãos, e quem deve rejeitar o pedido é a Action (409
+         *     connection_not_pending_link), não um 422 de validação que mascararia a
+         *     causa real.
+         */
+        LinkAccountsRequest: {
+            links: {
+                external_id: string;
+                account_id?: number | null;
+            }[];
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Format: email */
@@ -823,6 +970,16 @@ export interface components {
                 value?: string;
             }[];
             overwrite?: boolean;
+        };
+        /** ProviderAccountResource */
+        ProviderAccountResource: {
+            external_id: string;
+            name: string;
+            number: string | null;
+            kind: string;
+            currency: string;
+            balance: number;
+            suggested_account_id: number | null;
         };
         /** RegisterRequest */
         RegisterRequest: {
@@ -914,6 +1071,11 @@ export interface components {
             closing_day?: number | null;
             due_day?: number | null;
             last_four?: string | null;
+        };
+        /** StoreBankConnectionRequest */
+        StoreBankConnectionRequest: {
+            /** Format: uuid */
+            item_id: string;
         };
         /** StoreCategoryRequest */
         StoreCategoryRequest: {
@@ -1437,6 +1599,199 @@ export interface operations {
                     };
                 };
             };
+        };
+    };
+    "bankConnection.connectToken": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConnectTokenRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            connect_token: string;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "bankConnection.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Array of `BankConnectionResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BankConnectionResource"][];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
+    "bankConnection.store": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoreBankConnectionRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            connection: components["schemas"]["BankConnectionResource"];
+                            provider_accounts: components["schemas"]["ProviderAccountResource"][];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "bankConnection.linkAccounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connection ID */
+                connection: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkAccountsRequest"];
+            };
+        };
+        responses: {
+            /** @description `BankConnectionResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BankConnectionResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "bankConnection.reconnected": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connection ID */
+                connection: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `BankConnectionResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BankConnectionResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "bankConnection.sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connection ID */
+                connection: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            queued: boolean;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "bankConnection.destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connection ID */
+                connection: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
         };
     };
     "card.index": {

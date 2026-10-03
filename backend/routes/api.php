@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AccountController;
 use App\Http\Controllers\Api\V1\Auth\AuthStatusController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\SessionController;
+use App\Http\Controllers\Api\V1\BankConnectionController;
 use App\Http\Controllers\Api\V1\CardController;
 use App\Http\Controllers\Api\V1\CardStatementController;
 use App\Http\Controllers\Api\V1\CategoryController;
@@ -15,6 +16,7 @@ use App\Http\Controllers\Api\V1\RuleController;
 use App\Http\Controllers\Api\V1\TagController;
 use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Controllers\Api\V1\TransferController;
+use App\Http\Middleware\EnsureBankingEnabled;
 use App\Http\Middleware\EnsureRegistrationAllowed;
 use Illuminate\Support\Facades\Route;
 
@@ -74,5 +76,22 @@ Route::prefix('v1')->group(function () {
         Route::post('import-batches/{batch}/confirm', [ImportBatchController::class, 'confirm'])->whereNumber('batch');
         Route::delete('import-batches/{batch}', [ImportBatchController::class, 'destroy'])->whereNumber('batch');
         Route::post('import-batches/{batch}/revert', [ImportBatchController::class, 'revert'])->whereNumber('batch');
+
+        // EnsureBankingEnabled antes de qualquer FormRequest: sem provedor
+        // configurado, a rota responde 409 banking_disabled mesmo que o
+        // corpo não passasse a validação de campos.
+        Route::middleware(EnsureBankingEnabled::class)->group(function () {
+            // connect-token antes de {connection}, por clareza (não há
+            // colisão de verbo/profundidade entre os dois, mas mantém o
+            // agrupamento das rotas literais perto do topo, como em rules/
+            // e import-batches/).
+            Route::post('bank-connections/connect-token', [BankConnectionController::class, 'connectToken'])->middleware('throttle:10,1');
+            Route::get('bank-connections', [BankConnectionController::class, 'index']);
+            Route::post('bank-connections', [BankConnectionController::class, 'store']);
+            Route::post('bank-connections/{connection}/link-accounts', [BankConnectionController::class, 'linkAccounts'])->whereNumber('connection');
+            Route::post('bank-connections/{connection}/reconnected', [BankConnectionController::class, 'reconnected'])->whereNumber('connection');
+            Route::post('bank-connections/{connection}/sync', [BankConnectionController::class, 'sync'])->whereNumber('connection')->middleware('throttle:6,1');
+            Route::delete('bank-connections/{connection}', [BankConnectionController::class, 'destroy'])->whereNumber('connection');
+        });
     });
 });
