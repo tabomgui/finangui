@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react'
+import { Trash2, Wand2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -121,6 +121,20 @@ function EditTransactionPage({ id }: { id: number }) {
     navigate(backTo, { replace: true })
   }
 
+  // Depois de uma edição que colocou categoria onde não tinha a mesma categoria (ou mudou para
+  // outra), oferece criar uma regra a partir deste lançamento direto no toast de sucesso.
+  const doneAfterEntryEdit = (newCategoryId: number | null) => {
+    if (newCategoryId !== null && newCategoryId !== transaction.category_id) {
+      toast.success('Lançamento atualizado.', {
+        description: 'Aplicar esta categoria a lançamentos parecidos?',
+        action: { label: 'Criar regra', onClick: () => navigate(`/regras/nova?transacao=${id}`) },
+      })
+    } else {
+      toast.success('Lançamento atualizado.')
+    }
+    navigate(backTo, { replace: true })
+  }
+
   const title = isTransfer ? 'Editar transferência' : kind === 'installment' ? 'Editar parcela' : 'Editar lançamento'
   const lockedReason =
     kind === 'installment' && transaction.installment
@@ -133,9 +147,21 @@ function EditTransactionPage({ id }: { id: number }) {
         title={title}
         back={backTo}
         actions={
-          <button type="button" aria-label="Excluir" className={headerIconButton} onClick={() => setConfirmDelete(true)}>
-            <Trash2 className="h-5 w-5" />
-          </button>
+          <>
+            {!isTransfer && (
+              <button
+                type="button"
+                aria-label="Criar regra a partir deste lançamento"
+                className={headerIconButton}
+                onClick={() => navigate(`/regras/nova?transacao=${id}`)}
+              >
+                <Wand2 className="h-5 w-5" />
+              </button>
+            )}
+            <button type="button" aria-label="Excluir" className={headerIconButton} onClick={() => setConfirmDelete(true)}>
+              <Trash2 className="h-5 w-5" />
+            </button>
+          </>
         }
       />
       <PageBody className="max-w-2xl">
@@ -161,7 +187,7 @@ function EditTransactionPage({ id }: { id: number }) {
                 id,
                 body: toTransactionBody(values, { initialStatementId: transaction.statement_id }),
               })
-              done()
+              doneAfterEntryEdit(values.category_id)
             }}
           />
         )}

@@ -6,6 +6,7 @@ import { RouterProvider } from 'react-router-dom'
 import { onUnauthorized } from '@/api/client'
 import { resetSession } from '@/api/queries/auth'
 import { Toaster } from '@/components/ui/sonner'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { queryClient } from '@/lib/query-client'
 import { router } from '@/router'
 import './index.css'
@@ -16,8 +17,10 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <Toaster position="top-center" richColors />
+        <TooltipProvider>
+          <RouterProvider router={router} />
+          <Toaster position="top-center" richColors />
+        </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>
   </StrictMode>,

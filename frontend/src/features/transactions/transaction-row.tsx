@@ -6,6 +6,7 @@ import { MoneyText } from '@/components/shared/money-text'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
+import { CategorizationBadge } from './categorization-badge'
 import { transactionSubtitle } from './transaction-subtitle'
 
 type TransactionRowProps = {
@@ -38,6 +39,7 @@ export function TransactionRow({ transaction, selectable = false, selected = fal
         </p>
         <p className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
           <span className="min-w-0 truncate">{subtitle}</span>
+          <CategorizationBadge categorization={transaction.categorization} />
           {transaction.status === 'pending' && <Badge variant="outline">Pendente</Badge>}
           {transaction.status === 'projected' && <Badge variant="outline">Prevista</Badge>}
           {transaction.is_ignored && <Badge variant="secondary">Ignorada</Badge>}
