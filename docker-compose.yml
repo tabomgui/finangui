@@ -45,7 +45,7 @@ services:
 
   worker:
     <<: *backend
-    command: php artisan queue:listen --tries=3
+    command: php artisan queue:listen --tries=3 --timeout=600
     depends_on:
       db:
         condition: service_healthy
