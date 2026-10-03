@@ -46,7 +46,7 @@ final class AccountMapper
             'last_four' => $isCreditCard ? self::last4($account->number) : null,
             'connection_id' => $connection->id,
             'external_id' => $account->id,
-            'provider_balance' => $account->balanceCents,
+            'provider_balance' => self::appBalanceCents($account),
             'provider_synced_at' => Carbon::now(),
         ]);
     }
@@ -71,7 +71,7 @@ final class AccountMapper
         $attributes = [
             'connection_id' => $connection->id,
             'external_id' => $account->id,
-            'provider_balance' => $account->balanceCents,
+            'provider_balance' => self::appBalanceCents($account),
             'provider_synced_at' => Carbon::now(),
             'provider_sync_from' => $this->syncFloorFor($existing),
         ];
@@ -93,12 +93,28 @@ final class AccountMapper
     public function updateLinked(Account $existing, ProviderAccount $account): Account
     {
         $existing->update([
-            'provider_balance' => $account->balanceCents,
+            'provider_balance' => self::appBalanceCents($account),
             'provider_synced_at' => Carbon::now(),
-            'credit_limit' => $account->kind === 'credit_card' ? $account->creditLimitCents : $existing->credit_limit,
+            // ?? $existing->credit_limit (não só o ternário por tipo): o
+            // banco pode mandar o sync sem o limite desta vez (campo
+            // omitido/null) — nesse caso mantém o limite que já tínhamos,
+            // em vez de apagar.
+            'credit_limit' => $account->kind === 'credit_card' ? ($account->creditLimitCents ?? $existing->credit_limit) : $existing->credit_limit,
         ]);
 
         return $existing;
+    }
+
+    /**
+     * Saldo do provedor traduzido para o sinal do app: em cartão, o saldo
+     * do provedor é o valor devido (positivo); o saldo do app é negativo
+     * quando há dívida — fonte única do sinal, usada em createLinked,
+     * linkExisting e updateLinked (nunca inverte em dois lugares
+     * diferentes, nem deixa de inverter em um deles).
+     */
+    public static function appBalanceCents(ProviderAccount $account): int
+    {
+        return $account->kind === 'credit_card' ? -$account->balanceCents : $account->balanceCents;
     }
 
     /**
@@ -111,10 +127,18 @@ final class AccountMapper
      * histórico duas vezes. Roda só uma vez (provider_opening_set_at);
      * chamado por App\Domain\Banking\Jobs\SyncConnection depois de
      * SyncTransactions.
+     *
+     * Nunca em cartão: o saldo informado pelo provedor para um cartão é o
+     * valor devido, que já inclui compras futuras ainda não faturadas
+     * (parceladas ou da fatura aberta) — bem diferente de Σ(lançadas), que
+     * só soma o que já está lançado. Calcular a abertura a partir disso
+     * contaria compromissos futuros como se fossem dívida já existente no
+     * início. Cartão sempre começa com abertura zero.
      */
     public function settleOpeningBalance(Account $account): void
     {
-        if ($account->provider_sync_from !== null
+        if ($account->isCreditCard()
+            || $account->provider_sync_from !== null
             || $account->provider_opening_set_at !== null
             || $account->provider_balance === null) {
             return;
@@ -134,6 +158,21 @@ final class AccountMapper
     }
 
     /**
+     * Marca que o histórico inicial desta conta (365 dias, ou desde
+     * provider_sync_from) já foi buscado pelo menos uma vez — depois disso
+     * os próximos syncs usam createdAtFrom (incremental) em vez de dateFrom
+     * de novo. Idempotente: não sobrescreve uma marca já existente.
+     */
+    public function markHistorySynced(Account $account): void
+    {
+        if ($account->provider_history_synced_at !== null) {
+            return;
+        }
+
+        $account->update(['provider_history_synced_at' => CarbonImmutable::now()]);
+    }
+
+    /**
      * Piso de sync (provider_sync_from) de uma conta manual que está sendo
      * vinculada agora: a data do lançamento mais antigo já existente, ou a
      * data de criação da conta, sem nenhum lançamento.
@@ -142,7 +181,14 @@ final class AccountMapper
     {
         $firstTransactionDate = Transaction::query()->where('account_id', $existing->id)->min('date');
 
-        return is_string($firstTransactionDate) ? $firstTransactionDate : $existing->created_at->toDateString();
+        if (is_string($firstTransactionDate)) {
+            return $firstTransactionDate;
+        }
+
+        // created_at é gravado em UTC; sem conta nenhuma, a data de
+        // criação "local" (fuso do app, não UTC) é o que de fato importa
+        // aqui — um create() às 23h de São Paulo já é dia seguinte em UTC.
+        return $existing->created_at->setTimezone(config('app.timezone'))->toDateString();
     }
 
     /**

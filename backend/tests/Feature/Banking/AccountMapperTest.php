@@ -122,7 +122,7 @@ it('conta corrente vinculada nunca recebe last_four', function () {
     expect($linked->last_four)->toBeNull();
 });
 
-it('atualiza saldo e limite de uma conta já vinculada, sem tocar em nome/dias', function () {
+it('atualiza saldo e limite de uma conta já vinculada, sem tocar em nome/dias (cartão com sinal invertido)', function () {
     $account = Account::factory()->creditCard(closingDay: 5, dueDay: 15, limit: 100000)
         ->create(['name' => 'Cartão', 'connection_id' => $this->connection->id, 'external_id' => 'acc-5']);
 
@@ -133,11 +133,27 @@ it('atualiza saldo e limite de uma conta já vinculada, sem tocar em nome/dias',
         'creditLimitCents' => 200000,
     ]));
 
-    expect($updated->provider_balance->cents)->toBe(42000)
+    expect($updated->provider_balance->cents)->toBe(-42000)
         ->and($updated->credit_limit->cents)->toBe(200000)
         ->and($updated->name)->toBe('Cartão')
         ->and($updated->closing_day)->toBe(5)
         ->and($updated->due_day)->toBe(15);
+});
+
+it('mantém o limite do cartão quando o banco não informa um limite neste sync', function () {
+    $account = Account::factory()->creditCard(limit: 100000)
+        ->create(['connection_id' => $this->connection->id, 'external_id' => 'acc-5']);
+
+    $updated = $this->mapper->updateLinked($account, mapperAccount([
+        'id' => 'acc-5', 'kind' => 'credit_card', 'creditLimitCents' => null,
+    ]));
+
+    expect($updated->credit_limit->cents)->toBe(100000);
+});
+
+it('appBalanceCents inverte o sinal só em cartão', function () {
+    expect(AccountMapper::appBalanceCents(mapperAccount(['kind' => 'checking', 'balanceCents' => 5000])))->toBe(5000)
+        ->and(AccountMapper::appBalanceCents(mapperAccount(['kind' => 'credit_card', 'balanceCents' => 5000])))->toBe(-5000);
 });
 
 it('vincular uma conta existente sem lançamento guarda provider_sync_from na data de criação da conta', function () {
@@ -189,6 +205,18 @@ describe('settleOpeningBalance', function () {
         $account->refresh();
 
         expect($account->opening_balance->cents)->toBe(100000);
+    });
+
+    it('nunca ajusta a abertura de um cartão (fica sempre zero — o saldo do provedor inclui compras futuras ainda não faturadas)', function () {
+        $card = $this->mapper->createLinked($this->connection, mapperAccount(['kind' => 'credit_card', 'balanceCents' => 100000]));
+        $card->update(['provider_balance' => -100000]);
+        Transaction::factory()->create(['account_id' => $card->id, 'amount' => 30000, 'direction' => 'out', 'status' => 'posted']);
+
+        $this->mapper->settleOpeningBalance($card);
+        $card->refresh();
+
+        expect($card->opening_balance->cents)->toBe(0)
+            ->and($card->provider_opening_set_at)->toBeNull();
     });
 
     it('nunca roda numa conta manual vinculada (provider_sync_from preenchido)', function () {

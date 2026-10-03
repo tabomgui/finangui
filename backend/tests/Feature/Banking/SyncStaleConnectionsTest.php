@@ -9,23 +9,26 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Queue;
 
-it('despacha SyncConnection só para conexões active vencidas (nunca sincronizadas ou há 4h ou mais)', function () {
+it('despacha SyncConnection só para conexões active/error vencidas (nunca sincronizadas ou há 4h ou mais)', function () {
     Queue::fake();
     $this->travelTo(now()->setDate(2026, 10, 3)->setTime(12, 0));
 
     $user = User::factory()->create();
     $neverSynced = BankConnection::factory()->create(['user_id' => $user->id, 'status' => 'active', 'last_synced_at' => null]);
     $stale = BankConnection::factory()->create(['user_id' => $user->id, 'status' => 'active', 'last_synced_at' => now()->subHours(4)]);
+    $staleError = BankConnection::factory()->create(['user_id' => $user->id, 'status' => 'error', 'last_error' => 'x', 'last_synced_at' => now()->subHours(5)]);
     $fresh = BankConnection::factory()->create(['user_id' => $user->id, 'status' => 'active', 'last_synced_at' => now()->subHours(1)]);
+    $freshError = BankConnection::factory()->create(['user_id' => $user->id, 'status' => 'error', 'last_error' => 'x', 'last_synced_at' => now()->subHours(1)]);
     $needsReauth = BankConnection::factory()->needsReauth()->create(['user_id' => $user->id]);
     $pendingLink = BankConnection::factory()->create(['user_id' => $user->id, 'status' => 'pending_link']);
 
     (new SyncStaleConnections)->handle();
 
-    Queue::assertPushed(SyncConnection::class, 2);
+    Queue::assertPushed(SyncConnection::class, 3);
     Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $neverSynced->id);
     Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $stale->id);
-    Queue::assertNotPushed(SyncConnection::class, fn (SyncConnection $job) => in_array($job->connectionId, [$fresh->id, $needsReauth->id, $pendingLink->id], true));
+    Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $staleError->id);
+    Queue::assertNotPushed(SyncConnection::class, fn (SyncConnection $job) => in_array($job->connectionId, [$fresh->id, $freshError->id, $needsReauth->id, $pendingLink->id], true));
 });
 
 it('percorre conexões de todos os usuários', function () {

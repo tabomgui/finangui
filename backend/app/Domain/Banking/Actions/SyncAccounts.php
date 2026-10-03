@@ -11,10 +11,12 @@ use App\Domain\Banking\Support\PendingProviderAccounts;
  * Primeiro passo do sync periódico (App\Domain\Banking\Jobs\SyncConnection):
  * atualiza saldo informado e limite de cada conta já vinculada à conexão —
  * nunca nome, cor, ícone ou dias do cartão, que o usuário pode ter editado
- * depois do vínculo (ver AccountMapper::updateLinked()). Uma conta do banco
- * que ainda não está vinculada (apareceu depois do vínculo inicial) não é
- * criada sozinha: fica em `settings.unlinked_accounts`, para a tela
- * oferecer o vínculo.
+ * depois do vínculo (ver AccountMapper::updateLinked(), que também resolve
+ * o sinal do saldo — AccountMapper::appBalanceCents() é a única fonte dessa
+ * conversão, este Action não repete a conta). Uma conta do banco que ainda
+ * não está vinculada (apareceu depois do vínculo inicial) não é criada
+ * sozinha: fica em `settings.unlinked_accounts`, para a tela oferecer o
+ * vínculo.
  */
 final class SyncAccounts
 {
@@ -37,36 +39,10 @@ final class SyncAccounts
                 continue;
             }
 
-            $this->accountMapper->updateLinked($linked, $this->forComparison($providerAccount));
+            $this->accountMapper->updateLinked($linked, $providerAccount);
         }
 
         $this->updateUnlinkedSettings($connection, $unlinked);
-    }
-
-    /**
-     * Em cartão, o saldo do provedor é o valor devido (positivo); o saldo
-     * do app é negativo quando há dívida — inverte o sinal aqui, só para
-     * esta comparação/gravação, sem alterar o DTO original (usado também
-     * para montar `settings.unlinked_accounts`, que precisa do saldo "como
-     * o banco informou").
-     */
-    private function forComparison(ProviderAccount $account): ProviderAccount
-    {
-        if ($account->kind !== 'credit_card') {
-            return $account;
-        }
-
-        return new ProviderAccount(
-            id: $account->id,
-            kind: $account->kind,
-            name: $account->name,
-            number: $account->number,
-            currency: $account->currency,
-            balanceCents: -$account->balanceCents,
-            creditLimitCents: $account->creditLimitCents,
-            closingDay: $account->closingDay,
-            dueDay: $account->dueDay,
-        );
     }
 
     /**

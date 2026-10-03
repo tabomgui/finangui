@@ -13,10 +13,12 @@ use Illuminate\Foundation\Queue\Queueable;
 
 /**
  * Agendador (routes/console.php, a cada 6h): despacha
- * App\Domain\Banking\Jobs\SyncConnection para cada conexão `active` vencida
- * (nunca sincronizada, ou sincronizada há 4h ou mais). Roda por usuário,
- * dentro de UserContext, para o escopo por usuário continuar valendo (mesmo
- * padrão de App\Domain\Cards\Jobs\PostDueInstallments).
+ * App\Domain\Banking\Jobs\SyncConnection para cada conexão `active` ou
+ * `error` vencida (nunca sincronizada, ou sincronizada há 4h ou mais) — uma
+ * conexão em erro transitório também merece tentar de novo sozinha, sem
+ * esperar o usuário clicar em "Sincronizar". Roda por usuário, dentro de
+ * UserContext, para o escopo por usuário continuar valendo (mesmo padrão de
+ * App\Domain\Cards\Jobs\PostDueInstallments).
  */
 final class SyncStaleConnections implements ShouldQueue
 {
@@ -26,7 +28,7 @@ final class SyncStaleConnections implements ShouldQueue
     {
         $threshold = CarbonImmutable::now()->subHours(4)->toDateTimeString();
         $stale = fn (Builder $query) => $query
-            ->where('status', ConnectionStatus::Active->value)
+            ->whereIn('status', [ConnectionStatus::Active->value, ConnectionStatus::Error->value])
             ->where(fn (Builder $q) => $q->whereNull('last_synced_at')->orWhere('last_synced_at', '<=', $threshold));
 
         $owners = $stale(BankConnection::query()->withoutGlobalScopes())->select('user_id');

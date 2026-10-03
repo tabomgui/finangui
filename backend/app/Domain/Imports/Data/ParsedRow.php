@@ -3,6 +3,8 @@
 namespace App\Domain\Imports\Data;
 
 use App\Domain\Transactions\Enums\Direction;
+use App\Domain\Transactions\Enums\TransactionStatus;
+use Carbon\CarbonImmutable;
 
 /**
  * Linha normalizada por um parser, antes de qualquer decisão de ingestão.
@@ -27,6 +29,24 @@ final readonly class ParsedRow
         public bool $pending = false,
         public array $meta = [],
     ) {}
+
+    /**
+     * Status real de um lançamento desta linha: arquivos de extrato nunca
+     * marcam `pending` (sempre Posted); a sincronização bancária pode — e
+     * uma pendente datada no futuro (ex.: parcela de cartão que o banco já
+     * relata mas ainda não lançou) é Projected, não Pending (Pending é só
+     * para o que já deveria ter lançado e o banco ainda não confirmou).
+     */
+    public function status(): TransactionStatus
+    {
+        if (! $this->pending) {
+            return TransactionStatus::Posted;
+        }
+
+        return CarbonImmutable::parse($this->date)->greaterThan(CarbonImmutable::today())
+            ? TransactionStatus::Projected
+            : TransactionStatus::Pending;
+    }
 
     /**
      * @return array<string, mixed>

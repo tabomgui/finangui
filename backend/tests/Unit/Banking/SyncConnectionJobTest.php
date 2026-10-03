@@ -20,6 +20,6 @@ it('tem tries, timeout e backoff para o retry com espera crescente', function ()
         ->and($job->timeout)->toBe(600)
         ->and($job->timeout)->toBeLessThan($retryAfter)
         ->and($job->backoff)->toBe([60, 300, 900])
-        ->and($job->uniqueFor())->toBe(1800)
+        ->and($job->uniqueFor())->toBe(3600)
         ->and($job->uniqueId())->toBe('42');
 });

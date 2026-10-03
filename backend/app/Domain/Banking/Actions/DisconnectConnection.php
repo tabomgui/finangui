@@ -44,6 +44,9 @@ final class DisconnectConnection
                 'external_id' => null,
                 'provider_balance' => null,
                 'provider_synced_at' => null,
+                'provider_sync_from' => null,
+                'provider_opening_set_at' => null,
+                'provider_history_synced_at' => null,
             ]);
             $connection->delete();
         });

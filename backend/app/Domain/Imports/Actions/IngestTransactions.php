@@ -21,7 +21,6 @@ use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Models\Rule;
 use App\Domain\Rules\Support\HistoryCategorizer;
 use App\Domain\Rules\Support\TextNormalizer;
-use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -214,7 +213,10 @@ final class IngestTransactions
             'description' => $row->description,
             'original_description' => $row->description,
             'external_id' => $row->externalId,
-            'status' => $row->pending ? TransactionStatus::Pending : TransactionStatus::Posted,
+            // ParsedRow::status(): pendente datada no futuro (ex.: parcela
+            // de cartão que o banco já relata mas não lançou) vira
+            // Projected, não Pending.
+            'status' => $row->status(),
             'source' => $batch->format->source(),
             'import_batch_id' => $batch->id,
             'installment_plan_id' => $plan?->id,

@@ -105,12 +105,23 @@ it('closingForDueDate reproduz o fechamento mesmo clampado no fim de um mês cur
     expect($closing->toDateString())->toBe('2026-02-28');
 });
 
-it('closingForDueDate sem ciclo exato (dias do cartão mudaram) estima pelo mês do vencimento', function () {
+it('closingForDueDate sem ciclo exato (dias do cartão mudaram) usa o fechamento nominal mais recente antes do vencimento', function () {
     // due=25 só existiria com dueDay=25 num mês em que closingDay=10; se os
     // dias do cartão mudaram para closingDay=15/dueDay=28 depois que o banco
     // informou esta fatura, nenhum ciclo reproduz exatamente 2026-03-25 —
-    // cai na estimativa (ciclo do mês do próprio vencimento).
+    // cai no fechamento nominal (dia 15) mais recente antes do vencimento,
+    // que neste caso é o do próprio mês.
     $closing = InvoiceCycle::closingForDueDate(CarbonImmutable::parse('2026-03-25'), 15, 28);
 
     expect($closing->toDateString())->toBe('2026-03-15');
+});
+
+it('closingForDueDate: vencimento deslocado por alguns dias (fechamento 25, vencimento nominal 5, banco informa 07)', function () {
+    // Nominal seria fechamento=2026-06-25 → vencimento=2026-07-05 (dueDay <
+    // closingDay cruza o mês); o banco informou 2026-07-07 (atraso de 2
+    // dias) — nenhum ciclo exato bate, mas o fechamento nominal mais recente
+    // antes de 07/07 ainda é 25/06, dentro dos 40 dias.
+    $closing = InvoiceCycle::closingForDueDate(CarbonImmutable::parse('2026-07-07'), 25, 5);
+
+    expect($closing->toDateString())->toBe('2026-06-25');
 });

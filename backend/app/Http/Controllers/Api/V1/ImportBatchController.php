@@ -29,6 +29,10 @@ final class ImportBatchController extends Controller
     {
         $batches = ImportBatch::query()
             ->select(['id', 'user_id', 'account_id', 'format', 'filename', 'status', 'stats', 'created_at', 'completed_at', 'reverted_at'])
+            // Sincronização bancária não é um lote que o usuário mandou:
+            // não aparece nesta lista (que é sobre uploads de extrato), e
+            // nunca é revertível/confirmável/cancelável pela UI.
+            ->where('format', '!=', ImportFormat::Pluggy->value)
             ->with('account:id,name')
             ->when($request->filled('account_id'), fn ($q) => $q->where('account_id', $request->integer('account_id')))
             ->orderByDesc('created_at')

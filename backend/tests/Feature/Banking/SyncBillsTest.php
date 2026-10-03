@@ -88,3 +88,73 @@ it('upsert pelo external_id em syncs seguintes só atualiza o total quando as da
     expect($existing->reported_total->cents)->toBe(20000)
         ->and($existing->closing_date->toDateString())->toBe('2026-04-10');
 });
+
+it('adota a fatura local mais próxima por vencimento (até 7 dias), mesmo sem o mesmo fechamento', function () {
+    $local = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-04-08', 'due_date' => '2026-04-23']);
+
+    $this->action->handle($this->card, [providerBill()]);
+
+    $local->refresh();
+    expect($local->external_id)->toBe('bill-1')
+        ->and($local->closing_date->toDateString())->toBe('2026-04-10')
+        ->and($local->due_date->toDateString())->toBe('2026-04-20')
+        ->and(CardStatement::query()->where('account_id', $this->card->id)->count())->toBe(1);
+});
+
+it('adota a fatura local com o mesmo fechamento calculado, mesmo com o vencimento fora da janela de 7 dias', function () {
+    $local = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-04-10', 'due_date' => '2026-05-05']);
+
+    $this->action->handle($this->card, [providerBill()]);
+
+    $local->refresh();
+    expect($local->external_id)->toBe('bill-1')
+        ->and($local->due_date->toDateString())->toBe('2026-04-20')
+        ->and(CardStatement::query()->where('account_id', $this->card->id)->count())->toBe(1);
+});
+
+it('vencimento perto de uma fatura que já pertence a outra fatura do banco: não adota, mas cria separada se a ordem permitir', function () {
+    $other = CardStatement::factory()->create([
+        'account_id' => $this->card->id, 'closing_date' => '2026-03-20', 'due_date' => '2026-04-15', 'external_id' => 'other-bill',
+    ]);
+
+    $this->action->handle($this->card, [providerBill()]);
+
+    $other->refresh();
+    expect($other->external_id)->toBe('other-bill')
+        ->and($other->due_date->toDateString())->toBe('2026-04-15');
+
+    $created = CardStatement::query()->where('account_id', $this->card->id)->where('external_id', 'bill-1')->first();
+    expect($created)->not->toBeNull()
+        ->and($created->due_date->toDateString())->toBe('2026-04-20')
+        ->and(CardStatement::query()->where('account_id', $this->card->id)->count())->toBe(2);
+});
+
+it('fatura nova que não cabe na ordem (fora da janela de adoção) adota a vizinha mais próxima em vez de inserir fora de ordem', function () {
+    $local = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-04-05', 'due_date' => '2026-05-01']);
+
+    // due=20/04 ficaria antes do vencimento da fatura "anterior" (01/05) —
+    // não cabe na ordem; fora da janela de 7 dias para a adoção normal
+    // (diferença de 11 dias), mas ainda é a única candidata disponível.
+    $this->action->handle($this->card, [providerBill()]);
+
+    $local->refresh();
+    expect($local->external_id)->toBe('bill-1')
+        // Fora de ordem: a fatura é adotada (ganha external_id/total), mas
+        // as datas continuam as que já tinha — nunca aplicadas fora de ordem.
+        ->and($local->closing_date->toDateString())->toBe('2026-04-05')
+        ->and($local->due_date->toDateString())->toBe('2026-05-01')
+        ->and(CardStatement::query()->where('account_id', $this->card->id)->count())->toBe(1);
+});
+
+it('fatura nova que não cabe na ordem e sem nenhuma candidata para adotar é ignorada (log, nada criado)', function () {
+    $other = CardStatement::factory()->create([
+        'account_id' => $this->card->id, 'closing_date' => '2026-04-05', 'due_date' => '2026-05-01', 'external_id' => 'other-bill',
+    ]);
+
+    $this->action->handle($this->card, [providerBill()]);
+
+    $other->refresh();
+    expect($other->external_id)->toBe('other-bill')
+        ->and($other->due_date->toDateString())->toBe('2026-05-01')
+        ->and(CardStatement::query()->where('account_id', $this->card->id)->count())->toBe(1);
+});

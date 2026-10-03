@@ -365,7 +365,9 @@ describe('vincular contas', function () {
             ->and($card->closing_day)->toBe(5)
             ->and($card->due_day)->toBe(15)
             ->and($card->last_four)->toBe('2222')
-            ->and($card->provider_balance->cents)->toBe(30000);
+            // Cartão: sinal invertido (dívida negativa, como o saldo do app) —
+            // App\Domain\Banking\Support\AccountMapper::appBalanceCents().
+            ->and($card->provider_balance->cents)->toBe(-30000);
 
         expect(BankConnection::find($this->connectionId)->settings)->toBeNull();
 
@@ -573,6 +575,9 @@ describe('desconectar', function () {
             'external_id' => 'acc-1',
             'provider_balance' => 12345,
             'provider_synced_at' => now(),
+            'provider_sync_from' => '2026-01-01',
+            'provider_opening_set_at' => now(),
+            'provider_history_synced_at' => now(),
         ]);
         $transaction = Transaction::factory()->create(['account_id' => $account->id, 'source' => TransactionSource::Pluggy]);
 
@@ -584,7 +589,10 @@ describe('desconectar', function () {
         expect($account->connection_id)->toBeNull()
             ->and($account->external_id)->toBeNull()
             ->and($account->provider_balance)->toBeNull()
-            ->and($account->provider_synced_at)->toBeNull();
+            ->and($account->provider_synced_at)->toBeNull()
+            ->and($account->provider_sync_from)->toBeNull()
+            ->and($account->provider_opening_set_at)->toBeNull()
+            ->and($account->provider_history_synced_at)->toBeNull();
 
         expect(Transaction::find($transaction->id))->not->toBeNull();
 

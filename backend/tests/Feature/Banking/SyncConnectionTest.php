@@ -5,6 +5,7 @@ use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Data\ProviderItem;
 use App\Domain\Banking\Enums\ConnectionStatus;
 use App\Domain\Banking\Errors\ProviderAuthFailed;
+use App\Domain\Banking\Errors\ProviderRequestFailed;
 use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Banking\Jobs\SyncConnection;
 use App\Domain\Banking\Models\BankConnection;
@@ -15,10 +16,84 @@ use App\Domain\Transactions\Models\Transaction;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Sleep;
+use Throwable;
 
-function runConnectionSync(int $connectionId): void
+function runConnectionSync(int $connectionId): SyncConnection
 {
-    app()->call([new SyncConnection($connectionId), 'handle']);
+    $job = new SyncConnection($connectionId);
+    app()->call([$job, 'handle']);
+
+    return $job;
+}
+
+/**
+ * BankProvider que delega tudo a $delegate, menos $failingMethod, que
+ * sempre lança $exception — para testar como o job reage a uma falha numa
+ * chamada específica (ex.: refreshItem) sem afetar as outras.
+ */
+function providerFailingOn(FakeBankProvider $delegate, string $failingMethod, Throwable $exception): BankProvider
+{
+    return new class($delegate, $failingMethod, $exception) implements BankProvider
+    {
+        public function __construct(
+            private FakeBankProvider $delegate,
+            private string $failingMethod,
+            private Throwable $exception,
+        ) {}
+
+        public function enabled(): bool
+        {
+            return $this->delegate->enabled();
+        }
+
+        public function connectToken(string $clientUserId, ?string $itemId = null): string
+        {
+            return $this->delegate->connectToken($clientUserId, $itemId);
+        }
+
+        public function item(string $itemId): ProviderItem
+        {
+            return $this->failingMethod === 'item' ? throw $this->exception : $this->delegate->item($itemId);
+        }
+
+        public function refreshItem(string $itemId): void
+        {
+            if ($this->failingMethod === 'refreshItem') {
+                throw $this->exception;
+            }
+
+            $this->delegate->refreshItem($itemId);
+        }
+
+        public function deleteItem(string $itemId): void
+        {
+            $this->delegate->deleteItem($itemId);
+        }
+
+        public function accounts(string $itemId): array
+        {
+            return $this->failingMethod === 'accounts' ? throw $this->exception : $this->delegate->accounts($itemId);
+        }
+
+        public function transactions(string $accountId, bool $creditCard, ?CarbonImmutable $dateFrom, ?CarbonImmutable $createdAtFrom): iterable
+        {
+            if ($this->failingMethod === 'transactions') {
+                throw $this->exception;
+            }
+
+            return $this->delegate->transactions($accountId, $creditCard, $dateFrom, $createdAtFrom);
+        }
+
+        public function bills(string $accountId): array
+        {
+            return $this->failingMethod === 'bills' ? throw $this->exception : $this->delegate->bills($accountId);
+        }
+
+        public function categories(): array
+        {
+            return $this->delegate->categories();
+        }
+    };
 }
 
 beforeEach(function () {
@@ -58,19 +133,41 @@ it('sincroniza contas, faturas e transações, e marca a conexão como sincroniz
 });
 
 it('item com mais de 20h dispara refresh e espera a atualização a cada 3s, até o máximo de 90s', function () {
-    Sleep::fake();
     $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
 
     $this->fake->items[$this->itemId] = providerItem([
-        'id' => $this->itemId, 'status' => 'UPDATING', 'lastUpdatedAt' => CarbonImmutable::now()->subHours(21),
+        'id' => $this->itemId, 'status' => 'UPDATED', 'lastUpdatedAt' => CarbonImmutable::now()->subHours(21),
     ]);
 
     runConnectionSync($connection->id);
 
     $refreshCalls = array_filter($this->fake->calls, fn (array $c) => $c['method'] === 'refreshItem');
     expect($refreshCalls)->toHaveCount(1);
-    Sleep::assertSleptTimes(30);
     expect($connection->refresh()->status)->toBe(ConnectionStatus::Active);
+});
+
+it('item já em UPDATING só espera (a cada 3s, até 90s) sem pedir outro refresh', function () {
+    Sleep::fake();
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId, 'status' => 'UPDATING']);
+
+    runConnectionSync($connection->id);
+
+    expect(array_filter($this->fake->calls, fn (array $c) => $c['method'] === 'refreshItem'))->toBeEmpty();
+    Sleep::assertSleptTimes(30);
+    // Esgotado o tempo máximo de espera: segue com o que o banco já tem.
+    expect($connection->refresh()->status)->toBe(ConnectionStatus::Active);
+});
+
+it('item sem lastUpdatedAt (nunca atualizado) nunca pede refresh', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId, 'status' => 'UPDATED', 'lastUpdatedAt' => null]);
+
+    runConnectionSync($connection->id);
+
+    expect(array_filter($this->fake->calls, fn (array $c) => $c['method'] === 'refreshItem'))->toBeEmpty();
 });
 
 it('item recém-atualizado não dispara refresh', function () {
@@ -170,10 +267,16 @@ it('primeiro sync usa dateFrom de 365 dias atrás', function () {
         ->and($call['args']['createdAtFrom'])->toBeNull();
 });
 
-it('syncs seguintes usam createdAtFrom = last_synced_at − 14 dias', function () {
+it('syncs seguintes usam createdAtFrom = last_synced_at − 14 dias, para uma conta que já teve o histórico sincronizado', function () {
     $this->travelTo(CarbonImmutable::parse('2026-10-03 12:00:00'));
     $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => '2026-09-20 10:00:00']);
-    Account::factory()->create(['user_id' => $this->user->id, 'connection_id' => $connection->id, 'external_id' => 'acc-1']);
+    // provider_history_synced_at já preenchido: é isso (por conta, não a
+    // conexão) que decide createdAtFrom em vez de dateFrom — ver
+    // App\Domain\Banking\Jobs\SyncConnection e a nota I9 da revisão.
+    Account::factory()->create([
+        'user_id' => $this->user->id, 'connection_id' => $connection->id, 'external_id' => 'acc-1',
+        'provider_history_synced_at' => '2026-09-20 10:00:00',
+    ]);
     $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId]);
     $this->fake->accountsByItem[$this->itemId] = [providerAccount(['id' => 'acc-1'])];
 
@@ -182,6 +285,24 @@ it('syncs seguintes usam createdAtFrom = last_synced_at − 14 dias', function (
     $call = collect($this->fake->calls)->firstWhere('method', 'transactions');
     expect($call['args']['createdAtFrom'])->toBe('2026-09-06')
         ->and($call['args']['dateFrom'])->toBeNull();
+});
+
+it('conta vinculada depois, numa conexão já sincronizada antes, ainda usa dateFrom de 365 dias no primeiro sync dela', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-10-03 12:00:00'));
+    // A conexão já tem last_synced_at (não é o primeiro sync DELA), mas a
+    // conta é nova (provider_history_synced_at nulo) — o piso é por conta.
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => '2026-09-20 10:00:00']);
+    Account::factory()->create(['user_id' => $this->user->id, 'connection_id' => $connection->id, 'external_id' => 'acc-1']);
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId]);
+    $this->fake->accountsByItem[$this->itemId] = [providerAccount(['id' => 'acc-1'])];
+
+    runConnectionSync($connection->id);
+
+    $call = collect($this->fake->calls)->firstWhere('method', 'transactions');
+    expect($call['args']['dateFrom'])->toBe('2025-10-03')
+        ->and($call['args']['createdAtFrom'])->toBeNull();
+
+    expect(Account::query()->where('external_id', 'acc-1')->first()->provider_history_synced_at)->not->toBeNull();
 });
 
 it('Auth::hasUser() volta a false depois do job, mesmo com sucesso', function () {
@@ -273,4 +394,98 @@ it('não sobrescreve uma reconexão concorrente (active) com um needs_reauth cal
 
     expect($connection->refresh()->status)->toBe(ConnectionStatus::Active)
         ->and($connection->last_error)->toBeNull();
+});
+
+it('ProviderRequestFailed 404 (item sumiu no banco) grava uma mensagem específica, sem relançar', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId]);
+    app()->instance(BankProvider::class, providerFailingOn(new FakeBankProvider, 'item', new ProviderRequestFailed(404)));
+
+    runConnectionSync($connection->id);
+
+    expect($connection->refresh()->status)->toBe(ConnectionStatus::Error)
+        ->and($connection->last_error)->toBe('A conexão não existe mais no banco. Conecte de novo.');
+});
+
+it('ProviderRequestFailed fora de 404 grava uma mensagem genérica de recusa, sem relançar', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId]);
+    app()->instance(BankProvider::class, providerFailingOn(new FakeBankProvider, 'item', new ProviderRequestFailed(422)));
+
+    runConnectionSync($connection->id);
+
+    expect($connection->refresh()->status)->toBe(ConnectionStatus::Error)
+        ->and($connection->last_error)->toBe('O banco recusou a sincronização.');
+});
+
+it('refreshItem indisponível (ex.: 429) não derruba o sync: loga e segue com o item já buscado', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+    $delegate = new FakeBankProvider;
+    $delegate->items[$this->itemId] = providerItem(['id' => $this->itemId, 'status' => 'UPDATED', 'lastUpdatedAt' => CarbonImmutable::now()->subHours(21)]);
+
+    app()->instance(BankProvider::class, providerFailingOn($delegate, 'refreshItem', new ProviderUnavailable('429', retryAfter: 30)));
+
+    runConnectionSync($connection->id);
+
+    expect($connection->refresh()->status)->toBe(ConnectionStatus::Active)
+        ->and($connection->last_error)->toBeNull();
+});
+
+it('ProviderUnavailable com retryAfter solta o job de volta na fila com essa espera, em vez do backoff padrão', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId]);
+    app()->instance(BankProvider::class, providerFailingOn(new FakeBankProvider, 'item', new ProviderUnavailable('429', retryAfter: 45)));
+
+    $job = (new SyncConnection($connection->id))->withFakeQueueInteractions();
+    app()->call([$job, 'handle']);
+
+    $job->assertReleased(45);
+    // status inalterado: release() não grava nada, só devolve à fila.
+    expect($connection->refresh()->status)->toBe(ConnectionStatus::Active);
+});
+
+it('conta vinculada que não apareceu na lista de contas do banco neste sync é pulada (log), sem chamar bills/transactions para ela', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+    Account::factory()->create(['user_id' => $this->user->id, 'connection_id' => $connection->id, 'external_id' => 'acc-gone']);
+
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId]);
+    $this->fake->accountsByItem[$this->itemId] = []; // o banco não devolveu "acc-gone" neste sync
+
+    runConnectionSync($connection->id);
+
+    expect(array_filter($this->fake->calls, fn (array $c) => $c['method'] === 'transactions'))->toBeEmpty()
+        ->and($connection->refresh()->status)->toBe(ConnectionStatus::Active);
+});
+
+it('ajusta o saldo de abertura de uma conta nova (criada pelo vínculo) depois do primeiro sync completo via job', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => null]);
+    $account = Account::factory()->create([
+        'user_id' => $this->user->id, 'connection_id' => $connection->id, 'external_id' => 'acc-1',
+        'opening_balance' => 0, 'provider_balance' => 100000,
+    ]);
+
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId]);
+    $this->fake->accountsByItem[$this->itemId] = [providerAccount(['id' => 'acc-1', 'balanceCents' => 100000])];
+    $this->fake->transactionsByAccount['acc-1'] = [syncProviderTransaction(['id' => 'tx-1', 'amountCents' => 30000])];
+
+    runConnectionSync($connection->id);
+
+    $account->refresh();
+    // saldo do banco (100000) = opening + (−30000) ⇒ opening = 130000.
+    expect($account->opening_balance->cents)->toBe(130000)
+        ->and($account->provider_opening_set_at)->not->toBeNull();
+});
+
+it('nunca ajusta o saldo de abertura de um cartão (fica sempre zero)', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => null]);
+    $card = Account::factory()->creditCard()->create([
+        'user_id' => $this->user->id, 'connection_id' => $connection->id, 'external_id' => 'acc-2', 'opening_balance' => 0,
+    ]);
+
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId]);
+    $this->fake->accountsByItem[$this->itemId] = [providerAccount(['id' => 'acc-2', 'kind' => 'credit_card', 'balanceCents' => 50000])];
+    $this->fake->transactionsByAccount['acc-2'] = [syncProviderTransaction(['id' => 'tx-1', 'amountCents' => 20000])];
+
+    runConnectionSync($connection->id);
+
+    $card->refresh();
+    expect($card->opening_balance->cents)->toBe(0)
+        ->and($card->provider_opening_set_at)->toBeNull();
 });

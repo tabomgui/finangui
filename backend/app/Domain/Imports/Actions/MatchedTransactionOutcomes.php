@@ -96,7 +96,11 @@ final class MatchedTransactionOutcomes
         $changed = UndoSnapshot::applyAndDiff($transaction, [
             'external_id' => $row->externalId,
             'source' => $batch->format->source(),
-            'status' => TransactionStatus::Posted,
+            // Normalmente Posted (replace_installment só casa linhas não
+            // pendentes vindas do banco); pendente datada no futuro (ex.:
+            // parcela de cartão que o banco já relata mas não lançou) vira
+            // Projected, não Posted.
+            'status' => $row->status(),
             'date' => CarbonImmutable::parse($row->date),
             // O valor estimado (plano ÷ N ou o da própria linha semente)
             // pode diferir do que o banco de fato cobrou nesta parcela
@@ -126,7 +130,7 @@ final class MatchedTransactionOutcomes
         $changed = UndoSnapshot::applyAndDiff($transaction, [
             'external_id' => $decision->row->externalId,
             'source' => $batch->format->source(),
-            'status' => TransactionStatus::Posted,
+            'status' => $decision->row->status(),
             'original_description' => $decision->row->description,
         ]);
 

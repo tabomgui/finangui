@@ -5,6 +5,7 @@ use App\Domain\Banking\Actions\SyncTransactions;
 use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Data\ProviderCategory;
 use App\Domain\Banking\Data\ProviderTransaction;
+use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Banking\Providers\FakeBankProvider;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
@@ -15,6 +16,7 @@ use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Str;
 
 function syncProviderTransaction(array $overrides = []): ProviderTransaction
@@ -44,7 +46,7 @@ beforeEach(function () {
 it('sem nenhuma transação, não cria lote', function () {
     $account = Account::factory()->create();
 
-    $this->action->handle($account, [], $this->now);
+    $this->action->handle($account, [], $this->now, []);
 
     expect(ImportBatch::count())->toBe(0);
 });
@@ -52,7 +54,7 @@ it('sem nenhuma transação, não cria lote', function () {
 it('insere transações novas com source pluggy', function () {
     $account = Account::factory()->create();
 
-    $this->action->handle($account, [syncProviderTransaction(['id' => 'ext-1', 'amountCents' => 7000])], $this->now);
+    $this->action->handle($account, [syncProviderTransaction(['id' => 'ext-1', 'amountCents' => 7000])], $this->now, []);
 
     $transaction = Transaction::query()->where('external_id', 'ext-1')->first();
     expect($transaction)->not->toBeNull()
@@ -63,10 +65,10 @@ it('insere transações novas com source pluggy', function () {
 
 it('categoriza pelo pipeline, com a categoria do provedor por último', function () {
     $category = Category::factory()->create(['name' => 'Academia']);
-    $this->fake->categories = [new ProviderCategory(id: 'cat-1', name: 'Academia', parentId: null)];
+    $categoriesById = ['cat-1' => new ProviderCategory(id: 'cat-1', name: 'Academia', parentId: null)];
 
     $account = Account::factory()->create();
-    $this->action->handle($account, [syncProviderTransaction(['id' => 'ext-cat', 'categoryId' => 'cat-1'])], $this->now);
+    $this->action->handle($account, [syncProviderTransaction(['id' => 'ext-cat', 'categoryId' => 'cat-1'])], $this->now, $categoriesById);
 
     $transaction = Transaction::query()->where('external_id', 'ext-cat')->first();
     expect($transaction->category_id)->toBe($category->id)
@@ -79,7 +81,7 @@ it('parcela 1/N em cartão cria o plano e projeta as demais', function () {
     $this->action->handle($card, [syncProviderTransaction([
         'id' => 'ext-parcel-1', 'date' => '2026-01-15', 'amountCents' => 10000,
         'installment' => ['number' => 1, 'total' => 3],
-    ])], $this->now);
+    ])], $this->now, []);
 
     $plan = InstallmentPlan::query()->first();
     expect($plan)->not->toBeNull()
@@ -93,7 +95,7 @@ it('parcela já existente (projetada por um plano anterior) é substituída, nã
     $this->action->handle($card, [syncProviderTransaction([
         'id' => 'ext-seed', 'date' => '2026-01-15', 'amountCents' => 9900,
         'installment' => ['number' => 1, 'total' => 3],
-    ])], $this->now);
+    ])], $this->now, []);
 
     $plan = InstallmentPlan::query()->first();
     $totalBefore = Transaction::query()->where('installment_plan_id', $plan->id)->count();
@@ -105,13 +107,25 @@ it('parcela já existente (projetada por um plano anterior) é substituída, nã
         // trata como transação diferente de propósito.
         'id' => 'ext-parcel-2', 'date' => '2026-02-15', 'amountCents' => 9901,
         'installment' => ['number' => 2, 'total' => 3],
-    ])], $this->now);
+    ])], $this->now, []);
 
     $parcel2 = Transaction::query()->where('installment_plan_id', $plan->id)->where('installment_number', 2)->first();
     expect($parcel2->external_id)->toBe('ext-parcel-2')
         ->and($parcel2->amount->cents)->toBe(9901)
         ->and($parcel2->source)->toBe(TransactionSource::Pluggy)
         ->and(Transaction::query()->where('installment_plan_id', $plan->id)->count())->toBe($totalBefore);
+});
+
+it('parcela futura ainda pendente entra como projetada, não lançada', function () {
+    $card = Account::factory()->creditCard()->create();
+    $future = $this->now->addMonths(2)->toDateString();
+
+    $this->action->handle($card, [syncProviderTransaction([
+        'id' => 'ext-future', 'date' => $future, 'amountCents' => 5000, 'pending' => true,
+    ])], $this->now, []);
+
+    $transaction = Transaction::query()->where('external_id', 'ext-future')->first();
+    expect($transaction->status)->toBe(TransactionStatus::Projected);
 });
 
 it('bill_id define a fatura, independente da data da transação', function () {
@@ -123,7 +137,7 @@ it('bill_id define a fatura, independente da data da transação', function () {
 
     $this->action->handle($card, [syncProviderTransaction([
         'id' => 'ext-bill', 'date' => '2026-01-01', 'billId' => 'bill-xyz',
-    ])], $this->now);
+    ])], $this->now, []);
 
     $transaction = Transaction::query()->where('external_id', 'ext-bill')->first();
     expect($transaction->statement_id)->toBe($statement->id);
@@ -139,7 +153,7 @@ it('pendente que vira postada com external_id novo troca o id (swap_pending), em
 
     $this->action->handle($account, [syncProviderTransaction([
         'id' => 'new-ext', 'date' => '2026-09-01', 'amountCents' => 5000, 'description' => 'Compra',
-    ])], $this->now);
+    ])], $this->now, []);
 
     $pending->refresh();
     expect($pending->external_id)->toBe('new-ext')
@@ -151,10 +165,38 @@ it('reexecutar com os mesmos dados não duplica', function () {
     $account = Account::factory()->create();
     $row = syncProviderTransaction(['id' => 'ext-idem', 'amountCents' => 3000]);
 
-    $this->action->handle($account, [$row], $this->now);
-    $this->action->handle($account, [$row], $this->now);
+    $this->action->handle($account, [$row], $this->now, []);
+    $this->action->handle($account, [$row], $this->now, []);
 
     expect(Transaction::query()->where('external_id', 'ext-idem')->count())->toBe(1);
+});
+
+it('reexecutar com os mesmos dados (tudo duplicate) exclui o lote sem efeito', function () {
+    $account = Account::factory()->create();
+    $row = syncProviderTransaction(['id' => 'ext-idem-2', 'amountCents' => 3000]);
+
+    $this->action->handle($account, [$row], $this->now, []);
+    expect(ImportBatch::count())->toBe(1);
+
+    $this->action->handle($account, [$row], $this->now, []);
+
+    expect(ImportBatch::count())->toBe(1);
+});
+
+it('exclui o lote órfão quando o ingest falha, em vez de deixar um pending preso', function () {
+    $account = Account::factory()->create();
+
+    // amount = 0 viola a constraint de banco (amount > 0): IngestTransactions::handle()
+    // lança QueryException no meio da própria transação, que já desfaz o
+    // que tentou gravar — mas o ImportBatch::create() de SyncTransactions
+    // acontece antes disso, num commit separado, e por isso precisa ser
+    // excluído manualmente no catch.
+    $broken = syncProviderTransaction(['id' => 'broken', 'amountCents' => 0]);
+
+    expect(fn () => $this->action->handle($account, [$broken], $this->now, []))
+        ->toThrow(QueryException::class);
+
+    expect(ImportBatch::count())->toBe(0);
 });
 
 it('não importa transações anteriores ao piso (provider_sync_from) de uma conta vinculada', function () {
@@ -163,46 +205,95 @@ it('não importa transações anteriores ao piso (provider_sync_from) de uma con
     $this->action->handle($account, [
         syncProviderTransaction(['id' => 'before', 'date' => '2026-01-15']),
         syncProviderTransaction(['id' => 'after', 'date' => '2026-02-10']),
-    ], $this->now);
+    ], $this->now, []);
 
     expect(Transaction::query()->where('external_id', 'before')->exists())->toBeFalse()
         ->and(Transaction::query()->where('external_id', 'after')->exists())->toBeTrue();
 });
 
-it('exclui pendente antigo ausente, mantém pendente recente ausente e pendente antigo presente', function () {
-    $account = Account::factory()->create();
+describe('limpeza de pendentes antigos (listagem completa)', function () {
+    it('exclui pendente antigo ausente, mantém pendente recente ausente e pendente antigo presente na listagem completa', function () {
+        $account = Account::factory()->create(['external_id' => 'acc-1']);
 
-    $staleAbsent = Transaction::factory()->create([
-        'account_id' => $account->id, 'external_id' => 'stale-absent', 'status' => TransactionStatus::Pending,
-        'source' => TransactionSource::Pluggy, 'date' => '2026-09-01',
-    ]);
-    $stalePresent = Transaction::factory()->create([
-        'account_id' => $account->id, 'external_id' => 'stale-present', 'status' => TransactionStatus::Pending,
-        'source' => TransactionSource::Pluggy, 'date' => '2026-09-02',
-    ]);
-    $recentAbsent = Transaction::factory()->create([
-        'account_id' => $account->id, 'external_id' => 'recent-absent', 'status' => TransactionStatus::Pending,
-        'source' => TransactionSource::Pluggy, 'date' => '2026-09-30',
-    ]);
+        $staleAbsent = Transaction::factory()->create([
+            'account_id' => $account->id, 'external_id' => 'stale-absent', 'status' => TransactionStatus::Pending,
+            'source' => TransactionSource::Pluggy, 'date' => '2026-09-01',
+        ]);
+        $stalePresent = Transaction::factory()->create([
+            'account_id' => $account->id, 'external_id' => 'stale-present', 'status' => TransactionStatus::Pending,
+            'source' => TransactionSource::Pluggy, 'date' => '2026-09-02',
+        ]);
+        $recentAbsent = Transaction::factory()->create([
+            'account_id' => $account->id, 'external_id' => 'recent-absent', 'status' => TransactionStatus::Pending,
+            'source' => TransactionSource::Pluggy, 'date' => '2026-09-30',
+        ]);
 
-    $this->action->handle($account, [
-        syncProviderTransaction(['id' => 'stale-present', 'date' => '2026-09-02', 'pending' => true]),
-    ], $this->now);
+        // A listagem completa (dateFrom = data do mais antigo pendente) é
+        // quem decide quem "veio no sync" — não a janela normal, que nem
+        // foi configurada aqui (ficaria vazia).
+        $this->fake->transactionsByAccount['acc-1'] = [
+            syncProviderTransaction(['id' => 'stale-present', 'date' => '2026-09-02', 'pending' => true]),
+        ];
 
-    expect(Transaction::query()->whereKey($staleAbsent->id)->exists())->toBeFalse()
-        ->and(Transaction::query()->whereKey($stalePresent->id)->exists())->toBeTrue()
-        ->and(Transaction::query()->whereKey($recentAbsent->id)->exists())->toBeTrue();
-});
+        $this->action->handle($account, [], $this->now, []);
 
-it('nunca exclui parcelas projetadas (source installment), mesmo antigas e pendentes', function () {
-    $account = Account::factory()->creditCard()->create();
-    $plan = InstallmentPlan::factory()->create(['account_id' => $account->id]);
-    $projected = Transaction::factory()->create([
-        'account_id' => $account->id, 'status' => TransactionStatus::Pending, 'source' => TransactionSource::Installment,
-        'installment_plan_id' => $plan->id, 'installment_number' => 2, 'date' => '2026-01-01',
-    ]);
+        expect(Transaction::query()->whereKey($staleAbsent->id)->exists())->toBeFalse()
+            ->and(Transaction::query()->whereKey($stalePresent->id)->exists())->toBeTrue()
+            ->and(Transaction::query()->whereKey($recentAbsent->id)->exists())->toBeTrue();
 
-    $this->action->handle($account, [], $this->now);
+        $call = collect($this->fake->calls)->firstWhere('method', 'transactions');
+        expect($call['args']['dateFrom'])->toBe('2026-09-01')
+            ->and($call['args']['createdAtFrom'])->toBeNull();
+    });
 
-    expect(Transaction::query()->whereKey($projected->id)->exists())->toBeTrue();
+    it('sem pendente antigo nenhum, não chama o provedor de novo', function () {
+        $account = Account::factory()->create(['external_id' => 'acc-1']);
+        Transaction::factory()->create([
+            'account_id' => $account->id, 'external_id' => 'recent', 'status' => TransactionStatus::Pending,
+            'source' => TransactionSource::Pluggy, 'date' => '2026-09-30',
+        ]);
+
+        $this->action->handle($account, [], $this->now, []);
+
+        expect($this->fake->calls)->toBeEmpty();
+    });
+
+    it('sem conseguir a listagem completa, pula a limpeza sem derrubar o sync', function () {
+        $account = Account::factory()->create(['external_id' => 'acc-1']);
+        $staleAbsent = Transaction::factory()->create([
+            'account_id' => $account->id, 'external_id' => 'stale-absent', 'status' => TransactionStatus::Pending,
+            'source' => TransactionSource::Pluggy, 'date' => '2026-09-01',
+        ]);
+        $this->fake->failNext(new ProviderUnavailable('fora do ar'));
+
+        $this->action->handle($account, [], $this->now, []);
+
+        expect(Transaction::query()->whereKey($staleAbsent->id)->exists())->toBeTrue();
+    });
+
+    it('nunca exclui parcelas projetadas (source installment), mesmo antigas e pendentes', function () {
+        $account = Account::factory()->creditCard()->create();
+        $plan = InstallmentPlan::factory()->create(['account_id' => $account->id]);
+        $projected = Transaction::factory()->create([
+            'account_id' => $account->id, 'status' => TransactionStatus::Pending, 'source' => TransactionSource::Installment,
+            'installment_plan_id' => $plan->id, 'installment_number' => 2, 'date' => '2026-01-01',
+        ]);
+
+        $this->action->handle($account, [], $this->now, []);
+
+        expect(Transaction::query()->whereKey($projected->id)->exists())->toBeTrue();
+    });
+
+    it('nunca exclui em lote uma perna de transferência pendente, mesmo antiga e ausente', function () {
+        $account = Account::factory()->create(['external_id' => 'acc-1']);
+        $transferLeg = Transaction::factory()->create([
+            'account_id' => $account->id, 'external_id' => 'old-transfer', 'status' => TransactionStatus::Pending,
+            'source' => TransactionSource::Pluggy, 'date' => '2026-09-01', 'transfer_id' => Str::uuid(),
+        ]);
+        $this->fake->transactionsByAccount['acc-1'] = [];
+
+        $this->action->handle($account, [], $this->now, []);
+
+        expect(Transaction::query()->whereKey($transferLeg->id)->exists())->toBeTrue();
+    });
 });

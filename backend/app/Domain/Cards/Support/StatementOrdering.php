@@ -31,6 +31,23 @@ final class StatementOrdering
         ];
     }
 
+    /**
+     * Como neighbors(), mas para uma fatura que ainda não existe (nenhuma
+     * linha para excluir por id) — usado por SyncBills ao considerar criar
+     * uma fatura nova para uma conta.
+     *
+     * @return array{previous: ?CardStatement, next: ?CardStatement}
+     */
+    public static function neighborsForAccount(int $accountId, CarbonImmutable $closing): array
+    {
+        $others = CardStatement::query()->where('account_id', $accountId);
+
+        return [
+            'previous' => (clone $others)->where('closing_date', '<', $closing)->orderByDesc('closing_date')->first(),
+            'next' => (clone $others)->where('closing_date', '>', $closing)->orderBy('closing_date')->first(),
+        ];
+    }
+
     public static function dueAfterClosing(CarbonImmutable $closing, CarbonImmutable $due): bool
     {
         return $due->greaterThan($closing);
