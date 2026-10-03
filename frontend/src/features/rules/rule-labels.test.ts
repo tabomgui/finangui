@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Rule } from '@/api/types'
-import { describeRule, type RuleLookups, reorderIds } from './rule-labels'
+import { describeRule, type RuleLookups } from './rule-labels'
 
 const lookups: RuleLookups = {
   categoryName: (id) => ({ 1: 'Transporte' } as Record<number, string>)[id],
@@ -113,15 +113,5 @@ describe('describeRule', () => {
 
     expect(describeRule(income, lookups)).toBe('Tipo é igual a Entrada → ignorar')
     expect(describeRule(expense, lookups)).toBe('Tipo é igual a Saída → ignorar')
-  })
-})
-
-describe('reorderIds', () => {
-  it('move o id ativo para a posição do id sobre o qual foi soltado', () => {
-    expect(reorderIds([1, 2, 3, 4], 1, 3)).toEqual([2, 3, 1, 4])
-  })
-
-  it('não muda a lista se o id ativo ou o de destino não existir', () => {
-    expect(reorderIds([1, 2, 3], 9, 2)).toEqual([1, 2, 3])
   })
 })

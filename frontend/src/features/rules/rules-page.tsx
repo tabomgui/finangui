@@ -17,7 +17,8 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { notifyError } from '@/lib/form-errors'
-import { reorderIds, type RuleLookups } from './rule-labels'
+import type { RuleLookups } from './rule-labels'
+import { reorderIds } from './reorder'
 import { SortableRuleRow } from './sortable-rule-row'
 
 // Instrução lida uma vez por quem navega pelo teclado com leitor de tela; "announcements" abaixo

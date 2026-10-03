@@ -1,4 +1,3 @@
-import { arrayMove } from '@dnd-kit/sortable'
 import type { Rule, RuleAction, RuleCondition, RuleConditionGroup, RuleSimpleCondition } from '@/api/types'
 import { formatDate } from '@/lib/date'
 import { formatMoney } from '@/lib/money'
@@ -150,12 +149,4 @@ export function describeRule(rule: Rule, lookups: RuleLookups): string {
     .filter((text): text is string => text !== null)
     .join(' · ')
   return actions ? `${conditions} → ${actions}` : conditions
-}
-
-/** Aplica o `DragEndEvent` do dnd-kit (ids de `active`/`over`) a uma lista de ids ordenada. */
-export function reorderIds(ids: number[], activeId: number, overId: number): number[] {
-  const from = ids.indexOf(activeId)
-  const to = ids.indexOf(overId)
-  if (from === -1 || to === -1) return ids
-  return arrayMove(ids, from, to)
 }
