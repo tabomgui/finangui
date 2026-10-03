@@ -4,6 +4,8 @@ Gerenciador financeiro pessoal, self-hosted. Backend Laravel 13 + Postgres; fron
 
 Telas disponíveis: Início (dashboard do mês), Transações (com filtros e edição em massa), Regras (condições e grupos para categorizar automaticamente, com prévia ao vivo, aplicação retroativa às transações já existentes e sugestão por histórico quando nenhuma regra casa), Cartões (faturas com datas reais e editáveis, pagamento como transferência, parcelamentos e limite disponível), Importar extrato (CSV do Inter, Nubank conta e cartão e C6, ou OFX genérico; prévia mostra novas, duplicadas, adoção de lançamento manual e parcelas antes de confirmar; lote importado pode ser revertido), Contas, Categorias, Tags e Configurações.
 
+Transferências entre contas próprias são detectadas automaticamente: quando as duas pernas (saída numa conta, entrada noutra) chegam separadas por importação, sincronização bancária ou lançamento manual, o sistema liga as duas sozinho quando o par é inequívoco ou sugere quando é ambíguo. Sugestões ficam disponíveis para aceitar ou descartar, e também é possível juntar duas transações à mão ou desfazer uma transferência já ligada.
+
 ## Desenvolvimento
 
 Requisitos: Docker e Make.
