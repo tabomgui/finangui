@@ -41,7 +41,7 @@ class Transaction extends Model
         'description', 'original_description', 'description_locked', 'notes',
         'category_id', 'payee', 'status', 'source', 'external_id', 'categorized_by',
         'is_ignored', 'transfer_id', 'raw', 'statement_id',
-        'installment_plan_id', 'installment_number',
+        'installment_plan_id', 'installment_number', 'import_batch_id',
     ];
 
     /**

@@ -35,7 +35,7 @@ class InstallmentPlan extends Model
 
     protected $fillable = [
         'user_id', 'account_id', 'description', 'total_amount', 'installments',
-        'purchase_date', 'fingerprint', 'cancelled_at',
+        'purchase_date', 'fingerprint', 'cancelled_at', 'import_batch_id',
     ];
 
     /**
