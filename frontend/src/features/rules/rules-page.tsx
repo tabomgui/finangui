@@ -38,7 +38,11 @@ export function RulesPage() {
   const [deleting, setDeleting] = useState<Rule | null>(null)
 
   const lookups: RuleLookups = {
-    categoryName: (id) => categories?.find((category) => category.id === id)?.name,
+    categoryName: (id) => {
+      const category = categories?.find((item) => item.id === id)
+      if (!category) return undefined
+      return category.is_archived ? `${category.name} (arquivada)` : category.name
+    },
     tagName: (id) => tags?.find((tag) => tag.id === id)?.name,
     accountName: (id) => accounts?.find((account) => account.id === id)?.name,
     loading: categories === undefined || tags === undefined || accounts === undefined,

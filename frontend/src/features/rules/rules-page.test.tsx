@@ -24,7 +24,7 @@ vi.mock('@/api/queries/rules', () => ({
 }))
 
 vi.mock('@/api/queries/categories', () => ({
-  useCategories: () => ({ data: [{ id: 1, name: 'Transporte' }] }),
+  useCategories: () => ({ data: [{ id: 1, name: 'Transporte' }, { id: 2, name: 'Lazer', is_archived: true }] }),
 }))
 
 vi.mock('@/api/queries/tags', () => ({
@@ -92,6 +92,17 @@ describe('RulesPage', () => {
     const names = screen.getAllByRole('link', { name: /Uber|Mercado/ }).map((link) => link.textContent)
     expect(names).toEqual(['Uber', 'Mercado'])
     expect(screen.getByText('Descrição contém “uber” → Transporte')).toBeInTheDocument()
+  })
+
+  it('mostra "(arquivada)" no resumo quando a categoria da ação está arquivada', () => {
+    rulesState = {
+      data: [rule({ id: 1, name: 'Lazer antigo', actions: [{ type: 'set_category', category_id: 2 }] })],
+      isPending: false,
+      isError: false,
+    }
+    renderPage()
+
+    expect(screen.getByText('Descrição contém “uber” → Lazer (arquivada)')).toBeInTheDocument()
   })
 
   it('chama update com is_active: false ao desligar o switch', () => {
