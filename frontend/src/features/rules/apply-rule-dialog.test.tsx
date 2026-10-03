@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '@/api/errors'
 import type { Rule } from '@/api/types'
 import { ApplyRuleDialog } from './apply-rule-dialog'
 
@@ -98,6 +99,18 @@ describe('ApplyRuleDialog', () => {
 
     expect(screen.getByText('Calculando quantos lançamentos seriam alterados…')).toBeInTheDocument()
     expect(screen.queryByText(/cerca de 0/)).not.toBeInTheDocument()
+  })
+
+  it('409 rule_apply_in_progress: continua sondando em vez de voltar ao botão com erro', async () => {
+    applyMutateAsync.mockRejectedValue(new ApiError(409, 'Esta regra já está sendo aplicada. Aguarde terminar.', 'rule_apply_in_progress'))
+    renderDialog({})
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar às existentes' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }))
+
+    await waitFor(() => expect(applyMutateAsync).toHaveBeenCalled())
+    expect(screen.getByText('Aplicando…')).toBeInTheDocument()
+    expect(toast.error).not.toHaveBeenCalled()
   })
 
   it('não dispara duas aplicações quando a mutação já está em voo (guard de isPending)', () => {

@@ -3,6 +3,7 @@ import { format, parseISO } from 'date-fns'
 import { LoaderCircle } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { ApiError } from '@/api/errors'
 import { useApplyRule, useRule, useRulePreview, type PreviewRuleBody } from '@/api/queries/rules'
 import { invalidateLedger, invalidateRules } from '@/api/query-keys'
 import type { Rule } from '@/api/types'
@@ -106,6 +107,10 @@ export function ApplyRuleDialog({ rule, overwrite, onOverwriteChange, disabled }
     try {
       await apply.mutateAsync({ id: rule.id, body: { overwrite } })
     } catch (error) {
+      // Já tinha uma aplicação desta regra em voo (ex.: duplo clique, outra aba): o backend
+      // rejeitou o despacho, mas o job que já está rodando ainda vai terminar — continua
+      // sondando em vez de voltar ao botão normal com um erro assustador.
+      if (error instanceof ApiError && error.code === 'rule_apply_in_progress') return
       setApplying(false)
       notifyError(error)
     }
