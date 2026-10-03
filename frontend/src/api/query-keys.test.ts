@@ -52,18 +52,18 @@ describe('query keys', () => {
     ])
   })
 
-  it('invalidateCategories invalida categorias, transações, dashboard e parcelamentos', async () => {
+  it('invalidateCategories invalida categorias, transações, dashboard, parcelamentos e a prévia de regra', async () => {
     const client = new QueryClient()
     seed(client)
     await invalidateCategories(client)
-    expect(invalidated(client)).toEqual(['categories', 'dashboard', 'installment-plans', 'transactions'])
+    expect(invalidated(client)).toEqual(['categories', 'dashboard', 'installment-plans', 'rule-preview', 'transactions'])
   })
 
-  it('invalidateTags invalida tags e transações', async () => {
+  it('invalidateTags invalida tags, transações e a prévia de regra', async () => {
     const client = new QueryClient()
     seed(client)
     await invalidateTags(client)
-    expect(invalidated(client)).toEqual(['tags', 'transactions'])
+    expect(invalidated(client)).toEqual(['rule-preview', 'tags', 'transactions'])
   })
 
   it('invalidateRules invalida só as regras', async () => {
