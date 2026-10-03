@@ -8,11 +8,13 @@ use App\Domain\Banking\Actions\LinkAccounts;
 use App\Domain\Banking\Actions\MarkReconnected;
 use App\Domain\Banking\Actions\QueueConnectionSync;
 use App\Domain\Banking\Contracts\BankProvider;
+use App\Domain\Banking\Errors\ConnectionItemMismatch;
 use App\Domain\Banking\Errors\ConnectionSyncInProgress;
 use App\Domain\Banking\Models\BankConnection;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Banking\ConnectTokenRequest;
 use App\Http\Requests\Banking\LinkAccountsRequest;
+use App\Http\Requests\Banking\ReconnectedRequest;
 use App\Http\Requests\Banking\StoreBankConnectionRequest;
 use App\Http\Resources\BankConnectionResource;
 use App\Http\Resources\ProviderAccountResource;
@@ -62,7 +64,21 @@ final class BankConnectionController extends Controller
 
         $token = $this->provider->connectToken(CreateConnection::clientUserId($user), $itemId);
 
-        return response()->json(['data' => ['connect_token' => $token]]);
+        return response()->json(['data' => $this->connectTokenData($token, $itemId)]);
+    }
+
+    /**
+     * `item_id` só aparece quando o pedido veio com `connection_id` (modo atualização): o
+     * frontend usa esse valor para abrir o widget com `updateItem` e para conferir, no
+     * sucesso, que o item devolvido é o mesmo que foi pedido. Omitido (nunca `null`) nos
+     * outros casos — mesmo motivo de TransactionResource::categorization() (uma propriedade
+     * tipada só como `null` desaparece do lado do cliente).
+     *
+     * @return array{connect_token: string}|array{connect_token: string, item_id: string}
+     */
+    private function connectTokenData(string $token, ?string $itemId): array
+    {
+        return $itemId !== null ? ['connect_token' => $token, 'item_id' => $itemId] : ['connect_token' => $token];
     }
 
     public function store(StoreBankConnectionRequest $request, CreateConnection $createConnection): JsonResponse
@@ -98,10 +114,18 @@ final class BankConnectionController extends Controller
     }
 
     public function reconnected(
+        ReconnectedRequest $request,
         BankConnection $connection,
         MarkReconnected $markReconnected,
         QueueConnectionSync $queueConnectionSync,
     ): BankConnectionResource {
+        // O widget em modo de atualização sempre devolve o mesmo item (updateItem no connect
+        // token); um item diferente aqui é um pedido adulterado ou um fluxo que ficou aberto
+        // demais e foi reaproveitado para outra conexão — não confiamos sem conferir.
+        if ($request->validated('item_id') !== $connection->external_id) {
+            throw new ConnectionItemMismatch;
+        }
+
         $connection = $markReconnected->handle($connection);
         $this->queueSyncIgnoringInProgress($queueConnectionSync, $connection);
 

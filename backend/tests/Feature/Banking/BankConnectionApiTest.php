@@ -55,10 +55,11 @@ beforeEach(function () {
 });
 
 describe('connect-token', function () {
-    it('gera connect token com clientUserId = user:{id}', function () {
+    it('gera connect token com clientUserId = user:{id}, sem item_id no corpo', function () {
         $this->postJson('/api/v1/bank-connections/connect-token')
             ->assertOk()
-            ->assertJsonPath('data.connect_token', 'fake-connect-token');
+            ->assertJsonPath('data.connect_token', 'fake-connect-token')
+            ->assertJsonMissingPath('data.item_id');
 
         expect($this->fake->calls[0])->toBe([
             'method' => 'connectToken',
@@ -66,11 +67,12 @@ describe('connect-token', function () {
         ]);
     });
 
-    it('com connection_id usa o item da conexão (modo atualização)', function () {
+    it('com connection_id usa o item da conexão (modo atualização) e devolve item_id', function () {
         $connection = BankConnection::factory()->create(['user_id' => $this->user->id, 'external_id' => 'item-existing']);
 
         $this->postJson('/api/v1/bank-connections/connect-token', ['connection_id' => $connection->id])
-            ->assertOk();
+            ->assertOk()
+            ->assertJsonPath('data.item_id', 'item-existing');
 
         expect($this->fake->calls[0]['args'])->toBe([
             'clientUserId' => 'user:'.$this->user->id,
@@ -535,7 +537,7 @@ describe('reconectado', function () {
         Queue::fake();
         $connection = BankConnection::factory()->needsReauth()->create(['user_id' => $this->user->id]);
 
-        $this->postJson("/api/v1/bank-connections/{$connection->id}/reconnected")
+        $this->postJson("/api/v1/bank-connections/{$connection->id}/reconnected", ['item_id' => $connection->external_id])
             ->assertOk()
             ->assertJsonPath('data.status', ConnectionStatus::Active->value)
             ->assertJsonPath('data.last_error', null);
@@ -546,10 +548,28 @@ describe('reconectado', function () {
         Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $connection->id);
     });
 
+    it('sem item_id → 422', function () {
+        $connection = BankConnection::factory()->needsReauth()->create(['user_id' => $this->user->id]);
+
+        $this->postJson("/api/v1/bank-connections/{$connection->id}/reconnected")
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('item_id');
+    });
+
+    it('item_id diferente do item da conexão → 409 connection_item_mismatch', function () {
+        $connection = BankConnection::factory()->needsReauth()->create(['user_id' => $this->user->id, 'external_id' => 'item-x']);
+
+        $this->postJson("/api/v1/bank-connections/{$connection->id}/reconnected", ['item_id' => 'item-y'])
+            ->assertStatus(409)
+            ->assertJsonPath('code', 'connection_item_mismatch');
+
+        expect($connection->refresh()->status)->not->toBe(ConnectionStatus::Active);
+    });
+
     it('reconectado numa conexão pending_link → 409 connection_not_linked', function () {
         $connection = BankConnection::factory()->create(['user_id' => $this->user->id]);
 
-        $this->postJson("/api/v1/bank-connections/{$connection->id}/reconnected")
+        $this->postJson("/api/v1/bank-connections/{$connection->id}/reconnected", ['item_id' => $connection->external_id])
             ->assertStatus(409)
             ->assertJsonPath('code', 'connection_not_linked');
     });
@@ -560,7 +580,8 @@ describe('reconectado', function () {
         $lock->get();
 
         try {
-            $this->postJson("/api/v1/bank-connections/{$connection->id}/reconnected")->assertOk();
+            $this->postJson("/api/v1/bank-connections/{$connection->id}/reconnected", ['item_id' => $connection->external_id])
+                ->assertOk();
         } finally {
             $lock->release();
         }
@@ -653,6 +674,10 @@ describe('listar', function () {
             ->assertJsonPath('data.0.id', $connection->id)
             ->assertJsonPath('data.0.accounts.0.name', 'Conta')
             ->assertJsonPath('data.0.accounts.0.balance', 0)
+            ->assertJsonPath('data.0.accounts.0.currency', 'BRL')
+            ->assertJsonPath('data.0.accounts.0.color', '#f97316')
+            ->assertJsonPath('data.0.accounts.0.icon', 'landmark')
+            ->assertJsonPath('data.0.accounts.0.is_archived', false)
             ->assertJsonPath('data.0.pending_accounts', []);
     });
 
