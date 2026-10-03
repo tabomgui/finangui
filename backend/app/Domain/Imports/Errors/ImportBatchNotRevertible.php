@@ -6,9 +6,9 @@ use App\Domain\Shared\DomainError;
 
 final class ImportBatchNotRevertible extends DomainError
 {
-    public function __construct()
+    public function __construct(?string $message = null)
     {
-        parent::__construct('Esta importação não pode ser revertida.');
+        parent::__construct($message ?? 'Esta importação não pode ser revertida.');
     }
 
     public function errorCode(): string

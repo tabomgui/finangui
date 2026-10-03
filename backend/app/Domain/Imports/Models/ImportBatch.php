@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property list<array<string, mixed>>|null $rows
  * @property array<string, mixed>|null $stats
  * @property list<array<string, mixed>>|null $undo
+ * @property list<int>|null $created_statement_ids
  * @property CarbonImmutable|null $completed_at
  * @property CarbonImmutable|null $reverted_at
  */
@@ -32,7 +33,7 @@ class ImportBatch extends Model
 
     protected $fillable = [
         'user_id', 'account_id', 'format', 'source', 'filename', 'status',
-        'rows', 'stats', 'undo', 'completed_at', 'reverted_at',
+        'rows', 'stats', 'undo', 'created_statement_ids', 'completed_at', 'reverted_at',
     ];
 
     /**
@@ -56,6 +57,7 @@ class ImportBatch extends Model
             'rows' => 'array',
             'stats' => 'array',
             'undo' => 'array',
+            'created_statement_ids' => 'array',
             'completed_at' => 'immutable_datetime',
             'reverted_at' => 'immutable_datetime',
         ];

@@ -18,16 +18,6 @@ use App\Domain\Transactions\Models\Transaction;
  */
 final class CategorizeTransaction
 {
-    /**
-     * Regras ativas carregadas por handleImported() quando nenhuma lista é
-     * passada: memoizadas na instância para um lote de importação (que
-     * reaproveita a mesma instância via o container) não reconsultar a
-     * cada linha.
-     *
-     * @var list<RuleDefinition>|null
-     */
-    private ?array $activeRules = null;
-
     public function __construct(
         private readonly HistoryCategorizer $history,
         private readonly ApplyRuleOutcome $applyRuleOutcome,
@@ -92,7 +82,7 @@ final class CategorizeTransaction
      * guard fica por simetria com handle().
      *
      * @param  list<RuleDefinition>|null  $rules  regras ativas já carregadas
-     *                                            (evita reconsultar por linha num lote); omitido, carrega e memoiza na instância.
+     *                                            (evita reconsultar por linha num lote, ver IngestTransactions); omitido, carrega na hora, sem memoizar.
      */
     public function handleImported(Transaction $transaction, ?array $rules = null): void
     {
@@ -129,7 +119,7 @@ final class CategorizeTransaction
      */
     private function activeRuleDefinitions(): array
     {
-        return $this->activeRules ??= Rule::query()->where('is_active', true)->ordered()->get()
+        return Rule::query()->where('is_active', true)->ordered()->get()
             ->map(RuleDefinition::fromRule(...))
             ->all();
     }

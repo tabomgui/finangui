@@ -19,6 +19,7 @@ return new class extends Migration
             $table->jsonb('rows')->nullable();
             $table->jsonb('stats')->nullable();
             $table->jsonb('undo')->nullable();
+            $table->jsonb('created_statement_ids')->nullable();
             $table->timestamp('completed_at')->nullable();
             $table->timestamp('reverted_at')->nullable();
             $table->timestamps();
