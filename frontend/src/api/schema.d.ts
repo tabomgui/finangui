@@ -2633,11 +2633,12 @@ export interface operations {
                             net: number;
                             top_categories: {
                                 category_id: number | null;
-                                name: string | "Sem categoria";
+                                name: string;
                                 icon: string | null;
                                 color: string | null;
                                 amount: number;
                             }[];
+                            projected_balance?: number;
                         };
                     };
                 };

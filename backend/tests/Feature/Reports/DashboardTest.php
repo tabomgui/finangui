@@ -206,6 +206,50 @@ it('pagar fatura não muda receita nem despesa (é transferência, não lançame
         ->assertJsonPath('data.expense', 30000);
 });
 
+it('soma saldo de hoje com previstas e pendentes até o fim do mês atual, ignorando ignoradas e outra moeda', function () {
+    actingAsUser();
+    $this->travelTo('2026-10-15');
+    $account = Account::factory()->create(['opening_balance' => 1000]);
+    $usd = Account::factory()->create(['currency' => 'USD', 'opening_balance' => 5000]);
+
+    Transaction::factory()->for($account)->create(['date' => '2026-10-05', 'amount' => 200]); // posted, conta pro saldo de hoje
+    Transaction::factory()->for($account)->create(['date' => '2026-10-20', 'amount' => 300, 'status' => TransactionStatus::Projected]);
+    Transaction::factory()->for($account)->income()->create(['date' => '2026-10-18', 'amount' => 150, 'status' => TransactionStatus::Pending]);
+    Transaction::factory()->for($account)->create([
+        'date' => '2026-10-22', 'amount' => 99999, 'status' => TransactionStatus::Projected, 'is_ignored' => true,
+    ]);
+    Transaction::factory()->for($usd)->create([
+        'date' => '2026-10-22', 'amount' => 99999, 'currency' => 'USD', 'status' => TransactionStatus::Projected,
+    ]);
+
+    $this->getJson('/api/v1/dashboard?month=2026-10')
+        ->assertOk()
+        ->assertJsonPath('data.projected_balance', 650); // 1000 - 200 (hoje) - 300 + 150
+});
+
+it('saldo previsto de mês futuro acumula previstas de meses anteriores ainda pendentes', function () {
+    actingAsUser();
+    $this->travelTo('2026-10-15');
+    $account = Account::factory()->create(['opening_balance' => 1000]);
+
+    Transaction::factory()->for($account)->create(['date' => '2026-10-20', 'amount' => 100, 'status' => TransactionStatus::Projected]);
+    Transaction::factory()->for($account)->create(['date' => '2026-11-10', 'amount' => 500, 'status' => TransactionStatus::Projected]);
+
+    $this->getJson('/api/v1/dashboard?month=2026-11')
+        ->assertOk()
+        ->assertJsonPath('data.projected_balance', 400); // 1000 - 100 - 500
+});
+
+it('não traz saldo previsto para mês passado', function () {
+    actingAsUser();
+    $this->travelTo('2026-10-15');
+    Account::factory()->create(['opening_balance' => 1000]);
+
+    $this->getJson('/api/v1/dashboard?month=2026-09')
+        ->assertOk()
+        ->assertJsonMissingPath('data.projected_balance');
+});
+
 it('isola o resumo de dados de outro usuário', function () {
     $user = actingAsUser();
     $this->travelTo('2026-10-15');
