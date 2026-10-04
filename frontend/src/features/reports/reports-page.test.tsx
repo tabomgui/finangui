@@ -97,7 +97,7 @@ describe('ReportsPage', () => {
     comparisonState = { data: categoryComparison(), isPending: false, isError: false, isPlaceholderData: false }
     renderPage('/relatorios?mesA=2026-09&mesB=2026-10')
 
-    expect(screen.getByRole('img', { name: /receita e despesa por mês/i })).toBeInTheDocument()
+    expect(screen.getByRole('table', { hidden: true, name: /receita, despesa e resultado por mês/i })).toBeInTheDocument()
     expect(screen.getByText('Moradia')).toBeInTheDocument()
     expect(screen.getByText('Período A')).toBeInTheDocument()
     expect(screen.getByText('Período B')).toBeInTheDocument()

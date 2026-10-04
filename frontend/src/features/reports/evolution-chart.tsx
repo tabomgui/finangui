@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { MonthlyEvolutionMonth } from '@/api/types'
 import { formatMonth } from '@/lib/date'
@@ -10,14 +11,18 @@ type EvolutionChartProps = { months: MonthlyEvolutionMonth[]; currency: string }
 /**
  * Evolução mensal de receita, despesa e resultado: barras agrupadas (cores `--income`/`--expense`
  * do tema) com uma linha de resultado sobreposta, num único eixo de valor (as três séries são a
- * mesma grandeza — dinheiro — então duas escalas seriam enganosas). `role="img"` + tabela
- * visualmente oculta cobrem leitor de tela; o tooltip (`EvolutionTooltip`) mostra os valores por
- * extenso ao passar o mouse/focar uma barra.
+ * mesma grandeza — dinheiro — então duas escalas seriam enganosas). Nada de `role="img"` no
+ * contêiner: ele teria descendentes focáveis (as próprias barras, navegáveis por teclado), o que
+ * o papel "img" proíbe — em vez disso, `aria-describedby` aponta pra tabela visualmente oculta
+ * logo abaixo, que descreve os mesmos dados por extenso; o tooltip (`EvolutionTooltip`) cobre o
+ * passar do mouse/focar uma barra.
  */
 export function EvolutionChart({ months, currency }: EvolutionChartProps) {
+  const tableId = useId()
+
   return (
     <div>
-      <div role="img" aria-label="Gráfico de barras de receita e despesa por mês, com linha de resultado" className="h-72 w-full">
+      <div aria-describedby={tableId} className="h-72 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={months} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={2} barCategoryGap="24%">
             <CartesianGrid vertical={false} stroke="var(--color-border)" />
@@ -64,7 +69,7 @@ export function EvolutionChart({ months, currency }: EvolutionChartProps) {
           rolável da página mesmo clipado visualmente — o `overflow-hidden` tem que vir de um
           contêiner em volta (div), não da própria tabela. */}
       <div className="sr-only">
-        <table>
+        <table id={tableId}>
           <caption>Receita, despesa e resultado por mês</caption>
           <thead>
             <tr>

@@ -9,12 +9,16 @@ const months: MonthlyEvolutionMonth[] = [
 ]
 
 describe('EvolutionChart', () => {
-  it('expõe um resumo acessível com o rótulo do gráfico e a tabela de dados', () => {
-    render(<EvolutionChart months={months} currency="BRL" />)
+  it('expõe um resumo acessível via aria-describedby, sem role="img" (evita conflito com as barras focáveis)', () => {
+    const { container } = render(<EvolutionChart months={months} currency="BRL" />)
 
-    expect(screen.getByRole('img', { name: /receita e despesa por mês/i })).toBeInTheDocument()
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
 
     const table = screen.getByRole('table', { hidden: true })
+    const describedBy = container.querySelector('[aria-describedby]')
+    expect(describedBy).toHaveAttribute('aria-describedby', table.id)
+    expect(table.id).not.toBe('')
+
     const rows = within(table).getAllByRole('row', { hidden: true })
     // cabeçalho + 2 meses
     expect(rows).toHaveLength(3)
