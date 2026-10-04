@@ -9,6 +9,7 @@ use App\Domain\Cards\Errors\StatementAccountMismatch;
 use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Cards\Support\InstallmentSplit;
 use App\Domain\Cards\Support\StatementResolver;
+use App\Domain\Rules\Actions\CategorizeTransaction;
 use App\Domain\Transactions\Data\TransactionData;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Enums\TransactionSource;
@@ -27,6 +28,7 @@ final class CreateInstallmentPurchase
     public function __construct(
         private readonly StatementResolver $resolver,
         private readonly AssignStatement $assignStatement,
+        private readonly CategorizeTransaction $categorize,
     ) {}
 
     /**
@@ -44,6 +46,30 @@ final class CreateInstallmentPurchase
             }
 
             $amounts = InstallmentSplit::split($data->amount, $data->installments);
+
+            $categoryId = $data->categoryId;
+            $categorizedBy = $data->categoryId !== null ? 'manual' : null;
+
+            if ($categoryId === null) {
+                $preview = new Transaction([
+                    'account_id' => $card->id,
+                    'date' => $data->date,
+                    'amount' => $amounts[0],
+                    'direction' => Direction::Out,
+                    'currency' => $card->currency,
+                    'description' => $data->description,
+                    'original_description' => $data->description,
+                    'notes' => $data->notes,
+                    'payee' => $data->payee,
+                ]);
+
+                $suggestion = $this->categorize->suggest($preview);
+
+                if ($suggestion !== null) {
+                    $categoryId = $suggestion['category_id'];
+                    $categorizedBy = $suggestion['categorized_by'];
+                }
+            }
 
             $plan = InstallmentPlan::create([
                 'account_id' => $card->id,
@@ -75,8 +101,8 @@ final class CreateInstallmentPurchase
                     'original_description' => $data->description,
                     'notes' => $data->notes,
                     'payee' => $data->payee,
-                    'category_id' => $data->categoryId,
-                    'categorized_by' => $data->categoryId !== null ? 'manual' : null,
+                    'category_id' => $categoryId,
+                    'categorized_by' => $categorizedBy,
                     'status' => $date->lessThanOrEqualTo($today) ? TransactionStatus::Posted : TransactionStatus::Projected,
                     'source' => $index === 0 ? TransactionSource::Manual : TransactionSource::Installment,
                     'is_ignored' => $data->isIgnored,

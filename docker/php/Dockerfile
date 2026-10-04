@@ -4,6 +4,7 @@ RUN apk add --no-cache libpq-dev icu-dev libzip-dev \
     && docker-php-ext-install pdo_pgsql intl zip bcmath pcntl
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY docker/php/conf.d/uploads.ini /usr/local/etc/php/conf.d/uploads.ini
 
 WORKDIR /var/www/html
 

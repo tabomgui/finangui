@@ -11,7 +11,8 @@ export type FieldControlProps = {
 }
 
 type FieldProps = {
-  label: string
+  /** Normalmente um texto; aceita nó (ex.: um sufixo `sr-only` que desambigua campos repetidos numa lista). */
+  label: ReactNode
   htmlFor: string
   error?: string
   hint?: string

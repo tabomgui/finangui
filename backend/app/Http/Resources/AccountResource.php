@@ -30,6 +30,9 @@ final class AccountResource extends JsonResource
             'color' => $this->color,
             'icon' => $this->icon,
             'is_archived' => $this->is_archived,
+            'connection_id' => $this->connection_id,
+            'provider_balance' => $this->provider_balance?->cents,
+            'provider_synced_at' => $this->provider_synced_at?->toIso8601String(),
         ];
     }
 }

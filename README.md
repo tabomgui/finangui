@@ -2,7 +2,7 @@
 
 Gerenciador financeiro pessoal, self-hosted. Backend Laravel 13 + Postgres; frontend React em `frontend/`.
 
-Telas disponíveis: Início (dashboard do mês), Transações (com filtros e edição em massa), Cartões (faturas com datas reais e editáveis, pagamento como transferência, parcelamentos e limite disponível), Contas, Categorias, Tags e Configurações.
+Telas disponíveis: Início (dashboard do mês), Transações (com filtros e edição em massa), Regras (condições e grupos para categorizar automaticamente, com prévia ao vivo, aplicação retroativa às transações já existentes e sugestão por histórico quando nenhuma regra casa), Cartões (faturas com datas reais e editáveis, pagamento como transferência, parcelamentos e limite disponível), Importar extrato (CSV do Inter, Nubank conta e cartão e C6, ou OFX genérico; prévia mostra novas, duplicadas, adoção de lançamento manual e parcelas antes de confirmar; lote importado pode ser revertido), Contas, Categorias, Tags e Configurações.
 
 ## Desenvolvimento
 
@@ -23,6 +23,8 @@ make front-check              # lint + typecheck + testes do frontend
 Portas do host: backend em `:8001` (configurável por `BACKEND_PORT`), banco em `:5432`, frontend em `:5174` (configurável por `FRONTEND_PORT`).
 
 O frontend também roda em container (`make up` já sobe o serviço `frontend`), mas tipos e editor (TypeScript, oxlint) precisam das dependências instaladas no host: `cd frontend && npm install`. Se `frontend/package.json` mudar, reconstrua a imagem do serviço: `docker compose build frontend && docker compose up -d -V frontend`.
+
+Mudança em `docker/php/**` (ex.: `uploads.ini`, `Dockerfile`) também não aparece com só um restart: `docker compose build backend && docker compose up -d -V backend`.
 
 Documentação interativa da API (Scramble) em http://localhost:8001/docs/api — só disponível em ambiente local (`APP_ENV=local`); em outros ambientes a rota fica bloqueada.
 
@@ -66,6 +68,21 @@ Regras de vínculo da conta:
 - Nunca vincula automaticamente a uma conta de senha cujo email nunca foi confirmado (cadastro aberto por senha): isso abriria sequestro de conta. Nesse caso o usuário loga com senha e vincula o Google depois em Configurações.
 
 `SESSION_SAME_SITE` precisa continuar `lax`: `strict` quebra o callback do Google (o `state` da sessão se perde).
+
+## Conectar bancos (Pluggy)
+
+A integração usa a [Pluggy](https://pluggy.ai) para conectar contas e cartões de bancos reais via Open Finance.
+
+1. Crie uma conta em https://dashboard.pluggy.ai e pegue as credenciais do sandbox (ou de produção, depois).
+2. Preencha no `backend/.env`: `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET` e, se precisar apontar para outro ambiente, `PLUGGY_BASE_URL` (vazio cai para `https://api.pluggy.ai`).
+
+Sem `PLUGGY_CLIENT_ID`/`PLUGGY_CLIENT_SECRET`, a integração fica desligada: o botão "Conectar banco" não aparece e os endpoints de conexão respondem 409 (`banking_disabled`).
+
+No sandbox da Pluggy, use o conector "Pluggy Bank" com usuário `user-ok`, senha `password-ok` e, se pedir MFA, o código `123456`.
+
+Depois de conectar, cada conexão sincroniza automaticamente a cada 6 horas (contas, saldo, faturas e transações) e também pode ser sincronizada na hora pelo botão "Sincronizar agora". Essa sincronização roda em fila (job) e depende do **worker e do scheduler estarem no ar** — ambos já sobem com `make up` em desenvolvimento. `DB_QUEUE_RETRY_AFTER=660` e o `--timeout=600` do worker (já configurados em `docker-compose.yml`/`docker-compose.prod.yml`) cobrem o pior caso desse job; não reduza um sem o outro.
+
+Em produção, o nginx do serviço `web` já libera `frame-src https://connect.pluggy.ai` na Content-Security-Policy, necessário para o widget da Pluggy abrir o iframe de login do banco.
 
 ## Importar categorias do finangui-js
 
@@ -144,7 +161,9 @@ Pontos de atenção específicos de produção:
   `accounts.google.com`, e o `state` se perde).
 - **Worker**: em produção o worker roda `queue:work` (processo único, reinicia só em deploy),
   nunca `queue:listen` (que existe só pro Compose de dev, pra refletir mudança de código sem
-  reiniciar o container).
+  reiniciar o container). O `--timeout=600` cobre o maior job (`ApplyRuleRetroactively`, até 10
+  minutos), sempre abaixo do `retry_after` da fila (`DB_QUEUE_RETRY_AFTER=660`), senão outro
+  worker pega o mesmo job de novo antes do primeiro terminar.
 - **Scheduler**: `schedule:work`, igual ao Compose de dev — não precisa de cron do sistema.
   Ele roda diariamente às 00:10 o `PostDueInstallments`, que vira parcela projetada em lançada
   quando a data chega; sem o scheduler no ar, parcelas projetadas nunca são lançadas.

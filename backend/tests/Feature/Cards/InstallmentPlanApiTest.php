@@ -40,7 +40,8 @@ it('editar o parcelamento muda só as parcelas projetadas', function () {
     $projected = Transaction::query()->where('status', TransactionStatus::Projected->value)->get();
     expect($posted->pluck('description')->unique()->all())->toBe(['Fone'])
         ->and($projected->pluck('description')->unique()->all())->toBe(['Fone BT'])
-        ->and($projected->pluck('category_id')->unique()->all())->toBe([$category->id]);
+        ->and($projected->pluck('category_id')->unique()->all())->toBe([$category->id])
+        ->and($projected->pluck('description_key')->unique()->all())->toBe(['FONE BT']);
 });
 
 it('cancelar exclui só as projetadas e marca o plano', function () {

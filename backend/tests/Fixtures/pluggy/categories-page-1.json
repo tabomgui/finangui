@@ -1,0 +1,13 @@
+{
+  "page": 1,
+  "total": 2,
+  "totalPages": 2,
+  "results": [
+    {
+      "id": "0100",
+      "description": "Income",
+      "descriptionTranslated": "Renda",
+      "parentId": null
+    }
+  ]
+}

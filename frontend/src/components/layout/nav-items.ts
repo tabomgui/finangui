@@ -1,4 +1,4 @@
-import { CreditCard, House, Landmark, List, Plus, Settings, Shapes, Tags, type LucideIcon } from 'lucide-react'
+import { CreditCard, FileUp, House, Landmark, List, Plus, Settings, Shapes, Tags, Wand2, type LucideIcon } from 'lucide-react'
 
 export type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean }
 
@@ -12,7 +12,9 @@ export const newTransactionItem: NavItem = { to: '/transacoes/nova', label: 'Nov
 
 export const moreNav: NavItem[] = [
   { to: '/contas', label: 'Contas', icon: Landmark },
+  { to: '/importar', label: 'Importar extrato', icon: FileUp },
   { to: '/categorias', label: 'Categorias', icon: Shapes },
   { to: '/tags', label: 'Tags', icon: Tags },
+  { to: '/regras', label: 'Regras', icon: Wand2 },
   { to: '/configuracoes', label: 'Configurações', icon: Settings },
 ]

@@ -52,6 +52,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bank-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["bankConnection.index"];
+        put?: never;
+        post: operations["bankConnection.store"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/{connection}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["bankConnection.destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/connect-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["bankConnection.connectToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/{connection}/link-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["bankConnection.linkAccounts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/{connection}/reconnected": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["bankConnection.reconnected"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-connections/{connection}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["bankConnection.sync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cards": {
         parameters: {
             query?: never;
@@ -212,6 +308,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/import-batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["importBatch.index"];
+        put?: never;
+        post: operations["importBatch.store"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import-batches/{batch}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["importBatch.show"];
+        put?: never;
+        post?: never;
+        delete: operations["importBatch.destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import-batches/{batch}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["importBatch.confirm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import-batches/{batch}/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["importBatch.revert"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/installment-plans/{plan}": {
         parameters: {
             query?: never;
@@ -275,6 +435,86 @@ export interface paths {
          *     documentados manualmente para bater com o middleware
          */
         post: operations["auth.register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rules/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["rule.reorder"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rules/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["rule.preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["rule.index"];
+        put?: never;
+        post: operations["rule.store"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rules/{rule}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["rule.show"];
+        put?: never;
+        post?: never;
+        delete: operations["rule.destroy"];
+        options?: never;
+        head?: never;
+        patch: operations["rule.update"];
+        trace?: never;
+    };
+    "/rules/{rule}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["rule.apply"];
         delete?: never;
         options?: never;
         head?: never;
@@ -428,12 +668,47 @@ export interface components {
             color: string | null;
             icon: string | null;
             is_archived: boolean;
+            connection_id: number | null;
+            provider_balance: number | null;
+            provider_synced_at: string | null;
         };
         /**
          * AccountType
          * @enum {string}
          */
         AccountType: "checking" | "savings" | "cash" | "credit_card";
+        /** ApplyRuleRequest */
+        ApplyRuleRequest: {
+            overwrite?: boolean;
+        };
+        /** BankConnectionResource */
+        BankConnectionResource: {
+            id: number;
+            provider: components["schemas"]["BankProviderName"];
+            status: components["schemas"]["ConnectionStatus"];
+            institution_name: string | null;
+            institution_logo_url: string | null;
+            last_synced_at: string | null;
+            last_error: string | null;
+            accounts: {
+                id: number;
+                name: string;
+                type: components["schemas"]["AccountType"];
+                currency: string;
+                color: string | null;
+                icon: string | null;
+                is_archived: boolean;
+                balance: number;
+                provider_balance: number | null;
+            }[];
+            pending_accounts: components["schemas"]["ProviderAccountResource"][];
+            unlinked_accounts: components["schemas"]["ProviderAccountResource"][];
+        };
+        /**
+         * BankProviderName
+         * @enum {string}
+         */
+        BankProviderName: "pluggy";
         /** CardResource */
         CardResource: {
             id: number;
@@ -486,11 +761,143 @@ export interface components {
             is_transfer_effective: boolean;
             is_archived: boolean;
         };
+        /** ConfirmImportBatchRequest */
+        ConfirmImportBatchRequest: {
+            skip_lines?: number[];
+        };
+        /** ConnectTokenRequest */
+        ConnectTokenRequest: {
+            connection_id?: number;
+        };
+        /**
+         * ConnectionStatus
+         * @enum {string}
+         */
+        ConnectionStatus: "pending_link" | "active" | "needs_reauth" | "error";
         /**
          * Direction
          * @enum {string}
          */
         Direction: "in" | "out";
+        /** ImportBatchResource */
+        ImportBatchResource: {
+            id: number;
+            account_id: number;
+            account?: {
+                id: number;
+                name: string;
+            };
+            format: components["schemas"]["ImportFormat"];
+            /** @enum {string} */
+            format_label: "Inter (conta)" | "Nubank (conta)" | "Nubank (cartão)" | "C6 (conta)" | "OFX" | "Sincronização bancária";
+            filename: string;
+            status: components["schemas"]["ImportBatchStatus"];
+            stats: {
+                failed: {
+                    line: number;
+                    reason: string;
+                }[];
+                inserted?: number;
+                duplicates?: number;
+                updated?: number;
+                replaced?: number;
+                adopted?: number;
+                swapped?: number;
+                skipped?: number;
+            };
+            summary: {
+                new: number;
+                duplicate: number;
+                update: number;
+                replace_installment: number;
+                adopt: number;
+                swap_pending: number;
+                failed: number;
+            };
+            revertible: boolean;
+            created_at: string;
+            completed_at: string | null;
+            reverted_at: string | null;
+        };
+        /**
+         * ImportBatchStatus
+         * @enum {string}
+         */
+        ImportBatchStatus: "pending" | "completed" | "reverted";
+        /**
+         * ImportFormat
+         * @enum {string}
+         */
+        ImportFormat: "inter" | "nubank" | "nubank_card" | "c6" | "ofx" | "pluggy";
+        /** ImportPreviewResource */
+        ImportPreviewResource: {
+            batch: {
+                id: number;
+                account_id: number;
+                account?: {
+                    id: number;
+                    name: string;
+                };
+                format: components["schemas"]["ImportFormat"];
+                /** @enum {string} */
+                format_label: "Inter (conta)" | "Nubank (conta)" | "Nubank (cartão)" | "C6 (conta)" | "OFX" | "Sincronização bancária";
+                filename: string;
+                status: components["schemas"]["ImportBatchStatus"];
+                stats: {
+                    failed: {
+                        line: number;
+                        reason: string;
+                    }[];
+                    inserted?: number;
+                    duplicates?: number;
+                    updated?: number;
+                    replaced?: number;
+                    adopted?: number;
+                    swapped?: number;
+                    skipped?: number;
+                };
+                summary: {
+                    new: number;
+                    duplicate: number;
+                    update: number;
+                    replace_installment: number;
+                    adopt: number;
+                    swap_pending: number;
+                    failed: number;
+                };
+                revertible: boolean;
+                created_at: string;
+                completed_at: string | null;
+                reverted_at: string | null;
+            };
+            rows: {
+                line: number;
+                date: string;
+                amount: number;
+                direction: components["schemas"]["Direction"];
+                description: string;
+                outcome: components["schemas"]["RowOutcome"];
+                installment?: {
+                    number: number;
+                    total: number;
+                };
+                match?: {
+                    id: number;
+                    date: string;
+                    description: string;
+                };
+                suggested_category_id?: number;
+            }[];
+            summary: {
+                new: number;
+                duplicate: number;
+                update: number;
+                replace_installment: number;
+                adopt: number;
+                swap_pending: number;
+                failed: number;
+            };
+        };
         /** InstallmentPlanResource */
         InstallmentPlanResource: {
             id: number;
@@ -507,6 +914,33 @@ export interface components {
             remaining_amount: number;
             next_date: string | null;
         };
+        /**
+         * LinkAccountsRequest
+         * @description As contas do banco (e seu tipo/moeda) vêm de settings.pending_accounts
+         *     (vínculo inicial, gravado por App\Domain\Banking\Actions\CreateConnection)
+         *     ou settings.unlinked_accounts (conexão já `active`, contas que o banco
+         *     passou a reportar depois — gravado por
+         *     App\Domain\Banking\Actions\SyncAccounts); aqui só validamos o formato do
+         *     pedido, a gravação em si (criar/vincular conta, trocar o status) é
+         *     App\Domain\Banking\Actions\LinkAccounts, sob lock.
+         *
+         *     Cobertura total das contas pendentes só é exigida no vínculo inicial
+         *     (`pending_link`): uma conexão já `active` aceita vincular só algumas das
+         *     `unlinked_accounts` por vez (o resto continua pendente para um próximo
+         *     vínculo).
+         *
+         *     Quando a conexão não está em nenhum desses dois estados com contas
+         *     pendentes, as regras ficam soltas de propósito: a checagem de
+         *     cobertura/tipo/moeda não faz sentido sem as contas do banco em mãos, e
+         *     quem deve rejeitar o pedido é a Action (409 connection_not_pending_link),
+         *     não um 422 de validação que mascararia a causa real.
+         */
+        LinkAccountsRequest: {
+            links: {
+                external_id: string;
+                account_id?: number | null;
+            }[];
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Format: email */
@@ -521,6 +955,63 @@ export interface components {
             date: string;
             description?: string | null;
         };
+        /** PreviewRuleRequest */
+        PreviewRuleRequest: {
+            /** @enum {string} */
+            match: "all" | "any";
+            conditions: {
+                /** @enum {string} */
+                field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                /** @enum {string} */
+                op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
+                value?: string;
+                /** @enum {string} */
+                match?: "all" | "any";
+                conditions?: {
+                    /** @enum {string} */
+                    field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                    /** @enum {string} */
+                    op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
+                    value?: string;
+                }[];
+            }[];
+            actions: {
+                /** @enum {string} */
+                type?: "set_category" | "set_description" | "set_payee" | "add_tag" | "ignore";
+                category_id?: number;
+                tag_id?: number;
+                value?: string;
+            }[];
+            overwrite?: boolean;
+        };
+        /** ProviderAccountResource */
+        ProviderAccountResource: {
+            external_id: string;
+            name: string;
+            number: string | null;
+            /**
+             * @description Mesmo enum de Account::$type (não a string crua do
+             *     provedor): o frontend já sabe lidar com AccountType.
+             */
+            kind: components["schemas"]["AccountType"];
+            currency: string;
+            /**
+             * @description Sinal do app, não o do provedor: em cartão, o valor devido já
+             *     sai negativo aqui, como o saldo calculado da conta vai ficar
+             *     depois do vínculo — ver AccountMapper::appBalanceCents().
+             */
+            balance: number;
+            suggested_account_id: number | null;
+        };
+        /**
+         * ReconnectedRequest
+         * @description `item_id` é o item devolvido pelo widget ao fim do fluxo de reconexão (modo atualização);
+         *     o controller confere contra `connection->external_id` antes de marcar como reconectada —
+         *     ver App\Http\Controllers\Api\V1\BankConnectionController::reconnected().
+         */
+        ReconnectedRequest: {
+            item_id: string;
+        };
         /** RegisterRequest */
         RegisterRequest: {
             name: string;
@@ -528,6 +1019,66 @@ export interface components {
             email: string;
             password: string;
             password_confirmation: string;
+        };
+        /** ReorderRulesRequest */
+        ReorderRulesRequest: {
+            ids: number[];
+        };
+        /**
+         * RowOutcome
+         * @description Destino de uma linha decidido pela cascata de dedup (ver IngestionPlanner).
+         * @enum {string}
+         */
+        RowOutcome: "new" | "duplicate" | "update" | "replace_installment" | "adopt" | "swap_pending";
+        /** RulePreviewResource */
+        RulePreviewResource: {
+            matched: number;
+            changed: number;
+            sample: {
+                transaction: components["schemas"]["TransactionResource"];
+                changes: {
+                    category_id: number | null;
+                    description: string | null;
+                    payee: string | null;
+                    tag_ids: number[];
+                    is_ignored: boolean;
+                };
+            }[];
+        };
+        /** RuleResource */
+        RuleResource: {
+            id: number;
+            name: string;
+            priority: number;
+            is_active: boolean;
+            /** @enum {string} */
+            match: "all" | "any";
+            conditions: ({
+                /** @enum {string} */
+                field: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                /** @enum {string} */
+                op: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
+                value: string | number;
+            } | {
+                /** @enum {string} */
+                match: "all" | "any";
+                conditions: {
+                    /** @enum {string} */
+                    field: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                    /** @enum {string} */
+                    op: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
+                    value: string | number;
+                }[];
+            })[];
+            actions: {
+                /** @enum {string} */
+                type: "set_category" | "set_description" | "set_payee" | "add_tag" | "ignore";
+                category_id?: number;
+                tag_id?: number;
+                value?: string;
+            }[];
+            last_applied_at: string | null;
+            last_applied_changes: number | null;
         };
         /** SaveTagRequest */
         SaveTagRequest: {
@@ -552,6 +1103,11 @@ export interface components {
             due_day?: number | null;
             last_four?: string | null;
         };
+        /** StoreBankConnectionRequest */
+        StoreBankConnectionRequest: {
+            /** Format: uuid */
+            item_id: string;
+        };
         /** StoreCategoryRequest */
         StoreCategoryRequest: {
             name: string;
@@ -560,6 +1116,51 @@ export interface components {
             icon?: string | null;
             color?: string | null;
             is_transfer?: boolean;
+        };
+        /** StoreImportBatchRequest */
+        StoreImportBatchRequest: {
+            account_id: number;
+            /**
+             * Format: binary
+             * @description Maximum file size: 2048 kilobytes.
+             */
+            file: string;
+            /**
+             * @description 'pluggy' não tem parser de arquivo (linhas vêm do
+             *     SyncConnection, nunca de upload) — fora das opções aceitas aqui.
+             * @enum {string}
+             */
+            format?: "inter" | "nubank" | "nubank_card" | "c6" | "ofx";
+        };
+        /** StoreRuleRequest */
+        StoreRuleRequest: {
+            name: string;
+            is_active?: boolean;
+            /** @enum {string} */
+            match: "all" | "any";
+            conditions: {
+                /** @enum {string} */
+                field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                /** @enum {string} */
+                op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
+                value?: string;
+                /** @enum {string} */
+                match?: "all" | "any";
+                conditions?: {
+                    /** @enum {string} */
+                    field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                    /** @enum {string} */
+                    op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
+                    value?: string;
+                }[];
+            }[];
+            actions: {
+                /** @enum {string} */
+                type?: "set_category" | "set_description" | "set_payee" | "add_tag" | "ignore";
+                category_id?: number;
+                tag_id?: number;
+                value?: string;
+            }[];
         };
         /** StoreTransactionRequest */
         StoreTransactionRequest: {
@@ -631,6 +1232,20 @@ export interface components {
             status: components["schemas"]["TransactionStatus"];
             source: components["schemas"]["TransactionSource"];
             categorized_by: string | null;
+            categorization: {
+                /** @constant */
+                source: "manual";
+            } | {
+                /** @constant */
+                source: "history";
+            } | {
+                /** @constant */
+                source: "pluggy";
+            } | {
+                /** @constant */
+                source: "rule";
+                rule_id: number;
+            } | null;
             is_ignored: boolean;
             transfer_id: string | null;
             statement_id: number | null;
@@ -698,6 +1313,36 @@ export interface components {
             current_password?: string | null;
             password_confirmation?: string;
         };
+        /** UpdateRuleRequest */
+        UpdateRuleRequest: {
+            name?: string;
+            is_active?: boolean;
+            /** @enum {string} */
+            match?: "all" | "any";
+            conditions?: {
+                /** @enum {string} */
+                field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                /** @enum {string} */
+                op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
+                value?: string;
+                /** @enum {string} */
+                match?: "all" | "any";
+                conditions?: {
+                    /** @enum {string} */
+                    field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                    /** @enum {string} */
+                    op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
+                    value?: string;
+                }[];
+            }[];
+            actions?: {
+                /** @enum {string} */
+                type?: "set_category" | "set_description" | "set_payee" | "add_tag" | "ignore";
+                category_id?: number;
+                tag_id?: number;
+                value?: string;
+            }[];
+        };
         /** UpdateStatementRequest */
         UpdateStatementRequest: {
             /** Format: date */
@@ -748,6 +1393,11 @@ export interface components {
              *     frontend não fixar 'BRL' ao decidir quando mostrar a moeda de uma conta.
              */
             primary_currency: string;
+            /**
+             * @description Sem credenciais da Pluggy configuradas (PLUGGY_CLIENT_ID/SECRET), o
+             *     frontend esconde o fluxo de conexão bancária inteiro.
+             */
+            banking_enabled: boolean;
         };
     };
     responses: {
@@ -980,6 +1630,219 @@ export interface operations {
                     };
                 };
             };
+        };
+    };
+    "bankConnection.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Array of `BankConnectionResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BankConnectionResource"][];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
+    "bankConnection.store": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoreBankConnectionRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            connection: components["schemas"]["BankConnectionResource"];
+                            provider_accounts: components["schemas"]["ProviderAccountResource"][];
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "bankConnection.destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connection ID */
+                connection: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "bankConnection.connectToken": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConnectTokenRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            connect_token: string;
+                            item_id: string;
+                        } | {
+                            connect_token: string;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "bankConnection.linkAccounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connection ID */
+                connection: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkAccountsRequest"];
+            };
+        };
+        responses: {
+            /** @description `BankConnectionResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BankConnectionResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "bankConnection.reconnected": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connection ID */
+                connection: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconnectedRequest"];
+            };
+        };
+        responses: {
+            /** @description `BankConnectionResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BankConnectionResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "connection_item_mismatch";
+                        message: string;
+                    };
+                };
+            };
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "bankConnection.sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The connection ID */
+                connection: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            queued: boolean;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
         };
     };
     "card.index": {
@@ -1429,6 +2292,206 @@ export interface operations {
             422: components["responses"]["ValidationException"];
         };
     };
+    "importBatch.index": {
+        parameters: {
+            query?: {
+                account_id?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Array of `ImportBatchResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ImportBatchResource"][];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "importBatch.store": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["StoreImportBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description `ImportPreviewResource` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ImportPreviewResource"] & Record<string, never>;
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "importBatch.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The batch ID */
+                batch: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `ImportPreviewResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ImportPreviewResource"] & Record<string, never>;
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "importBatch.destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The batch ID */
+                batch: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "import_batch_not_pending";
+                        message: string;
+                    };
+                };
+            };
+        };
+    };
+    "importBatch.confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The batch ID */
+                batch: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConfirmImportBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description `ImportBatchResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ImportBatchResource"] & Record<string, never>;
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "import_batch_not_pending";
+                        message: string;
+                    };
+                };
+            };
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "importBatch.revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The batch ID */
+                batch: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `ImportBatchResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ImportBatchResource"] & Record<string, never>;
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "import_batch_not_revertible";
+                        message: string;
+                    };
+                };
+            };
+        };
+    };
     "installmentPlan.update": {
         parameters: {
             query?: never;
@@ -1597,6 +2660,224 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "rule.reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderRulesRequest"];
+            };
+        };
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "rule.preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description `RulePreviewResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RulePreviewResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "rule.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Array of `RuleResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleResource"][];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
+    "rule.store": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoreRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description `RuleResource` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "rule.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The rule ID */
+                rule: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `RuleResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "rule.destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The rule ID */
+                rule: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "rule.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The rule ID */
+                rule: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["UpdateRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description `RuleResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "rule.apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The rule ID */
+                rule: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ApplyRuleRequest"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            queued: boolean;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
             422: components["responses"]["ValidationException"];
         };
     };

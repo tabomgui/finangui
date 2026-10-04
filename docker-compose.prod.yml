@@ -53,7 +53,10 @@ services:
 
   worker:
     <<: *backend
-    command: php artisan queue:work --tries=3 --sleep=3
+    # --timeout acima do maior $timeout de job (ApplyRuleRetroactively: 600s) e
+    # abaixo de DB_QUEUE_RETRY_AFTER (backend/.env.production.example), senão
+    # outro worker pega o mesmo job de novo antes do primeiro terminar.
+    command: php artisan queue:work --tries=3 --sleep=3 --timeout=600
     depends_on:
       db:
         condition: service_healthy

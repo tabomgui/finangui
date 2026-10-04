@@ -1,8 +1,13 @@
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Transaction } from '@/api/types'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { TransactionRow } from './transaction-row'
+
+vi.mock('@/api/queries/rules', () => ({
+  useRules: () => ({ data: [] }),
+}))
 
 const transaction = (overrides: Partial<Transaction>): Transaction => ({
   id: 1,
@@ -22,6 +27,7 @@ const transaction = (overrides: Partial<Transaction>): Transaction => ({
   status: 'posted',
   source: 'manual',
   categorized_by: null,
+  categorization: null,
   is_ignored: false,
   transfer_id: null,
   statement_id: null,
@@ -32,7 +38,9 @@ const transaction = (overrides: Partial<Transaction>): Transaction => ({
 function renderRow(transaction: Transaction) {
   return render(
     <MemoryRouter>
-      <TransactionRow transaction={transaction} />
+      <TooltipProvider>
+        <TransactionRow transaction={transaction} />
+      </TooltipProvider>
     </MemoryRouter>,
   )
 }
@@ -71,5 +79,27 @@ describe('TransactionRow', () => {
     )
 
     expect(screen.getByText(/3\/10/)).toBeInTheDocument()
+  })
+
+  it('mostra o ícone de origem da categoria quando não é manual', () => {
+    renderRow(
+      transaction({
+        category: { id: 1, parent_id: null, name: 'Mercado', icon: null, color: null, is_transfer: false, is_transfer_effective: false },
+        categorization: { source: 'history' },
+      }),
+    )
+
+    expect(screen.getByLabelText('Categorizada pelo histórico')).toBeInTheDocument()
+  })
+
+  it('não mostra ícone de origem para categorização manual', () => {
+    renderRow(
+      transaction({
+        category: { id: 1, parent_id: null, name: 'Mercado', icon: null, color: null, is_transfer: false, is_transfer_effective: false },
+        categorization: { source: 'manual' },
+      }),
+    )
+
+    expect(screen.queryByLabelText(/Categorizada|Categoria informada/)).not.toBeInTheDocument()
   })
 })

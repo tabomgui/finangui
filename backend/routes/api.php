@@ -4,15 +4,19 @@ use App\Http\Controllers\Api\V1\AccountController;
 use App\Http\Controllers\Api\V1\Auth\AuthStatusController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\SessionController;
+use App\Http\Controllers\Api\V1\BankConnectionController;
 use App\Http\Controllers\Api\V1\CardController;
 use App\Http\Controllers\Api\V1\CardStatementController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\ImportBatchController;
 use App\Http\Controllers\Api\V1\InstallmentPlanController;
 use App\Http\Controllers\Api\V1\MeController;
+use App\Http\Controllers\Api\V1\RuleController;
 use App\Http\Controllers\Api\V1\TagController;
 use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Controllers\Api\V1\TransferController;
+use App\Http\Middleware\EnsureBankingEnabled;
 use App\Http\Middleware\EnsureRegistrationAllowed;
 use Illuminate\Support\Facades\Route;
 
@@ -54,5 +58,49 @@ Route::prefix('v1')->group(function () {
         Route::post('card-statements/{statement}/payments', [CardStatementController::class, 'pay'])->whereNumber('statement');
         Route::patch('installment-plans/{plan}', [InstallmentPlanController::class, 'update'])->whereNumber('plan');
         Route::post('installment-plans/{plan}/cancel', [InstallmentPlanController::class, 'cancel'])->whereNumber('plan');
+
+        // rules/order e rules/preview antes de rules/{rule}, por clareza (o
+        // whereNumber já evita a colisão com esses literais).
+        Route::put('rules/order', [RuleController::class, 'reorder']);
+        // Prefixo próprio no throttle: sem ele, a chave do limite genérico
+        // (throttle:max,min) é só o id do usuário — toda rota autenticada
+        // sem prefixo compartilharia o mesmo contador, e martelar uma
+        // derrubaria as outras bem antes do seu próprio limite.
+        Route::post('rules/preview', [RuleController::class, 'preview'])->middleware('throttle:60,1,rules-preview');
+        Route::get('rules', [RuleController::class, 'index']);
+        Route::post('rules', [RuleController::class, 'store']);
+        Route::get('rules/{rule}', [RuleController::class, 'show'])->whereNumber('rule');
+        Route::patch('rules/{rule}', [RuleController::class, 'update'])->whereNumber('rule');
+        Route::delete('rules/{rule}', [RuleController::class, 'destroy'])->whereNumber('rule');
+        Route::post('rules/{rule}/apply', [RuleController::class, 'apply'])->whereNumber('rule');
+
+        Route::get('import-batches', [ImportBatchController::class, 'index']);
+        Route::post('import-batches', [ImportBatchController::class, 'store'])->middleware('throttle:20,1,import-batches-store');
+        Route::get('import-batches/{batch}', [ImportBatchController::class, 'show'])->whereNumber('batch');
+        Route::post('import-batches/{batch}/confirm', [ImportBatchController::class, 'confirm'])->whereNumber('batch');
+        Route::delete('import-batches/{batch}', [ImportBatchController::class, 'destroy'])->whereNumber('batch');
+        Route::post('import-batches/{batch}/revert', [ImportBatchController::class, 'revert'])->whereNumber('batch');
+
+        // index e destroy ficam fora do EnsureBankingEnabled: listar
+        // conexões já existentes e desconectar (que só limpa o lado local,
+        // ver DisconnectConnection) continuam funcionando mesmo sem o
+        // provedor configurado.
+        Route::get('bank-connections', [BankConnectionController::class, 'index']);
+        Route::delete('bank-connections/{connection}', [BankConnectionController::class, 'destroy'])->whereNumber('connection');
+
+        // EnsureBankingEnabled antes de qualquer FormRequest: sem provedor
+        // configurado, a rota responde 409 banking_disabled mesmo que o
+        // corpo não passasse a validação de campos.
+        Route::middleware(EnsureBankingEnabled::class)->group(function () {
+            // connect-token antes de {connection}, por clareza (não há
+            // colisão de verbo/profundidade entre os dois, mas mantém o
+            // agrupamento das rotas literais perto do topo, como em rules/
+            // e import-batches/).
+            Route::post('bank-connections/connect-token', [BankConnectionController::class, 'connectToken'])->middleware('throttle:10,1,bank-connect-token');
+            Route::post('bank-connections', [BankConnectionController::class, 'store'])->middleware('throttle:10,1,bank-connect');
+            Route::post('bank-connections/{connection}/link-accounts', [BankConnectionController::class, 'linkAccounts'])->whereNumber('connection')->middleware('throttle:20,1,bank-link');
+            Route::post('bank-connections/{connection}/reconnected', [BankConnectionController::class, 'reconnected'])->whereNumber('connection');
+            Route::post('bank-connections/{connection}/sync', [BankConnectionController::class, 'sync'])->whereNumber('connection')->middleware('throttle:6,1,bank-sync');
+        });
     });
 });

@@ -1,0 +1,11 @@
+Extrato de conta corrente
+Período: 01/03/2026 a 31/03/2026
+Agência: 0001 Conta: 987654-3
+
+Data Lançamento,Data Contábil,Título,Descrição,Entrada(R$),Saída(R$),Saldo do Dia(R$)
+05/03/2026,05/03/2026,PIX ENVIADO,"Padaria Exemplo, Centro",0.00,15.90,984.10
+05/03/2026,05/03/2026,PIX ENVIADO,"Padaria Exemplo, Centro",0.00,15.90,968.20
+06/03/2026,06/03/2026,PIX RECEBIDO,PIX RECEBIDO,500.00,0.00,1468.20
+07/03/2026,07/03/2026,AJUSTE,AJUSTE,0.00,0.00,1468.20
+xx/03/2026,07/03/2026,ERRO,ERRO,10.00,0.00,1478.20
+,Saldo do dia

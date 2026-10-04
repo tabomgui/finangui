@@ -4,7 +4,8 @@ import { StrictMode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Account, Transaction } from '@/api/types'
+import { queryKeys } from '@/api/query-keys'
+import type { Account, Category, Transaction } from '@/api/types'
 import { TransactionFormPage } from './transaction-form-page'
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
@@ -56,6 +57,9 @@ function account(overrides: Partial<Account> = {}): Account {
     color: null,
     icon: null,
     is_archived: false,
+    connection_id: null,
+    provider_balance: null,
+    provider_synced_at: null,
     ...overrides,
   }
 }
@@ -79,6 +83,7 @@ function transaction(overrides: Partial<Transaction> = {}): Transaction {
     status: 'posted',
     source: 'manual',
     categorized_by: null,
+    categorization: null,
     is_ignored: false,
     transfer_id: null,
     statement_id: null,
@@ -87,8 +92,27 @@ function transaction(overrides: Partial<Transaction> = {}): Transaction {
   }
 }
 
-function renderPage(initialEntries: NonNullable<Parameters<typeof MemoryRouter>[0]['initialEntries']> = ['/transacoes/1']) {
+function category(overrides: Partial<Category> = {}): Category {
+  return {
+    id: 1,
+    parent_id: null,
+    name: 'Mercado',
+    kind: 'expense',
+    icon: null,
+    color: null,
+    is_transfer: false,
+    is_transfer_effective: false,
+    is_archived: false,
+    ...overrides,
+  }
+}
+
+function renderPage(
+  initialEntries: NonNullable<Parameters<typeof MemoryRouter>[0]['initialEntries']> = ['/transacoes/1'],
+  options: { categories?: Category[] } = {},
+) {
   const client = new QueryClient()
+  if (options.categories) client.setQueryData(queryKeys.categories(true), options.categories)
 
   return render(
     <StrictMode>
@@ -99,6 +123,7 @@ function renderPage(initialEntries: NonNullable<Parameters<typeof MemoryRouter>[
             <Route path="/transacoes/:id" element={<TransactionFormPage />} />
             <Route path="/transacoes" element={<div>Lista</div>} />
             <Route path="/cartoes/5" element={<div>Cartão</div>} />
+            <Route path="/regras/nova" element={<div>Nova regra</div>} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>
@@ -189,5 +214,53 @@ describe('TransactionFormPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))
 
     await waitFor(() => expect(screen.getByText('Cartão')).toBeInTheDocument())
+  })
+
+  it('botão "Criar regra a partir deste lançamento" leva para /regras/nova com o id', () => {
+    mockTransaction = transaction()
+    mockTransactionError = false
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Criar regra a partir deste lançamento' }))
+
+    expect(screen.getByText('Nova regra')).toBeInTheDocument()
+  })
+
+  it('salvar com troca de categoria mostra o toast com ação de criar regra', async () => {
+    mockTransaction = transaction({
+      category_id: 1,
+      category: { id: 1, parent_id: null, name: 'Mercado', icon: null, color: null, is_transfer: false, is_transfer_effective: false },
+    })
+    mockTransactionError = false
+
+    renderPage(['/transacoes/1'], {
+      categories: [category({ id: 1, name: 'Mercado' }), category({ id: 2, name: 'Transporte' })],
+    })
+
+    fireEvent.click(screen.getByLabelText('Categoria'))
+    fireEvent.click(screen.getByText('Transporte'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(updateTransactionMutateAsync).toHaveBeenCalled())
+    expect(toast.success).toHaveBeenCalledWith(
+      'Lançamento atualizado.',
+      expect.objectContaining({
+        description: 'Aplicar esta categoria a lançamentos parecidos?',
+        action: expect.objectContaining({ label: 'Criar regra' }),
+      }),
+    )
+  })
+
+  it('salvar sem troca de categoria mostra o toast simples', async () => {
+    mockTransaction = transaction({ category_id: null })
+    mockTransactionError = false
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(updateTransactionMutateAsync).toHaveBeenCalled())
+    expect(toast.success).toHaveBeenCalledWith('Lançamento atualizado.')
   })
 })

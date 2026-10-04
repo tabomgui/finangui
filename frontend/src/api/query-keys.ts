@@ -34,13 +34,26 @@ export const queryKeys = {
   cardStatements: (cardId: number) => ['card-statements', 'list', cardId] as const,
   statementPreview: (cardId: number, date: string) => ['card-statements', 'preview', cardId, date] as const,
   installmentPlans: (cardId: number) => ['installment-plans', cardId] as const,
+  rules: () => ['rules'] as const,
+  rule: (id: number) => ['rules', id] as const,
+  rulePreview: (body: unknown) => ['rule-preview', body] as const,
+  importBatches: (accountId?: number) => ['import-batches', 'list', { accountId }] as const,
+  importBatch: (id: number) => ['import-batches', 'detail', id] as const,
+  bankConnections: () => ['bank-connections'] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {
   return Promise.all(roots.map((root) => queryClient.invalidateQueries({ queryKey: [root] })))
 }
 
-/** Transações, transferências, contas e limites/faturas de cartão mexem em saldos, listas e no resumo do mês. */
+/**
+ * Transações, transferências, contas e limites/faturas de cartão mexem em saldos, listas e no resumo
+ * do mês; lançamentos novos também mudam o que uma prévia de regra ainda não salva mostraria.
+ * `bank-connections` entra porque `pending_accounts`/`unlinked_accounts` do recurso da conexão
+ * (e a sugestão de vínculo de cada um) dependem do estado das contas manuais: editar, arquivar
+ * ou excluir uma conta pelo `AccountRow` (usado tanto na lista de contas manuais quanto dentro
+ * do `ConnectionCard`, ver `features/banking/connection-card.tsx`) precisa refletir ali também.
+ */
 export function invalidateLedger(queryClient: QueryClient) {
   return invalidate(queryClient, [
     'transactions',
@@ -50,14 +63,46 @@ export function invalidateLedger(queryClient: QueryClient) {
     'cards',
     'card-statements',
     'installment-plans',
+    'rule-preview',
+    'bank-connections',
   ])
 }
 
-/** Nome, ícone e flag de transferência aparecem nas transações, nas top categorias do mês e nos parcelamentos. */
+/**
+ * Nome, ícone e flag de transferência aparecem nas transações, nas top categorias do mês e nos
+ * parcelamentos; a prévia de uma regra ainda não salva também mostra nome de categoria por
+ * `category_id` (ver `rule-preview-card.tsx`), então renomear/arquivar uma categoria a deixaria
+ * desatualizada sem essa invalidação.
+ */
 export function invalidateCategories(queryClient: QueryClient) {
-  return invalidate(queryClient, ['categories', 'transactions', 'dashboard', 'installment-plans'])
+  return invalidate(queryClient, ['categories', 'transactions', 'dashboard', 'installment-plans', 'rule-preview'])
 }
 
+/** Mesma razão de `invalidateCategories` para `rule-preview`: a prévia também mostra nome de tag. */
 export function invalidateTags(queryClient: QueryClient) {
-  return invalidate(queryClient, ['tags', 'transactions'])
+  return invalidate(queryClient, ['tags', 'transactions', 'rule-preview'])
+}
+
+export function invalidateRules(queryClient: QueryClient) {
+  return invalidate(queryClient, ['rules'])
+}
+
+export function invalidateImports(queryClient: QueryClient) {
+  return invalidate(queryClient, ['import-batches'])
+}
+
+/**
+ * Só a listagem de lotes (`import-batches/list/...`), nunca o detalhe de um lote específico.
+ * Confirmar e cancelar navegam para fora da prévia na sequência; invalidar o detalhe ali
+ * reativaria a query da página que está de saída (ela ainda está montada por um instante) — ao
+ * confirmar, isso gastaria uma requisição que o usuário nunca vê; ao cancelar, o lote já não
+ * existe mais e essa requisição voltaria 404. Essas duas mutações tratam o detalhe no próprio
+ * hook (`removeQueries`), não aqui.
+ */
+export function invalidateImportBatchesList(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({ queryKey: ['import-batches', 'list'] })
+}
+
+export function invalidateBankConnections(queryClient: QueryClient) {
+  return invalidate(queryClient, ['bank-connections'])
 }

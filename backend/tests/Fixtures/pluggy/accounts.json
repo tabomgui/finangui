@@ -1,0 +1,40 @@
+{
+  "results": [
+    {
+      "id": "00000000-0000-0000-0000-0000000000a1",
+      "type": "BANK",
+      "subtype": "CHECKING_ACCOUNT",
+      "name": "Conta Corrente",
+      "marketingName": "Conta Fácil",
+      "number": "0001/1234567-8",
+      "balance": 1234.56,
+      "currencyCode": "BRL"
+    },
+    {
+      "id": "00000000-0000-0000-0000-0000000000a2",
+      "type": "BANK",
+      "subtype": "SAVINGS_ACCOUNT",
+      "name": "Conta Poupança",
+      "marketingName": "Poupança",
+      "number": "0001/7654321-0",
+      "balance": 500.00,
+      "currencyCode": "BRL"
+    },
+    {
+      "id": "00000000-0000-0000-0000-0000000000a3",
+      "type": "CREDIT",
+      "subtype": "CREDIT_CARD",
+      "name": "Cartão Platinum",
+      "marketingName": "Platinum",
+      "number": "**** 1234",
+      "balance": 987.65,
+      "currencyCode": "BRL",
+      "creditData": {
+        "creditLimit": 5000.00,
+        "availableCreditLimit": 4012.35,
+        "balanceCloseDate": "2026-09-25",
+        "balanceDueDate": "2026-10-05"
+      }
+    }
+  ]
+}

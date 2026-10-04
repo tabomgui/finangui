@@ -34,6 +34,7 @@ services:
     command: sh -c "composer install --no-interaction && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000"
     environment:
       PHP_CLI_SERVER_WORKERS: "4"
+      DB_QUEUE_RETRY_AFTER: 660
     ports:
       - "${BACKEND_PORT:-8001}:8000"
     healthcheck:
@@ -45,7 +46,9 @@ services:
 
   worker:
     <<: *backend
-    command: php artisan queue:listen --tries=3
+    command: php artisan queue:listen --tries=3 --timeout=600
+    environment:
+      DB_QUEUE_RETRY_AFTER: 660
     depends_on:
       db:
         condition: service_healthy
@@ -55,6 +58,8 @@ services:
   scheduler:
     <<: *backend
     command: php artisan schedule:work
+    environment:
+      DB_QUEUE_RETRY_AFTER: 660
     depends_on:
       db:
         condition: service_healthy
