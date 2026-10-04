@@ -44,6 +44,7 @@ export const queryKeys = {
   recurrences: () => ['recurrences'] as const,
   recurrence: (id: number) => ['recurrences', 'detail', id] as const,
   overdueOccurrences: () => ['recurrences', 'overdue'] as const,
+  budgets: (month: string) => ['budgets', month] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {
@@ -62,6 +63,8 @@ function invalidate(queryClient: QueryClient, roots: string[]) {
  * lista e a contagem de pendências sem precisar invalidar as duas chaves à parte.
  * `recurrences` entra porque criar/editar/excluir uma recorrência e confirmar/pular uma ocorrência
  * mudam as previstas, que aparecem nas transações, no saldo previsto e nas pendências do Início.
+ * `budgets`, `goals` e `reports` entram porque gasto, progresso de meta e os relatórios dependem
+ * de lançamentos: qualquer mutação que já chame isto mantém essas telas em dia também.
  */
 export function invalidateLedger(queryClient: QueryClient) {
   return invalidate(queryClient, [
@@ -76,6 +79,9 @@ export function invalidateLedger(queryClient: QueryClient) {
     'rule-preview',
     'bank-connections',
     'recurrences',
+    'budgets',
+    'goals',
+    'reports',
   ])
 }
 

@@ -66,6 +66,10 @@ export type RuleBody = {
 export type Recurrence = Schemas['RecurrenceResource']
 export type Frequency = Schemas['Frequency']
 
+export type MonthBudget = Schemas['MonthBudgetResource']
+export type BudgetItem = MonthBudget['items'][number]
+export type BudgetSource = BudgetItem['source']
+
 export type BankConnection = Schemas['BankConnectionResource']
 export type ConnectionStatus = Schemas['ConnectionStatus']
 export type BankProviderName = Schemas['BankProviderName']
