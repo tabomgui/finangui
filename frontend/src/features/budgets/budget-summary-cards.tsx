@@ -2,13 +2,9 @@ import { PiggyBank, Scale, Wallet } from 'lucide-react'
 import { MoneyText } from '@/components/shared/money-text'
 import { Card } from '@/components/ui/card'
 
-type BudgetSummaryCardsProps = { budgeted: number; spent: number; currency: string }
+type BudgetSummaryCardsProps = { budgeted: number; spent: number; remaining: number; currency: string }
 
-export function BudgetSummaryCards({ budgeted, spent, currency }: BudgetSummaryCardsProps) {
-  // Simples subtração de dois totais já prontos da API, só para exibição (como o percentual da
-  // barra em `categoryShares`) — nenhuma regra nova: o backend não devolve "restante" agregado
-  // porque ele já é trivial a partir de `totals.budgeted` e `totals.spent`.
-  const remaining = budgeted - spent
+export function BudgetSummaryCards({ budgeted, spent, remaining, currency }: BudgetSummaryCardsProps) {
   const items = [
     { label: 'Orçado', icon: PiggyBank, value: <MoneyText cents={budgeted} currency={currency} colored={false} /> },
     { label: 'Gasto', icon: Wallet, value: <MoneyText cents={spent} currency={currency} colored={false} /> },

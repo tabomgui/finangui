@@ -71,7 +71,12 @@ export function BudgetsPage() {
           </div>
         ) : (
           <div className={cn('space-y-4 transition-opacity', isPlaceholderData && 'opacity-60')} aria-busy={isPlaceholderData}>
-            <BudgetSummaryCards budgeted={data.totals.budgeted} spent={data.totals.spent} currency={data.currency} />
+            <BudgetSummaryCards
+              budgeted={data.totals.budgeted}
+              spent={data.totals.spent}
+              remaining={data.totals.remaining}
+              currency={data.currency}
+            />
 
             {data.items.length === 0 ? (
               <Card className="rounded-2xl shadow-card">

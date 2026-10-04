@@ -40,7 +40,7 @@ function monthBudget(overrides: Partial<MonthBudget> = {}): MonthBudget {
         percent: 33,
       },
     ],
-    totals: { budgeted: 150000, spent: 50000 },
+    totals: { budgeted: 150000, spent: 50000, remaining: 100000 },
     unbudgeted_spent: 2000,
     ...overrides,
   }
@@ -85,7 +85,7 @@ describe('BudgetsPage', () => {
   })
 
   it('sem categorias orçadas mostra o estado vazio', () => {
-    budgetState = { data: monthBudget({ items: [], totals: { budgeted: 0, spent: 0 } }), isPending: false, isError: false, isPlaceholderData: false }
+    budgetState = { data: monthBudget({ items: [], totals: { budgeted: 0, spent: 0, remaining: 0 } }), isPending: false, isError: false, isPlaceholderData: false }
     renderPage()
 
     expect(screen.getByText('Nenhuma categoria orçada este mês')).toBeInTheDocument()

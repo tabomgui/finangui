@@ -36,7 +36,7 @@ function categoryComparison(overrides: Partial<CategoryComparison> = {}): Catego
   return {
     currency: 'BRL',
     items: [{ category_id: 1, name: 'Moradia', icon: null, color: null, a: 100000, b: 150000, delta: 50000, delta_percent: 50 }],
-    totals: { a: 100000, b: 150000 },
+    totals: { a: 100000, b: 150000, delta: 50000, delta_percent: 50 },
     ...overrides,
   }
 }
@@ -85,7 +85,7 @@ describe('ReportsPage', () => {
 
   it('mostra o estado vazio quando não há movimentação no período', () => {
     evolutionState = { data: monthlyEvolution({ months: [{ month: '2026-10', income: 0, expense: 0, net: 0 }] }), isPending: false, isError: false, isPlaceholderData: false }
-    comparisonState = { data: categoryComparison({ items: [], totals: { a: 0, b: 0 } }), isPending: false, isError: false, isPlaceholderData: false }
+    comparisonState = { data: categoryComparison({ items: [], totals: { a: 0, b: 0, delta: 0 } }), isPending: false, isError: false, isPlaceholderData: false }
     renderPage()
 
     expect(screen.getByText('Nenhuma movimentação no período')).toBeInTheDocument()

@@ -1123,6 +1123,8 @@ export interface components {
             totals: {
                 a: number;
                 b: number;
+                delta: number;
+                delta_percent?: number;
             };
         };
         /**
@@ -1441,6 +1443,7 @@ export interface components {
             totals: {
                 budgeted: number;
                 spent: number;
+                remaining: number;
             };
             unbudgeted_spent: number;
         };
@@ -1459,13 +1462,19 @@ export interface components {
         /** NotificationResource */
         NotificationResource: {
             id: string;
-            type: string;
+            type: components["schemas"]["NotificationType"];
             title: string;
             body: string;
             url: string;
             read_at: string | null;
             created_at: string;
         };
+        /**
+         * NotificationType
+         * @description Discrimina as notificações em `data.type` — ver App\Domain\Notifications\Notifications e App\Http\Resources\NotificationResource.
+         * @enum {string}
+         */
+        NotificationType: "statement_due" | "budget_exceeded" | "occurrence_overdue" | "needs_reauth";
         /** PayStatementRequest */
         PayStatementRequest: {
             from_account_id: number;

@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 
 type CategoryComparisonTableProps = {
   items: CategoryComparisonItem[]
-  totals: { a: number; b: number }
+  totals: { a: number; b: number; delta: number; delta_percent?: number }
   currency: string
   labelA: string
   labelB: string
@@ -34,10 +34,10 @@ function DeltaCell({ delta, deltaPercent, currency }: { delta: number; deltaPerc
 }
 
 /**
- * Comparação de despesa por categoria entre dois períodos. `delta`/`delta_percent` já vêm prontos
- * da API (`b − a`); a cor da diferença só espelha o sentido já calculado (sem nova regra): gasto
- * maior no período B é ruim (tom de despesa), menor é bom (tom de receita) — o mesmo subtotal do
- * rodapé é só a soma dos dois totais já prontos (`BudgetSummaryCards` faz a mesma coisa).
+ * Comparação de despesa por categoria entre dois períodos. `delta`/`delta_percent`, tanto por item
+ * quanto nos totais, já vêm prontos da API (`b − a`); a cor da diferença só espelha o sentido já
+ * calculado (sem nova regra): gasto maior no período B é ruim (tom de despesa), menor é bom (tom
+ * de receita).
  */
 export function CategoryComparisonTable({ items, totals, currency, labelA, labelB }: CategoryComparisonTableProps) {
   return (
@@ -79,7 +79,7 @@ export function CategoryComparisonTable({ items, totals, currency, labelA, label
             <td className="px-3 py-2 text-right tabular-nums">
               <MoneyText cents={totals.b} currency={currency} colored={false} />
             </td>
-            <DeltaCell delta={totals.b - totals.a} currency={currency} />
+            <DeltaCell delta={totals.delta} deltaPercent={totals.delta_percent} currency={currency} />
           </tr>
         </tfoot>
       </table>

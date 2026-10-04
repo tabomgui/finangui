@@ -9,10 +9,12 @@ const items: CategoryComparisonItem[] = [
   { category_id: null, name: 'Sem categoria', icon: null, color: null, a: 0, b: 5000, delta: 5000 },
 ]
 
+const totals = { a: 120000, b: 165000, delta: 45000, delta_percent: 38 }
+
 describe('CategoryComparisonTable', () => {
   it('lista as categorias com os dois períodos e a diferença', () => {
     render(
-      <CategoryComparisonTable items={items} totals={{ a: 120000, b: 165000 }} currency="BRL" labelA="Set/2026" labelB="Out/2026" />,
+      <CategoryComparisonTable items={items} totals={totals} currency="BRL" labelA="Set/2026" labelB="Out/2026" />,
     )
 
     expect(screen.getByText('Moradia')).toBeInTheDocument()
@@ -24,7 +26,7 @@ describe('CategoryComparisonTable', () => {
 
   it('mostra o percentual de variação só quando a API devolve', () => {
     render(
-      <CategoryComparisonTable items={items} totals={{ a: 120000, b: 165000 }} currency="BRL" labelA="Set/2026" labelB="Out/2026" />,
+      <CategoryComparisonTable items={items} totals={totals} currency="BRL" labelA="Set/2026" labelB="Out/2026" />,
     )
 
     expect(screen.getByText('(+50%)')).toBeInTheDocument()
@@ -34,7 +36,7 @@ describe('CategoryComparisonTable', () => {
 
   it('colore a diferença por aumento (pior) ou queda (melhor) de gasto', () => {
     render(
-      <CategoryComparisonTable items={items} totals={{ a: 120000, b: 165000 }} currency="BRL" labelA="Set/2026" labelB="Out/2026" />,
+      <CategoryComparisonTable items={items} totals={totals} currency="BRL" labelA="Set/2026" labelB="Out/2026" />,
     )
 
     const increaseRow = screen.getByText('Moradia').closest('tr')
@@ -43,11 +45,27 @@ describe('CategoryComparisonTable', () => {
     expect(decreaseRow?.querySelector('.text-income')).not.toBeNull()
   })
 
-  it('mostra a linha de total', () => {
+  it('mostra a linha de total com o delta e o percentual já prontos da API', () => {
     render(
-      <CategoryComparisonTable items={items} totals={{ a: 120000, b: 165000 }} currency="BRL" labelA="Set/2026" labelB="Out/2026" />,
+      <CategoryComparisonTable items={items} totals={totals} currency="BRL" labelA="Set/2026" labelB="Out/2026" />,
     )
 
-    expect(screen.getByText('Total')).toBeInTheDocument()
+    const totalRow = screen.getByText('Total').closest('tr')
+    expect(totalRow).not.toBeNull()
+    expect(totalRow?.textContent).toMatch(/\+38%/)
+  })
+
+  it('omite o percentual do total quando a API não devolve', () => {
+    render(
+      <CategoryComparisonTable
+        items={items}
+        totals={{ a: 0, b: 5000, delta: 5000 }}
+        currency="BRL"
+        labelA="Set/2026"
+        labelB="Out/2026"
+      />,
+    )
+
+    expect(screen.getByText('Total').closest('tr')?.textContent).not.toMatch(/%/)
   })
 })
