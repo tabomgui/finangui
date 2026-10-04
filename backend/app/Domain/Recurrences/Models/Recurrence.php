@@ -20,8 +20,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * Modelo de um lançamento que se repete (aluguel, salário, assinatura).
  * GenerateOccurrences cria as transações previstas a partir dele; editar os
- * campos simples do modelo propaga para as previstas futuras (fora do escopo
- * desta tarefa).
+ * campos simples do modelo (App\Domain\Recurrences\Actions\UpdateRecurrence)
+ * propaga para as previstas futuras.
  *
  * @property Money $amount
  * @property Direction $direction
@@ -31,6 +31,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable $starts_on
  * @property CarbonImmutable|null $ends_on
  * @property CarbonImmutable|null $generated_until
+ * @property-read string|null $next_date carregado por App\Domain\Recurrences\Queries\RecurrenceList (withMin)
  */
 class Recurrence extends Model
 {

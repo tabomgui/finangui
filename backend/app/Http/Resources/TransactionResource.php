@@ -76,6 +76,12 @@ final class TransactionResource extends JsonResource
                 'number' => (int) $this->installment_number,
                 'total' => $this->installmentPlan->installments,
             ] : null,
+            // Omitida quando não há recorrência (não só null): ver CLAUDE.md
+            // sobre Readable<T> do openapi-fetch.
+            'recurrence' => $this->when($this->relationLoaded('recurrence') && $this->recurrence !== null, fn () => [
+                'id' => $this->recurrence->id,
+                'description' => $this->recurrence->description,
+            ]),
             'deletes_only_this_leg' => $this->when($this->deletesOnlyThisLeg !== null, fn (): bool => (bool) $this->deletesOnlyThisLeg),
         ];
     }
