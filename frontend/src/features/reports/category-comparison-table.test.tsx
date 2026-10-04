@@ -12,6 +12,16 @@ const items: CategoryComparisonItem[] = [
 const totals = { a: 120000, b: 165000, delta: 45000, delta_percent: 38 }
 
 describe('CategoryComparisonTable', () => {
+  it('não força rolagem horizontal nem duplica o cartão (sem min-w/shadow-card próprios)', () => {
+    render(
+      <CategoryComparisonTable items={items} totals={totals} currency="BRL" labelA="Set/2026" labelB="Out/2026" />,
+    )
+
+    expect(screen.getByRole('table')).toHaveClass('table-fixed')
+    expect(screen.getByRole('table').className).not.toMatch(/min-w/)
+    expect(screen.getByRole('table').parentElement?.className).not.toMatch(/shadow-card/)
+  })
+
   it('lista as categorias com os dois períodos e a diferença', () => {
     render(
       <CategoryComparisonTable items={items} totals={totals} currency="BRL" labelA="Set/2026" labelB="Out/2026" />,
