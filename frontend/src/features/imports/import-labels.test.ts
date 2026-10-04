@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ImportPreview } from '@/api/types'
-import { BATCH_STATUS_LABELS, BATCH_STATUS_VARIANT, FORMAT_OPTIONS, OUTCOME_LABELS, summaryText } from './import-labels'
+import { BATCH_STATUS_LABELS, BATCH_STATUS_VARIANT, FORMAT_OPTIONS, matchText, OUTCOME_LABELS, summaryText } from './import-labels'
 
 function summary(overrides: Partial<ImportPreview['summary']>): ImportPreview['summary'] {
   return {
@@ -27,6 +27,20 @@ describe('OUTCOME_LABELS', () => {
       adopt: 'Casa com lançamento manual',
       swap_pending: 'Confirma pendente',
     })
+  })
+})
+
+describe('matchText', () => {
+  it('avisa quando o match é com uma ocorrência prevista de recorrência', () => {
+    expect(matchText({ id: 1, date: '2026-09-28', description: 'Netflix', kind: 'recurrence' })).toBe(
+      'Casa com lançamento previsto',
+    )
+  })
+
+  it('mostra descrição e data quando o match é com um lançamento manual', () => {
+    expect(matchText({ id: 1, date: '2026-09-28', description: 'Mercado', kind: 'manual' })).toBe(
+      'Casa com: Mercado em 28/09/2026',
+    )
   })
 })
 

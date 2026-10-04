@@ -6,6 +6,7 @@ import {
   Landmark,
   List,
   Plus,
+  Repeat,
   Settings,
   Shapes,
   Tags,
@@ -30,5 +31,6 @@ export const moreNav: NavItem[] = [
   { to: '/categorias', label: 'Categorias', icon: Shapes },
   { to: '/tags', label: 'Tags', icon: Tags },
   { to: '/regras', label: 'Regras', icon: Wand2 },
+  { to: '/recorrencias', label: 'Recorrências', icon: Repeat },
   { to: '/configuracoes', label: 'Configurações', icon: Settings },
 ]

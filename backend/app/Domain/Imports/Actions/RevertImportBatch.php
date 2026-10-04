@@ -10,6 +10,8 @@ use App\Domain\Imports\Enums\ImportBatchStatus;
 use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Errors\ImportBatchNotRevertible;
 use App\Domain\Imports\Models\ImportBatch;
+use App\Domain\Transactions\Enums\TransactionSource;
+use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use App\Domain\Transfers\Actions\UnlinkTransfer;
 use Carbon\CarbonImmutable;
@@ -152,6 +154,21 @@ final class RevertImportBatch
                         // válida em vez de gravar uma FK inexistente.
                         $this->assignStatement->handle($transaction);
                     }
+                }
+
+                if ($transaction->status === TransactionStatus::Projected
+                    && $transaction->source === TransactionSource::Recurrence
+                    && $transaction->recurrence_id === null) {
+                    // A recorrência que a adotou foi excluída depois da
+                    // importação (DeleteRecurrence zera recurrence_id em vez
+                    // de excluir uma ocorrência que já virou lançamento de
+                    // verdade — ela não sabe que o revert ainda vai desfazer
+                    // isso). Restaurar deixaria uma prevista órfã, sem
+                    // recorrência nenhuma para confirmá-la ou regenerá-la:
+                    // exclui em vez de salvar.
+                    $transaction->delete();
+
+                    continue;
                 }
 
                 $transaction->save();

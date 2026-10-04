@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Domain\Accounts\Actions\DeleteAccount;
 use App\Domain\Accounts\Actions\UpdateAccount;
-use App\Domain\Accounts\Errors\AccountHasTransactions;
 use App\Domain\Accounts\Models\Account;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Accounts\StoreAccountRequest;
@@ -47,13 +47,9 @@ final class AccountController extends Controller
         return AccountResource::make($this->withBalance($updateAccount->handle($account, $request->validated())));
     }
 
-    public function destroy(Account $account): Response
+    public function destroy(Account $account, DeleteAccount $deleteAccount): Response
     {
-        if ($account->transactions()->exists()) {
-            throw new AccountHasTransactions;
-        }
-
-        $account->delete();
+        $deleteAccount->handle($account);
 
         return response()->noContent();
     }

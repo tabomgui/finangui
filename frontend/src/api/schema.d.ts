@@ -420,6 +420,86 @@ export interface paths {
         patch: operations["me.update"];
         trace?: never;
     };
+    "/recurrences/overdue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["recurrence.overdue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/recurrences/occurrences/{transaction}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["recurrence.confirm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/recurrences/occurrences/{transaction}/skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["recurrence.skip"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/recurrences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["recurrences.index"];
+        put?: never;
+        post: operations["recurrences.store"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/recurrences/{recurrence}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["recurrences.show"];
+        put?: never;
+        post?: never;
+        delete: operations["recurrences.destroy"];
+        options?: never;
+        head?: never;
+        patch: operations["recurrence.update"];
+        trace?: never;
+    };
     "/auth/register": {
         parameters: {
             query?: never;
@@ -882,6 +962,12 @@ export interface components {
         ConfirmImportBatchRequest: {
             skip_lines?: number[];
         };
+        /** ConfirmOccurrenceRequest */
+        ConfirmOccurrenceRequest: {
+            amount?: number;
+            /** Format: date */
+            date?: string;
+        };
         /** ConnectTokenRequest */
         ConnectTokenRequest: {
             connection_id?: number;
@@ -896,6 +982,11 @@ export interface components {
          * @enum {string}
          */
         Direction: "in" | "out";
+        /**
+         * Frequency
+         * @enum {string}
+         */
+        Frequency: "weekly" | "monthly" | "yearly";
         /** ImportBatchResource */
         ImportBatchResource: {
             id: number;
@@ -1022,6 +1113,8 @@ export interface components {
                     id: number;
                     date: string;
                     description: string;
+                    /** @enum {string} */
+                    kind: "manual" | "recurrence";
                 };
                 suggested_category_id?: number;
             }[];
@@ -1178,6 +1271,39 @@ export interface components {
         ReconnectedRequest: {
             item_id: string;
         };
+        /** RecurrenceResource */
+        RecurrenceResource: {
+            id: number;
+            account_id: number;
+            account?: {
+                id: number;
+                name: string;
+            };
+            category_id: number | null;
+            category?: {
+                id: number;
+                name: string;
+                icon: string | null;
+                color: string | null;
+            };
+            description: string;
+            amount: number;
+            direction: components["schemas"]["Direction"];
+            frequency: components["schemas"]["Frequency"];
+            interval: number;
+            day_of_month: number | null;
+            starts_on: string;
+            ends_on: string | null;
+            generated_until: string | null;
+            match_pattern: string | null;
+            is_active: boolean;
+            /**
+             * @description Presente quando o controller carregou a próxima data (RecurrenceList::all(),
+             *     ou show/store/update via Recurrence::loadNextDate()); chave omitida em vez
+             *     de null nos outros casos — ver CLAUDE.md sobre Readable<T> do openapi-fetch.
+             */
+            next_date?: string;
+        };
         /** RegisterRequest */
         RegisterRequest: {
             name: string;
@@ -1297,6 +1423,35 @@ export interface components {
              * @enum {string}
              */
             format?: "inter" | "nubank" | "nubank_card" | "c6" | "ofx";
+        };
+        /**
+         * StoreRecurrenceRequest
+         * @description Com transaction_id, os campos do modelo (account_id, description, amount,
+         *     direction, starts_on) ficam opcionais: a action lê os que faltarem da
+         *     transação. frequency continua sempre obrigatório — não existe como
+         *     derivar isso de um lançamento único.
+         */
+        StoreRecurrenceRequest: {
+            transaction_id?: number | null;
+            account_id?: number;
+            category_id?: number | null;
+            description?: string;
+            amount?: number;
+            direction?: components["schemas"]["Direction"];
+            frequency: components["schemas"]["Frequency"];
+            interval?: number;
+            day_of_month?: number | null;
+            /** Format: date */
+            starts_on?: string;
+            /** Format: date */
+            ends_on?: string | null;
+            /**
+             * @description /\pL/u exige ao menos uma letra: um padrão só com dígitos ou
+             *     pontuação normaliza para vazio em TextNormalizer::key() e
+             *     casaria qualquer descrição (ver RecurrenceMatcher).
+             */
+            match_pattern?: string | null;
+            is_active?: boolean;
         };
         /** StoreRuleRequest */
         StoreRuleRequest: {
@@ -1420,6 +1575,14 @@ export interface components {
                 number: number;
                 total: number;
             } | null;
+            /**
+             * @description Omitida quando não há recorrência (não só null): ver CLAUDE.md
+             *     sobre Readable<T> do openapi-fetch.
+             */
+            recurrence?: {
+                id: number;
+                description: string;
+            };
             deletes_only_this_leg?: boolean;
         };
         /**
@@ -1486,6 +1649,29 @@ export interface components {
             password?: string;
             current_password?: string | null;
             password_confirmation?: string;
+        };
+        /**
+         * UpdateRecurrenceRequest
+         * @description Atualização parcial (PATCH). direction é imutável depois de criada:
+         *     prohibited em vez de simplesmente fora das regras, para o cliente receber
+         *     422 em vez de a chave ser silenciosamente ignorada.
+         */
+        UpdateRecurrenceRequest: {
+            direction?: string;
+            account_id?: number;
+            category_id?: number | null;
+            description?: string;
+            amount?: number;
+            frequency?: components["schemas"]["Frequency"];
+            interval?: number;
+            day_of_month?: number | null;
+            /** Format: date */
+            starts_on?: string;
+            /** Format: date */
+            ends_on?: string | null;
+            /** @description /\pL/u exige ao menos uma letra: ver StoreRecurrenceRequest. */
+            match_pattern?: string | null;
+            is_active?: boolean;
         };
         /** UpdateRuleRequest */
         UpdateRuleRequest: {
@@ -2453,11 +2639,12 @@ export interface operations {
                             net: number;
                             top_categories: {
                                 category_id: number | null;
-                                name: string | "Sem categoria";
+                                name: string;
                                 icon: string | null;
                                 color: string | null;
                                 amount: number;
                             }[];
+                            projected_balance?: number;
                         };
                     };
                 };
@@ -2781,6 +2968,253 @@ export interface operations {
                 };
             };
             401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "recurrence.overdue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Array of `TransactionResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: (components["schemas"]["TransactionResource"] & Record<string, never>)[];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
+    "recurrence.confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The transaction ID */
+                transaction: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConfirmOccurrenceRequest"];
+            };
+        };
+        responses: {
+            /** @description `TransactionResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TransactionResource"] & Record<string, never>;
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "occurrence_not_projected";
+                        message: string;
+                    };
+                };
+            };
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "recurrence.skip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The transaction ID */
+                transaction: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "occurrence_not_projected";
+                        message: string;
+                    };
+                };
+            };
+        };
+    };
+    "recurrences.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Array of `RecurrenceResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RecurrenceResource"][];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
+    "recurrences.store": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoreRecurrenceRequest"];
+            };
+        };
+        responses: {
+            /** @description `RecurrenceResource` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RecurrenceResource"] & Record<string, never>;
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "recurrence_transaction_ineligible";
+                        message: string;
+                    };
+                };
+            };
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "recurrences.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The recurrence ID */
+                recurrence: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `RecurrenceResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RecurrenceResource"] & Record<string, never>;
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "recurrences.destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The recurrence ID */
+                recurrence: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "recurrence.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The recurrence ID */
+                recurrence: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["UpdateRecurrenceRequest"];
+            };
+        };
+        responses: {
+            /** @description `RecurrenceResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RecurrenceResource"] & Record<string, never>;
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
             422: components["responses"]["ValidationException"];
         };
     };

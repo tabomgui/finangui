@@ -5,8 +5,11 @@ namespace App\Domain\Reports\Queries;
 use App\Domain\Accounts\Enums\AccountType;
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Categories\Models\Category;
+use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 final class MonthSummary
 {
@@ -23,6 +26,7 @@ final class MonthSummary
      *     expense: int,
      *     net: int,
      *     top_categories: list<array{category_id: int|null, name: string, icon: string|null, color: string|null, amount: int}>,
+     *     projected_balance?: int,
      * }
      */
     public function for(CarbonImmutable $month): array
@@ -31,7 +35,8 @@ final class MonthSummary
         $end = $month->endOfMonth()->toDateString();
 
         $now = CarbonImmutable::now();
-        $asOf = $month->isSameMonth($now) ? $now : $month->endOfMonth();
+        $isCurrentMonth = $month->isSameMonth($now);
+        $asOf = $isCurrentMonth ? $now : $month->endOfMonth();
 
         /** @var string $primaryCurrency */
         $primaryCurrency = config('finangui.primary_currency');
@@ -69,7 +74,48 @@ final class MonthSummary
             'expense' => $expense,
             'net' => $income - $expense,
             'top_categories' => $this->topCategories($start, $end, $primaryCurrency),
-        ];
+        ] + $this->projectedBalance($month, $now, $end, $primaryCurrency, $isCurrentMonth ? null : $accounts);
+    }
+
+    /**
+     * Saldo previsto de fim de mês: só para o mês atual e o próximo (chave
+     * ausente em meses passados e a partir de dois meses no futuro, nunca
+     * null — ver CLAUDE.md). Parte do saldo lançado (moeda principal, contas
+     * não arquivadas) até o fim do mês consultado — não "de hoje", para não
+     * perder uma transação já lançada com data futura dentro do mês — e
+     * soma, com sinal, as previstas e pendentes não ignoradas de contas da
+     * moeda principal com data até o fim do mês consultado — inclui
+     * previstas já atrasadas e parcelas projetadas.
+     *
+     * @param  Collection<int, Account>|null  $accountsAsOfEnd  contas já carregadas com withBalance() até o fim deste mesmo mês (ver for()); null força uma consulta nova.
+     * @return array{projected_balance: int}|array{}
+     */
+    private function projectedBalance(CarbonImmutable $month, CarbonImmutable $now, string $end, string $primaryCurrency, ?Collection $accountsAsOfEnd): array
+    {
+        $startOfMonth = $month->startOfMonth();
+        $currentMonthStart = $now->startOfMonth();
+
+        if ($startOfMonth->lessThan($currentMonthStart) || $startOfMonth->greaterThan($currentMonthStart->addMonthNoOverflow())) {
+            return [];
+        }
+
+        $accounts = $accountsAsOfEnd ?? Account::query()
+            ->withBalance(CarbonImmutable::parse($end))
+            ->where('is_archived', false)
+            ->get();
+
+        $endBalance = (int) $accounts->where('currency', $primaryCurrency)->sum(fn (Account $a) => $a->balance()->cents);
+
+        $pending = Transaction::query()
+            ->whereIn('transactions.status', [TransactionStatus::Projected->value, TransactionStatus::Pending->value])
+            ->where('transactions.is_ignored', false)
+            ->where('transactions.date', '<=', $end)
+            ->whereHas('account', fn (Builder $q) => $q->where('is_archived', false)->where('currency', $primaryCurrency))
+            ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0) AS net")
+            ->toBase()
+            ->first();
+
+        return ['projected_balance' => $endBalance + (int) ($pending->net ?? 0)];
     }
 
     /**

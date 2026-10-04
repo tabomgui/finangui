@@ -7,7 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { formatDate } from '@/lib/date'
 import { formatSignedMoney } from '@/lib/money'
 import { cn } from '@/lib/utils'
-import { OUTCOME_LABELS } from './import-labels'
+import { matchText, OUTCOME_LABELS } from './import-labels'
 
 type ImportPreviewRowProps = {
   row: ImportRow
@@ -55,11 +55,7 @@ export const ImportPreviewRow = memo(function ImportPreviewRow({
             </span>
           )}
         </p>
-        {row.match && (
-          <p className="truncate text-xs text-muted-foreground">
-            Casa com: {row.match.description} em {formatDate(row.match.date)}
-          </p>
-        )}
+        {row.match && <p className="truncate text-xs text-muted-foreground">{matchText(row.match)}</p>}
       </div>
       <MoneyText cents={row.amount} direction={row.direction} className="shrink-0 font-semibold" />
     </label>

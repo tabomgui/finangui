@@ -1,4 +1,5 @@
-import type { ImportBatchStatus, ImportFormat, ImportOutcome, ImportPreview } from '@/api/types'
+import type { ImportBatchStatus, ImportFormat, ImportOutcome, ImportPreview, ImportPreviewRow } from '@/api/types'
+import { formatDate } from '@/lib/date'
 
 export const OUTCOME_LABELS: Record<ImportOutcome, string> = {
   new: 'Nova',
@@ -63,6 +64,21 @@ const SUMMARY_WORDS: Record<SummaryKey, [string, string]> = {
   failed: ['inválida', 'inválidas'],
   transfers_linked: ['transferência ligada', 'transferências ligadas'],
   transfer_suggestions: ['sugestão de transferência', 'sugestões de transferência'],
+}
+
+type RowMatch = NonNullable<ImportPreviewRow['match']>
+
+/**
+ * Texto da linha "casa com" na prévia: lançamento previsto de recorrência
+ * tem um aviso fixo (sem repetir descrição/data — já aparecem na própria
+ * linha, e o que importa aqui é avisar que não é um lançamento manual comum).
+ */
+export function matchText(match: RowMatch): string {
+  if (match.kind === 'recurrence') {
+    return 'Casa com lançamento previsto'
+  }
+
+  return `Casa com: ${match.description} em ${formatDate(match.date)}`
 }
 
 /** Texto curto do resultado de um lote: só os totais diferentes de zero, concatenados por " · ". */

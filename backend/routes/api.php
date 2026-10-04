@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\ImportBatchController;
 use App\Http\Controllers\Api\V1\InstallmentPlanController;
 use App\Http\Controllers\Api\V1\MeController;
+use App\Http\Controllers\Api\V1\RecurrenceController;
 use App\Http\Controllers\Api\V1\RuleController;
 use App\Http\Controllers\Api\V1\TagController;
 use App\Http\Controllers\Api\V1\TransactionController;
@@ -86,6 +87,15 @@ Route::prefix('v1')->group(function () {
         Route::patch('rules/{rule}', [RuleController::class, 'update'])->whereNumber('rule');
         Route::delete('rules/{rule}', [RuleController::class, 'destroy'])->whereNumber('rule');
         Route::post('rules/{rule}/apply', [RuleController::class, 'apply'])->whereNumber('rule');
+
+        // overdue e occurrences/* antes de {recurrence}, pela mesma razão de
+        // rules/order e rules/preview acima: são literais que colidiriam com
+        // o parâmetro de rota.
+        Route::get('recurrences/overdue', [RecurrenceController::class, 'overdue']);
+        Route::post('recurrences/occurrences/{transaction}/confirm', [RecurrenceController::class, 'confirm'])->whereNumber('transaction');
+        Route::post('recurrences/occurrences/{transaction}/skip', [RecurrenceController::class, 'skip'])->whereNumber('transaction');
+        Route::apiResource('recurrences', RecurrenceController::class)->except('update')->where(['recurrence' => '[0-9]+']);
+        Route::patch('recurrences/{recurrence}', [RecurrenceController::class, 'update'])->whereNumber('recurrence');
 
         Route::get('import-batches', [ImportBatchController::class, 'index']);
         Route::post('import-batches', [ImportBatchController::class, 'store'])->middleware('throttle:20,1,import-batches-store');

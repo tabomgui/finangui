@@ -15,7 +15,7 @@ final readonly class ImportPreviewData
     /**
      * @param  list<RowDecision>  $decisions
      * @param  array<int, int>  $suggestedCategoryIds  categoria sugerida por número de linha
-     * @param  array<int, array{id: int, date: string, description: string}>  $matches  por id de transação
+     * @param  array<int, array{id: int, date: string, description: string, kind: 'manual'|'recurrence'}>  $matches  por id de transação
      */
     public function __construct(
         public ImportBatch $batch,

@@ -74,16 +74,32 @@ class CardStatement extends Model
      * são perna de transferência) numa única query. Considera todo status,
      * inclusive parcelas projetadas; ignora transações marcadas como ignoradas.
      *
+     * Numa fatura ainda aberta (closing_date > hoje), uma ocorrência de
+     * recorrência ainda não confirmada (Transaction::isUnconfirmedOccurrence())
+     * entra no total como previsão do ciclo em andamento; numa fatura já
+     * fechada, ela sai do total — é só um palpite que nunca devia ter ficado
+     * numa fatura que já não aceita mais lançamento novo (RecurrenceMatcher a
+     * teria confirmado, ou ConfirmOccurrence/SkipOccurrence a teria resolvido),
+     * mas o filtro fica aqui por segurança, para o total de uma fatura fechada
+     * nunca incluir algo que ainda pode ser editado ou pulado.
+     *
      * @param  Builder<CardStatement>  $query
      */
     public function scopeWithTotals(Builder $query): void
     {
+        $today = CarbonImmutable::today()->toDateString();
+
         $linked = fn () => Transaction::query()->withoutGlobalScopes()
             ->whereColumn('transactions.statement_id', 'card_statements.id')
             ->where('transactions.is_ignored', false);
 
+        $charges = $linked()->where(function (Builder $q) use ($today) {
+            $q->where('card_statements.closing_date', '>', $today)
+                ->orWhereNot(fn (Builder $q2) => $q2->unconfirmedOccurrences());
+        });
+
         $query->select('card_statements.*')->addSelect([
-            'charges_net' => $linked()->selectRaw(
+            'charges_net' => $charges->selectRaw(
                 "COALESCE(SUM(CASE WHEN transactions.direction = 'out' THEN transactions.amount WHEN transactions.transfer_id IS NULL THEN -transactions.amount ELSE 0 END), 0)"
             ),
             'payments_sum' => $linked()

@@ -2,6 +2,8 @@
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Categories\Models\Category;
+use App\Domain\Recurrences\Models\Recurrence;
+use App\Domain\Rules\Models\Rule;
 use App\Domain\Tags\Models\Tag;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
@@ -44,6 +46,133 @@ it('cria transação sem categoria com categorized_by nulo', function () {
     $this->postJson('/api/v1/transactions', [
         'account_id' => $account->id, 'date' => '2026-10-01', 'amount' => 100, 'direction' => 'in', 'description' => 'Pix',
     ])->assertCreated()->assertJsonPath('data.categorized_by', null);
+});
+
+it('confirma lançamento previsto de recorrência compatível em vez de criar outro', function () {
+    actingAsUser();
+    $account = Account::factory()->create();
+    $category = Category::factory()->create();
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $account->id, 'category_id' => $category->id,
+        'description' => 'Aluguel', 'amount' => 150000, 'direction' => 'out',
+    ]);
+    $prevista = Transaction::factory()->create([
+        'account_id' => $account->id, 'status' => 'projected', 'source' => 'recurrence',
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-03-05', 'date' => '2026-03-05',
+        'description' => 'Aluguel', 'original_description' => 'Aluguel',
+        'amount' => 150000, 'direction' => 'out', 'category_id' => $category->id, 'categorized_by' => 'manual',
+    ]);
+
+    $response = $this->postJson('/api/v1/transactions', [
+        'account_id' => $account->id, 'date' => '2026-03-07', 'amount' => 150000, 'direction' => 'out', 'description' => 'Aluguel',
+    ])->assertCreated();
+
+    expect(Transaction::count())->toBe(1)
+        ->and($response->json('data.id'))->toBe($prevista->id)
+        ->and($response->json('data.status'))->toBe('posted')
+        ->and($response->json('data.date'))->toBe('2026-03-07')
+        ->and($response->json('data.category.id'))->toBe($category->id)
+        ->and($response->json('data.recurrence.id'))->toBe($recurrence->id)
+        ->and($response->json('data.recurrence.description'))->toBe('Aluguel');
+
+    $prevista->refresh();
+    expect($prevista->recurrence_id)->toBe($recurrence->id)
+        ->and($prevista->recurrence_date->toDateString())->toBe('2026-03-05')
+        ->and($prevista->status->value)->toBe('posted');
+});
+
+it('sobrescreve a categoria da prevista quando o formulário informa uma, mas mantém a existente quando não informa', function () {
+    actingAsUser();
+    $account = Account::factory()->create();
+    $originalCategory = Category::factory()->create();
+    $newCategory = Category::factory()->create();
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $account->id, 'description' => 'Aluguel', 'amount' => 150000, 'direction' => 'out',
+    ]);
+    Transaction::factory()->create([
+        'account_id' => $account->id, 'status' => 'projected', 'source' => 'recurrence',
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-03-05', 'date' => '2026-03-05',
+        'description' => 'Aluguel', 'original_description' => 'Aluguel',
+        'amount' => 150000, 'direction' => 'out', 'category_id' => $originalCategory->id, 'categorized_by' => 'manual',
+    ]);
+
+    $this->postJson('/api/v1/transactions', [
+        'account_id' => $account->id, 'date' => '2026-03-07', 'amount' => 150000, 'direction' => 'out',
+        'description' => 'Aluguel', 'category_id' => $newCategory->id,
+    ])->assertCreated()->assertJsonPath('data.category.id', $newCategory->id);
+});
+
+it('sem prevista compatível, cria uma transação normalmente e deixa a prevista intacta', function () {
+    actingAsUser();
+    $account = Account::factory()->create();
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $account->id, 'description' => 'Aluguel', 'amount' => 150000, 'direction' => 'out',
+    ]);
+    Transaction::factory()->create([
+        'account_id' => $account->id, 'status' => 'projected', 'source' => 'recurrence',
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-03-05', 'date' => '2026-03-05',
+        'description' => 'Aluguel', 'original_description' => 'Aluguel',
+        'amount' => 150000, 'direction' => 'out',
+    ]);
+
+    $this->postJson('/api/v1/transactions', [
+        'account_id' => $account->id, 'date' => '2026-05-01', 'amount' => 150000, 'direction' => 'out', 'description' => 'Aluguel',
+    ])->assertCreated()->assertJsonMissingPath('data.recurrence');
+
+    expect(Transaction::count())->toBe(2)
+        ->and(Transaction::where('status', 'projected')->count())->toBe(1);
+});
+
+it('lançamento ignorado nunca confirma uma prevista: cria uma transação nova e deixa a prevista livre', function () {
+    actingAsUser();
+    $account = Account::factory()->create();
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $account->id, 'description' => 'Aluguel', 'amount' => 150000, 'direction' => 'out',
+    ]);
+    $prevista = Transaction::factory()->create([
+        'account_id' => $account->id, 'status' => 'projected', 'source' => 'recurrence',
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-03-05', 'date' => '2026-03-05',
+        'description' => 'Aluguel', 'original_description' => 'Aluguel',
+        'amount' => 150000, 'direction' => 'out',
+    ]);
+
+    $this->postJson('/api/v1/transactions', [
+        'account_id' => $account->id, 'date' => '2026-03-07', 'amount' => 150000, 'direction' => 'out',
+        'description' => 'Aluguel', 'is_ignored' => true,
+    ])->assertCreated()->assertJsonMissingPath('data.recurrence');
+
+    expect(Transaction::count())->toBe(2);
+
+    $prevista->refresh();
+    expect($prevista->status->value)->toBe('projected')
+        ->and($prevista->recurrence_id)->toBe($recurrence->id);
+});
+
+it('confirma a prevista sem categoria classificando automaticamente (regra/histórico) quando o formulário também não informa uma', function () {
+    actingAsUser();
+    $account = Account::factory()->create();
+    $category = Category::factory()->create();
+    Rule::factory()->create([
+        'conditions' => [['field' => 'description', 'op' => 'contains', 'value' => 'aluguel']],
+        'actions' => [['type' => 'set_category', 'category_id' => $category->id]],
+    ]);
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $account->id, 'description' => 'Aluguel', 'amount' => 150000, 'direction' => 'out',
+    ]);
+    $prevista = Transaction::factory()->create([
+        'account_id' => $account->id, 'status' => 'projected', 'source' => 'recurrence',
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-03-05', 'date' => '2026-03-05',
+        'description' => 'Aluguel', 'original_description' => 'Aluguel',
+        'amount' => 150000, 'direction' => 'out', 'category_id' => null, 'categorized_by' => null,
+    ]);
+
+    $response = $this->postJson('/api/v1/transactions', [
+        'account_id' => $account->id, 'date' => '2026-03-07', 'amount' => 150000, 'direction' => 'out', 'description' => 'Aluguel',
+    ])->assertCreated();
+
+    expect($response->json('data.id'))->toBe($prevista->id)
+        ->and($response->json('data.category.id'))->toBe($category->id)
+        ->and($response->json('data.categorized_by'))->toStartWith('rule:');
 });
 
 it('valida valor, sentido e propriedade da conta', function () {
@@ -191,6 +320,21 @@ it('exclui transação', function () {
     $this->deleteJson("/api/v1/transactions/{$tx->id}")->assertNoContent();
 
     expect(Transaction::count())->toBe(0);
+});
+
+it('excluir uma ocorrência de recorrência ainda não confirmada passa por SkipOccurrence: grava a data pulada', function () {
+    $user = actingAsUser();
+    $account = Account::factory()->create(['user_id' => $user->id]);
+    $recurrence = Recurrence::factory()->create(['account_id' => $account->id, 'user_id' => $user->id]);
+    $occurrence = Transaction::factory()->create([
+        'account_id' => $account->id, 'status' => 'projected', 'source' => 'recurrence',
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-03-05', 'date' => '2026-03-05',
+    ]);
+
+    $this->deleteJson("/api/v1/transactions/{$occurrence->id}")->assertNoContent();
+
+    expect(Transaction::query()->whereKey($occurrence->id)->exists())->toBeFalse()
+        ->and($recurrence->refresh()->skipped_dates)->toBe(['2026-03-05']);
 });
 
 it('retorna 404 para transação de outro usuário', function () {

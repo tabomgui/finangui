@@ -71,4 +71,15 @@ describe('transactionSubtitle', () => {
   it('sem conta carregada: só a primeira parte', () => {
     expect(transactionSubtitle(transaction({}))).toBe('Sem categoria')
   })
+
+  it('recorrente', () => {
+    expect(
+      transactionSubtitle(
+        transaction({
+          account: { id: 1, name: 'Inter', type: 'checking', color: null, icon: null },
+          recurrence: { id: 1, description: 'Aluguel' },
+        }),
+      ),
+    ).toBe('Sem categoria · Inter · Recorrente')
+  })
 })

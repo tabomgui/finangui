@@ -7,6 +7,7 @@ use App\Domain\Imports\Data\ParsedRow;
 use App\Domain\Imports\Data\RowDecision;
 use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Enums\RowOutcome;
+use App\Domain\Recurrences\Support\RecurrenceMatcher;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Enums\TransactionStatus;
@@ -32,6 +33,7 @@ final class IngestionPlanner
 {
     public function __construct(
         private readonly DedupMatchers $matchers = new DedupMatchers,
+        private readonly RecurrenceMatcher $recurrenceMatcher = new RecurrenceMatcher,
     ) {}
 
     /**
@@ -52,6 +54,7 @@ final class IngestionPlanner
         $byExternalId = $candidates->whereNotNull('external_id')->keyBy('external_id');
         $installmentPool = $candidates->whereNull('external_id')->whereNotNull('installment_plan_id')->values();
         $adoptionPool = $this->adoptionPool($candidates, $format);
+        $recurrencePool = $this->recurrencePool($candidates);
         $swapPool = $candidates->filter(
             fn (Transaction $t) => $t->external_id !== null && $this->isStillOpen($t)
         )->values();
@@ -106,6 +109,15 @@ final class IngestionPlanner
                 }
             }
 
+            $recurrenceMatch = $this->recurrenceMatcher->bestMatch($recurrencePool, $usedIds, $row->amount, $row->direction, $row->date, $row->description);
+
+            if ($recurrenceMatch !== null) {
+                $usedIds[$recurrenceMatch->id] = true;
+                $decisions[$index] = new RowDecision($row, RowOutcome::Adopt, $recurrenceMatch->id, $recurrenceMatch, matchedByRecurrence: true);
+
+                continue;
+            }
+
             $adopted = $this->matchers->matchAdoption($adoptionPool, $usedIds, $row);
 
             if ($adopted !== null) {
@@ -147,22 +159,26 @@ final class IngestionPlanner
     /**
      * Parcelas não são lançamentos manuais livres: têm seu próprio
      * casamento (replace_installment) e nunca entram aqui, mesmo sem
-     * external_id. Sem external_id, qualquer outro lançamento é candidato.
-     * Com external_id, só entra quando o lote é da sincronização bancária
-     * (Pluggy) e o lançamento já existente não veio do próprio banco —
-     * um lançamento manual, de CSV ou de OFX ainda não confirmado, com o
-     * seu próprio id sintético, que o banco agora está relatando com um id
-     * dele: mesmos limiares de valor/data/descrição de matchAdoption()
-     * (e matchCardPayment(), que usa o mesmo pool) decidem se de fato bate.
-     */
-    /**
+     * external_id. Uma prevista de recorrência também nunca entra aqui:
+     * RecurrenceMatcher (tentado antes, ver recurrencePool()) é o único
+     * caminho até ela — senão a tolerância de descrição genérica daqui
+     * (sem olhar match_pattern) poderia confirmá-la por trás da regra mais
+     * estrita que o usuário configurou. Sem external_id, qualquer outro
+     * lançamento é candidato. Com external_id, só entra quando o lote é da
+     * sincronização bancária (Pluggy) e o lançamento já existente não veio
+     * do próprio banco — um lançamento manual, de CSV ou de OFX ainda não
+     * confirmado, com o seu próprio id sintético, que o banco agora está
+     * relatando com um id dele: mesmos limiares de valor/data/descrição de
+     * matchAdoption() (e matchCardPayment(), que usa o mesmo pool) decidem
+     * se de fato bate.
+     *
      * @param  Collection<int, Transaction>  $candidates
      * @return Collection<int, Transaction>
      */
     private function adoptionPool(Collection $candidates, ?ImportFormat $format): Collection
     {
         return $candidates->filter(function (Transaction $t) use ($format) {
-            if ($t->installment_plan_id !== null) {
+            if ($t->installment_plan_id !== null || $t->isUnconfirmedOccurrence()) {
                 return false;
             }
 
@@ -172,6 +188,19 @@ final class IngestionPlanner
 
             return $format === ImportFormat::Pluggy && $t->source !== TransactionSource::Pluggy;
         })->values();
+    }
+
+    /**
+     * Previstas de recorrência ainda não confirmadas: candidatas ao
+     * casamento de RecurrenceMatcher::bestMatch(), tentado antes da adoção
+     * de manuais comuns (ver matchAdoption() acima).
+     *
+     * @param  Collection<int, Transaction>  $candidates
+     * @return Collection<int, Transaction>
+     */
+    private function recurrencePool(Collection $candidates): Collection
+    {
+        return $candidates->filter(fn (Transaction $t) => $t->isUnconfirmedOccurrence())->values();
     }
 
     /**
@@ -233,7 +262,7 @@ final class IngestionPlanner
             ->get();
 
         $candidates = $windowed->concat($installmentCandidates)->unique('id')->values();
-        $candidates->load(['installmentPlan', 'tags']);
+        $candidates->load(['installmentPlan', 'tags', 'recurrence']);
 
         return $candidates;
     }

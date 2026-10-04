@@ -5,6 +5,7 @@ use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Imports\Enums\ImportBatchStatus;
 use App\Domain\Imports\Models\ImportBatch;
+use App\Domain\Recurrences\Models\Recurrence;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
@@ -519,10 +520,38 @@ it('a prévia mostra match e suggested_category_id, e outros desfechos além de 
     $response->assertJsonPath('data.rows.1.outcome', 'adopt');
     $response->assertJsonPath('data.rows.1.match.id', $manual->id);
     $response->assertJsonPath('data.rows.1.match.description', 'Padaria Exemplo');
+    $response->assertJsonPath('data.rows.1.match.kind', 'manual');
     $response->assertJsonMissingPath('data.rows.1.suggested_category_id');
 
     $response->assertJsonPath('data.summary.new', 1);
     $response->assertJsonPath('data.summary.adopt', 1);
+});
+
+it('a prévia marca kind "recurrence" quando a linha casa com uma prevista de recorrência', function () {
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $this->account->id, 'user_id' => $this->user->id,
+        'description' => 'Aluguel', 'amount' => 150000, 'direction' => Direction::Out,
+    ]);
+    $occurrence = Transaction::factory()->create([
+        'account_id' => $this->account->id, 'user_id' => $this->user->id,
+        'status' => 'projected', 'source' => 'recurrence',
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-03-05', 'date' => '2026-03-05',
+        'description' => 'Aluguel', 'original_description' => 'Aluguel',
+        'amount' => 150000, 'direction' => Direction::Out,
+    ]);
+
+    $content = "Data,Valor,Identificador,Descrição\n"
+        .'07/03/2026,-1500.00,,Aluguel'."\n";
+
+    $response = $this->postJson('/api/v1/import-batches', [
+        'account_id' => $this->account->id,
+        'file' => nubankFile($content, 'aluguel.csv'),
+    ]);
+
+    $response->assertCreated();
+    $response->assertJsonPath('data.rows.0.outcome', 'adopt');
+    $response->assertJsonPath('data.rows.0.match.id', $occurrence->id);
+    $response->assertJsonPath('data.rows.0.match.kind', 'recurrence');
 });
 
 it('prévia concorda com a confirmação para duas parcelas novas da mesma compra no mesmo arquivo', function () {

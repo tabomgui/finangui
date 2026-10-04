@@ -1,5 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Info, LoaderCircle } from 'lucide-react'
+import { useEffect } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { Field } from '@/components/form/field'
 import { AccountSelect } from '@/components/shared/account-select'
@@ -10,8 +11,10 @@ import { TagPicker } from '@/components/shared/tag-picker'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { FREQUENCY_LABELS } from '@/features/recurrences/recurrence-labels'
 import { applyFieldErrors, notifyError } from '@/lib/form-errors'
 import { CardEntryFields } from './card-entry-fields'
 import { entrySchema, type EntryValues } from './form-values'
@@ -55,7 +58,17 @@ export function EntryForm({
   const { errors, isSubmitting } = form.formState
   const direction = useWatch({ control: form.control, name: 'direction' })
   const installments = useWatch({ control: form.control, name: 'installments' })
+  const repeat = useWatch({ control: form.control, name: 'repeat' })
   const locked = lockedReason !== undefined
+  // "Repetir" só faz sentido numa criação sem parcelas: parcelamento já tem seu próprio
+  // calendário de ocorrências futuras.
+  const canRepeat = mode === 'create' && installments === 1
+
+  // Virar parcelado (ou deixar de ser criação, embora isso não aconteça em runtime) desliga
+  // "Repetir" sozinho, para um valor antigo não sobreviver escondido até o envio.
+  useEffect(() => {
+    if (!canRepeat) form.setValue('repeat', false)
+  }, [canRepeat, form])
 
   const submit = form.handleSubmit(async (values) => {
     try {
@@ -165,6 +178,49 @@ export function EntryForm({
           <Field label="Notas" htmlFor="entry-notes" error={errors.notes?.message}>
             <Textarea id="entry-notes" rows={3} {...form.register('notes')} />
           </Field>
+          {canRepeat && (
+            <div className="space-y-3 rounded-xl border border-border p-3">
+              <Controller
+                control={form.control}
+                name="repeat"
+                render={({ field }) => (
+                  <div className="flex items-start gap-3">
+                    <Switch id="entry-repeat" checked={field.value} onCheckedChange={field.onChange} />
+                    <div className="space-y-1">
+                      <label htmlFor="entry-repeat" className="text-sm font-medium">
+                        Repetir
+                      </label>
+                      <p className="text-xs text-muted-foreground">Cria uma recorrência a partir deste lançamento.</p>
+                    </div>
+                  </div>
+                )}
+              />
+              {repeat && (
+                <Field label="Frequência" htmlFor="entry-repeat-frequency">
+                  {(control) => (
+                    <Controller
+                      control={form.control}
+                      name="repeat_frequency"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger {...control} className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(FREQUENCY_LABELS).map(([value, label]) => (
+                              <SelectItem key={value} value={value}>
+                                {label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  )}
+                </Field>
+              )}
+            </div>
+          )}
           {showIgnore && (
             <Controller
               control={form.control}

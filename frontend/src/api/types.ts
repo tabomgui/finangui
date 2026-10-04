@@ -63,6 +63,9 @@ export type RuleBody = {
   conditions: RuleConditionNodeInput[]
   actions: RuleActionInput[]
 }
+export type Recurrence = Schemas['RecurrenceResource']
+export type Frequency = Schemas['Frequency']
+
 export type BankConnection = Schemas['BankConnectionResource']
 export type ConnectionStatus = Schemas['ConnectionStatus']
 export type BankProviderName = Schemas['BankProviderName']

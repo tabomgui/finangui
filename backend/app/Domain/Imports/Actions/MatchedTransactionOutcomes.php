@@ -119,6 +119,12 @@ final class MatchedTransactionOutcomes
     /**
      * Lançamento manual que a linha do banco confirma: mantém categoria,
      * descrição, notas e tags; ganha external_id/source/status/original_description.
+     * Quando o alvo é uma prevista de recorrência ainda não confirmada
+     * (status projected, recurrence_id preenchido — ver
+     * App\Domain\Recurrences\Support\RecurrenceMatcher), também grava a
+     * data e o valor reais da linha (o que a prevista tinha era só uma
+     * projeção), recalcula a fatura se a data mudou de ciclo, e guarda os
+     * dois no undo — mantém recurrence_id/recurrence_date como estavam.
      *
      * @param  list<array{transaction_id: int, attributes: array<string, mixed>}>  $undo
      * @param  array<string, int>  $stats
@@ -126,13 +132,30 @@ final class MatchedTransactionOutcomes
     public function adopt(RowDecision $decision, ImportBatch $batch, array &$undo, array &$stats): void
     {
         $transaction = $decision->transaction ?? Transaction::query()->findOrFail($decision->transactionId);
+        $isRecurrenceOccurrence = $transaction->status === TransactionStatus::Projected && $transaction->recurrence_id !== null;
+        $previousStatementId = $transaction->statement_id;
 
-        $changed = UndoSnapshot::applyAndDiff($transaction, [
+        $attributes = [
             'external_id' => $decision->row->externalId,
             'source' => $batch->format->source(),
             'status' => $decision->row->status(),
             'original_description' => $decision->row->description,
-        ]);
+        ];
+
+        if ($isRecurrenceOccurrence) {
+            $attributes['date'] = CarbonImmutable::parse($decision->row->date);
+            $attributes['amount'] = Money::cents($decision->row->amount);
+        }
+
+        $changed = UndoSnapshot::applyAndDiff($transaction, $attributes);
+
+        if ($isRecurrenceOccurrence) {
+            $this->assignStatement->handle($transaction);
+
+            if ($transaction->statement_id !== $previousStatementId) {
+                $changed['statement_id'] = $previousStatementId;
+            }
+        }
 
         if ($changed !== []) {
             $undo[] = ['transaction_id' => $transaction->id, 'attributes' => $changed];

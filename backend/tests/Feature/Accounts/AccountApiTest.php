@@ -2,6 +2,8 @@
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Banking\Models\BankConnection;
+use App\Domain\Recurrences\Models\Recurrence;
+use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
 
 it('cria conta', function () {
@@ -81,6 +83,53 @@ it('atualiza e arquiva conta', function () {
         ->assertOk()
         ->assertJsonPath('data.name', 'Inter PJ')
         ->assertJsonPath('data.is_archived', true);
+});
+
+it('exclui conta cuja única "transação" é uma ocorrência de recorrência ainda não confirmada', function () {
+    $user = actingAsUser();
+    $account = Account::factory()->create(['user_id' => $user->id]);
+    $recurrence = Recurrence::factory()->create(['account_id' => $account->id, 'user_id' => $user->id]);
+    Transaction::factory()->create([
+        'account_id' => $account->id, 'status' => 'projected', 'source' => 'recurrence',
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-01-05',
+    ]);
+
+    $this->deleteJson("/api/v1/accounts/{$account->id}")->assertNoContent();
+
+    expect(Account::query()->whereKey($account->id)->exists())->toBeFalse()
+        ->and(Recurrence::query()->whereKey($recurrence->id)->exists())->toBeFalse()
+        ->and(Transaction::query()->count())->toBe(0);
+});
+
+it('409 ao excluir conta com uma ocorrência de recorrência já adotada por importação/banco', function () {
+    $user = actingAsUser();
+    $account = Account::factory()->create(['user_id' => $user->id]);
+    $recurrence = Recurrence::factory()->create(['account_id' => $account->id, 'user_id' => $user->id]);
+    Transaction::factory()->create([
+        'account_id' => $account->id, 'status' => 'projected', 'source' => 'pluggy', 'external_id' => 'ext-1',
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-01-05',
+    ]);
+
+    $this->deleteJson("/api/v1/accounts/{$account->id}")
+        ->assertStatus(409)->assertJsonPath('code', 'account_has_transactions');
+
+    expect(Account::query()->whereKey($account->id)->exists())->toBeTrue();
+});
+
+it('arquivar a conta pausa suas recorrências e exclui as ocorrências não confirmadas', function () {
+    $user = actingAsUser();
+    $account = Account::factory()->create(['user_id' => $user->id]);
+    $recurrence = Recurrence::factory()->create(['account_id' => $account->id, 'user_id' => $user->id, 'is_active' => true]);
+    Transaction::factory()->create([
+        'account_id' => $account->id, 'status' => 'projected', 'source' => 'recurrence',
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-01-05',
+    ]);
+
+    $this->patchJson("/api/v1/accounts/{$account->id}", ['is_archived' => true])
+        ->assertOk()->assertJsonPath('data.is_archived', true);
+
+    expect($recurrence->refresh()->is_active)->toBeFalse()
+        ->and(Transaction::query()->where('recurrence_id', $recurrence->id)->exists())->toBeFalse();
 });
 
 it('não permite trocar a moeda depois de criada', function () {

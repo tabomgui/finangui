@@ -7,6 +7,7 @@ use App\Domain\Imports\Data\RowDecision;
 use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Enums\RowOutcome;
 use App\Domain\Imports\Support\IngestionPlanner;
+use App\Domain\Recurrences\Models\Recurrence;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
@@ -38,6 +39,37 @@ function decisionFor(array $decisions, string $externalId): RowDecision
     }
 
     throw new RuntimeException("Nenhuma decisão para external_id {$externalId}");
+}
+
+/**
+ * Prevista de recorrência (status projected, recurrence_id preenchido),
+ * numa conta e descrição/valor dados, pronta para RecurrenceMatcher casar.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function recurrenceOccurrence(Account $account, array $overrides = []): Transaction
+{
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $account->id,
+        'user_id' => $account->user_id,
+        'description' => $overrides['description'] ?? 'Aluguel',
+        'amount' => $overrides['amount'] ?? 150000,
+        'direction' => $overrides['direction'] ?? Direction::Out,
+        'match_pattern' => $overrides['match_pattern'] ?? null,
+    ]);
+
+    return Transaction::factory()->create([
+        'account_id' => $account->id,
+        'user_id' => $account->user_id,
+        'status' => 'projected',
+        'source' => 'recurrence',
+        'recurrence_id' => $recurrence->id,
+        'recurrence_date' => $overrides['date'] ?? '2026-03-05',
+        'date' => $overrides['date'] ?? '2026-03-05',
+        'description' => $overrides['description'] ?? 'Aluguel',
+        'amount' => $overrides['amount'] ?? 150000,
+        'direction' => $overrides['direction'] ?? Direction::Out,
+    ]);
 }
 
 beforeEach(function () {
@@ -845,5 +877,80 @@ describe('transação projetada (pendente futura) não-parcela é tratada como p
         // não é tratada como parcela — mas o ponto deste teste é que a
         // parcela projetada não entra no swapPool por ter installment_plan_id.
         expect(decisionFor($decisions, 'new-id')->outcome)->toBe(RowOutcome::New);
+    });
+});
+
+describe('casamento com prevista de recorrência', function () {
+    it('adota a prevista quando o valor real difere até 10%', function () {
+        $prevista = recurrenceOccurrence($this->account, ['amount' => 150000, 'date' => '2026-03-05']);
+
+        $decisions = $this->planner->plan($this->account, [
+            importRow(['description' => 'Aluguel', 'amount' => 157500, 'date' => '2026-03-07']),
+        ]);
+
+        expect($decisions[0]->outcome)->toBe(RowOutcome::Adopt)
+            ->and($decisions[0]->transactionId)->toBe($prevista->id);
+    });
+
+    it('não adota e vira nova quando o valor real difere mais de 10%', function () {
+        recurrenceOccurrence($this->account, ['amount' => 150000, 'date' => '2026-03-05']);
+
+        $decisions = $this->planner->plan($this->account, [
+            importRow(['description' => 'Aluguel', 'amount' => 172500, 'date' => '2026-03-07']),
+        ]);
+
+        expect($decisions[0]->outcome)->toBe(RowOutcome::New);
+    });
+
+    it('casamento de recorrência tem prioridade sobre a adoção de lançamento manual comum', function () {
+        $prevista = recurrenceOccurrence($this->account, ['amount' => 150000, 'date' => '2026-03-05']);
+        $manual = Transaction::factory()->create([
+            'account_id' => $this->account->id, 'description' => 'Aluguel', 'original_description' => 'Aluguel',
+            'amount' => 150000, 'direction' => Direction::Out, 'date' => '2026-03-06',
+        ]);
+
+        $decisions = $this->planner->plan($this->account, [
+            importRow(['description' => 'Aluguel', 'amount' => 150000, 'date' => '2026-03-06']),
+        ]);
+
+        expect($decisions[0]->outcome)->toBe(RowOutcome::Adopt)
+            ->and($decisions[0]->transactionId)->toBe($prevista->id)
+            ->and($decisions[0]->transactionId)->not->toBe($manual->id);
+    });
+
+    it('cada prevista só casa com uma linha do lote; a segunda linha equivalente vira nova', function () {
+        $prevista = recurrenceOccurrence($this->account, ['amount' => 150000, 'date' => '2026-03-05']);
+
+        [$d1, $d2] = $this->planner->plan($this->account, [
+            importRow(['line' => 1, 'externalId' => 'x1', 'description' => 'Aluguel', 'amount' => 150000, 'date' => '2026-03-05']),
+            importRow(['line' => 2, 'externalId' => 'x2', 'description' => 'Aluguel', 'amount' => 150000, 'date' => '2026-03-05']),
+        ]);
+
+        expect($d1->outcome)->toBe(RowOutcome::Adopt)->and($d1->transactionId)->toBe($prevista->id)
+            ->and($d2->outcome)->toBe(RowOutcome::New);
+    });
+
+    it('usa match_pattern da recorrência para casar mesmo com descrição real diferente da prevista', function () {
+        $prevista = recurrenceOccurrence($this->account, [
+            'description' => 'Assinatura', 'amount' => 3990, 'match_pattern' => 'Netflix',
+        ]);
+
+        $decisions = $this->planner->plan($this->account, [
+            importRow(['description' => 'NETFLIX.COM BR', 'amount' => 3990, 'date' => '2026-03-05']),
+        ]);
+
+        expect($decisions[0]->outcome)->toBe(RowOutcome::Adopt)
+            ->and($decisions[0]->transactionId)->toBe($prevista->id);
+    });
+
+    it('não casa prevista de outra conta', function () {
+        $otherAccount = Account::factory()->create(['user_id' => $this->user->id]);
+        recurrenceOccurrence($otherAccount, ['amount' => 150000, 'date' => '2026-03-05']);
+
+        $decisions = $this->planner->plan($this->account, [
+            importRow(['description' => 'Aluguel', 'amount' => 150000, 'date' => '2026-03-05']),
+        ]);
+
+        expect($decisions[0]->outcome)->toBe(RowOutcome::New);
     });
 });

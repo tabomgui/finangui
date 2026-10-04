@@ -41,6 +41,9 @@ export const queryKeys = {
   importBatches: (accountId?: number) => ['import-batches', 'list', { accountId }] as const,
   importBatch: (id: number) => ['import-batches', 'detail', id] as const,
   bankConnections: () => ['bank-connections'] as const,
+  recurrences: () => ['recurrences'] as const,
+  recurrence: (id: number) => ['recurrences', 'detail', id] as const,
+  overdueOccurrences: () => ['recurrences', 'overdue'] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {
@@ -57,6 +60,8 @@ function invalidate(queryClient: QueryClient, roots: string[]) {
  * `transfer-suggestions` entra porque importar, sincronizar, ligar/desligar/aceitar/descartar
  * uma transferência podem criar ou resolver sugestões: toda mutação que já chama isto cobre a
  * lista e a contagem de pendências sem precisar invalidar as duas chaves à parte.
+ * `recurrences` entra porque criar/editar/excluir uma recorrência e confirmar/pular uma ocorrência
+ * mudam as previstas, que aparecem nas transações, no saldo previsto e nas pendências do Início.
  */
 export function invalidateLedger(queryClient: QueryClient) {
   return invalidate(queryClient, [
@@ -70,6 +75,7 @@ export function invalidateLedger(queryClient: QueryClient) {
     'installment-plans',
     'rule-preview',
     'bank-connections',
+    'recurrences',
   ])
 }
 

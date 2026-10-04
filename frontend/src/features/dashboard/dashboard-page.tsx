@@ -17,6 +17,7 @@ import { useReconnectFlow } from '../banking/use-reconnect-flow'
 import { AccountsCard } from './accounts-card'
 import { BalanceHero } from './balance-hero'
 import { MonthNav } from './month-nav'
+import { OverdueOccurrencesDialog } from './overdue-occurrences-dialog'
 import { PendingCard } from './pending-card'
 import { RecentTransactionsCard } from './recent-transactions-card'
 import { monthFromParam } from './shares'
@@ -33,6 +34,9 @@ export function DashboardPage() {
   const { data: connections } = useBankConnections()
   const { data: me } = useMe()
   const reconnectFlow = useReconnectFlow()
+  // Dono aqui, não dentro de `PendingCard`: resolver a última pendência zera a contagem e o card
+  // pode desmontar (ex.: sem sugestão também) — o diálogo aberto não pode ir junto nesse momento.
+  const [overdueOpen, setOverdueOpen] = useState(false)
 
   const setMonth = (next: string) => setParams({ mes: next }, { replace: true })
 
@@ -43,7 +47,15 @@ export function DashboardPage() {
           <MonthNav month={month} onChange={setMonth} />
           {data ? (
             <div className={cn('transition-opacity', isPlaceholderData && 'opacity-60')}>
-              <BalanceHero totalBalance={data.total_balance} currency={data.currency} balanceDate={data.balance_date} />
+              <BalanceHero
+                totalBalance={data.total_balance}
+                currency={data.currency}
+                balanceDate={data.balance_date}
+                projectedBalance={data.projected_balance}
+                month={month}
+                currentMonth={currentMonth}
+                isPlaceholderData={isPlaceholderData}
+              />
             </div>
           ) : isError ? (
             // Sem saldo para mostrar e o card de erro já aparece no corpo da página: só reserva a altura
@@ -95,7 +107,7 @@ export function DashboardPage() {
         ) : (
           <div className={cn('space-y-4 transition-opacity', isPlaceholderData && 'opacity-60')} aria-busy={isPlaceholderData}>
             <SummaryCards income={data.income} expense={data.expense} net={data.net} currency={data.currency} />
-            <PendingCard />
+            <PendingCard onOpenOverdue={() => setOverdueOpen(true)} />
             <StatementsCard />
             <div className="grid gap-4 lg:grid-cols-2">
               <TopCategoriesCard categories={data.top_categories} expense={data.expense} currency={data.currency} month={month} />
@@ -106,6 +118,7 @@ export function DashboardPage() {
         )}
       </PageBody>
 
+      <OverdueOccurrencesDialog open={overdueOpen} onOpenChange={setOverdueOpen} />
       {reconnectFlow.widget}
     </>
   )

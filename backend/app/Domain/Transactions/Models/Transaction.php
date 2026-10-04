@@ -6,6 +6,7 @@ use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Categories\Models\Category;
+use App\Domain\Recurrences\Models\Recurrence;
 use App\Domain\Rules\Support\TextNormalizer;
 use App\Domain\Tags\Models\Tag;
 use App\Domain\Transactions\Enums\Direction;
@@ -42,6 +43,7 @@ class Transaction extends Model
         'category_id', 'payee', 'status', 'source', 'external_id', 'categorized_by',
         'is_ignored', 'transfer_id', 'raw', 'statement_id',
         'installment_plan_id', 'installment_number', 'import_batch_id',
+        'recurrence_id', 'recurrence_date',
     ];
 
     /**
@@ -73,6 +75,7 @@ class Transaction extends Model
             'is_ignored' => 'boolean',
             'raw' => 'array',
             'installment_number' => 'integer',
+            'recurrence_date' => 'immutable_date',
         ];
     }
 
@@ -131,6 +134,14 @@ class Transaction extends Model
         return $this->belongsTo(InstallmentPlan::class);
     }
 
+    /**
+     * @return BelongsTo<Recurrence, $this>
+     */
+    public function recurrence(): BelongsTo
+    {
+        return $this->belongsTo(Recurrence::class);
+    }
+
     public function isTransferLeg(): bool
     {
         return $this->transfer_id !== null;
@@ -139,6 +150,31 @@ class Transaction extends Model
     public function isInstallment(): bool
     {
         return $this->installment_plan_id !== null;
+    }
+
+    /**
+     * Prevista de recorrência "livre": ainda não casada com nenhum
+     * lançamento real por nenhum caminho (importação, banco ou manual —
+     * uma vez linkada a um external_id ela deixa de ser isso, mesmo que o
+     * status continue projected, caso de uma pendente futura adotada). Só
+     * uma ocorrência assim pode ser excluída/pulada/propagada como mero
+     * palpite; qualquer outra já é (ou já foi) um lançamento de verdade.
+     */
+    public function isUnconfirmedOccurrence(): bool
+    {
+        return $this->status === TransactionStatus::Projected
+            && $this->recurrence_id !== null
+            && $this->external_id === null;
+    }
+
+    /**
+     * @param  Builder<Transaction>  $query
+     */
+    public function scopeUnconfirmedOccurrences(Builder $query): void
+    {
+        $query->where('status', TransactionStatus::Projected->value)
+            ->whereNotNull('recurrence_id')
+            ->whereNull('external_id');
     }
 
     /**
@@ -158,5 +194,17 @@ class Transaction extends Model
                 ->orWhereHas('category', fn (Builder $c) => $c->where('is_transfer', false)
                     ->where(fn (Builder $c2) => $c2->whereNull('parent_id')
                         ->orWhereHas('parent', fn (Builder $p) => $p->where('is_transfer', false)))));
+    }
+
+    /**
+     * Fora de regras de categorização (prévia e aplicação retroativa): uma
+     * prevista de recorrência não é um lançamento de verdade ainda.
+     *
+     * @param  Builder<Transaction>  $query
+     */
+    public function scopeExcludingProjectedRecurrences(Builder $query): void
+    {
+        $query->where(fn (Builder $q) => $q->whereNull('recurrence_id')
+            ->orWhere('status', '!=', TransactionStatus::Projected->value));
     }
 }

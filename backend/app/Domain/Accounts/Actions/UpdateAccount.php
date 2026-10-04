@@ -7,12 +7,17 @@ use App\Domain\Accounts\Errors\AccountTypeLocked;
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Support\InvoiceCycle;
+use App\Domain\Recurrences\Actions\UpdateRecurrence;
+use App\Domain\Recurrences\Models\Recurrence;
+use App\Domain\Transactions\Models\Transaction;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 final class UpdateAccount
 {
     private const CARD_FIELDS = ['credit_limit', 'closing_day', 'due_day', 'last_four'];
+
+    public function __construct(private readonly UpdateRecurrence $updateRecurrence) {}
 
     /**
      * @param  array<string, mixed>  $input  dados já validados (parciais)
@@ -27,6 +32,7 @@ final class UpdateAccount
             // com histórico de um tipo e cartão/comum do outro.
             $account = $account->newQuery()->whereKey($account->getKey())->lockForUpdate()->firstOrFail();
             $wasCard = $account->isCreditCard();
+            $wasArchived = $account->is_archived;
             $oldClosingDay = $account->closing_day;
             $oldDueDay = $account->due_day;
 
@@ -57,6 +63,10 @@ final class UpdateAccount
 
             $account->update($input);
 
+            if ($account->is_archived && ! $wasArchived) {
+                $this->pauseRecurrences($account);
+            }
+
             if ($wasCard && $newType === AccountType::CreditCard) {
                 $newClosingDay = (int) ($input['closing_day'] ?? $oldClosingDay);
                 $newDueDay = (int) ($input['due_day'] ?? $oldDueDay);
@@ -82,6 +92,24 @@ final class UpdateAccount
      * cronológica das faturas não pode se inverter, e a próxima compra vai
      * resolver a fatura certa de qualquer forma via StatementResolver).
      */
+    /**
+     * Arquivar a conta pausa as recorrências dela (UpdateRecurrence já
+     * exclui as ocorrências ainda não confirmadas dentro da janela de hoje
+     * - 5 dias) e, por segurança, apaga qualquer outra que tenha
+     * sobrado (ex.: uma pendência atrasada de muito antes dessa janela) —
+     * uma conta arquivada não deveria mais gerar pendência nenhuma.
+     */
+    private function pauseRecurrences(Account $account): void
+    {
+        Recurrence::query()->where('account_id', $account->id)->where('is_active', true)->get()
+            ->each(function (Recurrence $recurrence) {
+                $this->updateRecurrence->handle($recurrence, ['is_active' => false]);
+                Transaction::query()->where('recurrence_id', $recurrence->id)->unconfirmedOccurrences()->delete();
+            });
+
+        CardStatement::pruneEmptyFuture($account->id);
+    }
+
     private function rescheduleFutureStatements(Account $account, int $closingDay, int $dueDay): void
     {
         $today = CarbonImmutable::today();

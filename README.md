@@ -2,7 +2,7 @@
 
 Gerenciador financeiro pessoal, self-hosted. Backend Laravel 13 + Postgres; frontend React em `frontend/`.
 
-Telas disponíveis: Início (dashboard do mês), Transações (com filtros e edição em massa), Regras (condições e grupos para categorizar automaticamente, com prévia ao vivo, aplicação retroativa às transações já existentes e sugestão por histórico quando nenhuma regra casa), Cartões (faturas com datas reais e editáveis, pagamento como transferência, parcelamentos e limite disponível), Importar extrato (CSV do Inter, Nubank conta e cartão e C6, ou OFX genérico; prévia mostra novas, duplicadas, adoção de lançamento manual e parcelas antes de confirmar; lote importado pode ser revertido), Contas, Categorias, Tags e Configurações.
+Telas disponíveis: Início (dashboard do mês, com saldo previsto de fim de mês e pendências de recorrência atrasada), Transações (com filtros e edição em massa), Recorrências (lançamentos que se repetem — aluguel, salário, assinaturas — com ocorrências previstas geradas automaticamente e reconhecidas quando o lançamento real chega), Regras (condições e grupos para categorizar automaticamente, com prévia ao vivo, aplicação retroativa às transações já existentes e sugestão por histórico quando nenhuma regra casa), Cartões (faturas com datas reais e editáveis, pagamento como transferência, parcelamentos e limite disponível), Importar extrato (CSV do Inter, Nubank conta e cartão e C6, ou OFX genérico; prévia mostra novas, duplicadas, adoção de lançamento manual e parcelas antes de confirmar; lote importado pode ser revertido), Contas, Categorias, Tags e Configurações.
 
 Transferências entre contas próprias são detectadas automaticamente ao final de cada importação de extrato ou sincronização bancária: quando as duas pernas (saída numa conta, entrada noutra, de qualquer origem — inclusive um lançamento manual já existente) formam um par, o sistema liga as duas sozinho quando é inequívoco ou sugere quando é ambíguo; também dá para buscar sob demanda. Sugestões ficam disponíveis para aceitar ou descartar, e também é possível juntar duas transações à mão ou desfazer uma transferência já ligada.
 
@@ -168,7 +168,10 @@ Pontos de atenção específicos de produção:
   worker pega o mesmo job de novo antes do primeiro terminar.
 - **Scheduler**: `schedule:work`, igual ao Compose de dev — não precisa de cron do sistema.
   Ele roda diariamente às 00:10 o `PostDueInstallments`, que vira parcela projetada em lançada
-  quando a data chega; sem o scheduler no ar, parcelas projetadas nunca são lançadas.
+  quando a data chega, e às 00:20 o `GenerateRecurrences`, que gera as ocorrências previstas de
+  cada recorrência ativa; sem o scheduler no ar, parcelas projetadas nunca são lançadas e
+  recorrências não geram previstas novas (criar ou editar uma recorrência ainda gera na hora,
+  pela própria API).
 
 ## Dados bancários
 

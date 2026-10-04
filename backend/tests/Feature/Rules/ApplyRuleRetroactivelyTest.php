@@ -2,6 +2,7 @@
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Categories\Models\Category;
+use App\Domain\Recurrences\Models\Recurrence;
 use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Jobs\ApplyRuleRetroactively;
 use App\Domain\Rules\Models\Rule;
@@ -291,4 +292,26 @@ it('consistência: a prévia conta tantas mudanças quanto o job de fato aplica,
     // A ação set_description nunca se aplica à travada; a tag não conta de novo na já marcada.
     expect($locked->refresh()->description)->toBe('Uber *trip 4');
     expect($taggedAlready->refresh()->tags->pluck('id')->all())->toBe([$tag->id]);
+});
+
+it('prévia e aplicação retroativa ignoram previstas de recorrência', function () {
+    $user = actingAsUser();
+    $account = Account::factory()->create(['user_id' => $user->id]);
+    $recurrence = Recurrence::factory()->create(['account_id' => $account->id, 'description' => 'Uber mensal']);
+    $projected = Transaction::factory()->create([
+        'account_id' => $account->id, 'description' => 'Uber mensal', 'category_id' => null,
+        'status' => 'projected', 'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-01-05',
+    ]);
+    $posted = Transaction::factory()->create(['description' => 'Uber corrida', 'category_id' => null]);
+
+    $rule = uberRule(['actions' => [['type' => 'set_category', 'category_id' => Category::factory()->create()->id]]]);
+    $definition = RuleDefinition::fromRule($rule);
+
+    $preview = app(PreviewRule::class)->handle($definition, false);
+    expect($preview->changed)->toBe(1);
+
+    ApplyRuleRetroactively::dispatch($rule->id, $user->id);
+
+    expect($projected->refresh()->category_id)->toBeNull()
+        ->and($posted->refresh()->category_id)->not->toBeNull();
 });

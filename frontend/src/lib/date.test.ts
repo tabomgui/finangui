@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { formatDate, formatDayLabel, formatMonth, isDateOnly, monthKey, monthRange, parseDateOnly, shiftMonth, toDateOnly } from './date'
+import {
+  formatDate,
+  formatDayLabel,
+  formatDayMonth,
+  formatMonth,
+  isDateOnly,
+  monthKey,
+  monthName,
+  monthRange,
+  parseDateOnly,
+  shiftMonth,
+  toDateOnly,
+} from './date'
 
 describe('isDateOnly', () => {
   it('só reconhece o formato "YYYY-MM-DD", sem validar o calendário', () => {
@@ -57,5 +69,13 @@ describe('meses', () => {
   it('calcula o intervalo de datas do mês, incluindo mês com 31 dias e fevereiro', () => {
     expect(monthRange('2026-10')).toEqual({ from: '2026-10-01', to: '2026-10-31' })
     expect(monthRange('2024-02')).toEqual({ from: '2024-02-01', to: '2024-02-29' })
+  })
+
+  it('formata dia/mês sem o ano', () => {
+    expect(formatDayMonth('2026-10-31')).toBe('31/10')
+  })
+
+  it('da o nome do mes em minusculas, sem o ano', () => {
+    expect(monthName('2026-11')).toBe('novembro')
   })
 })
