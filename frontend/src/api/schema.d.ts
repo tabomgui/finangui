@@ -718,8 +718,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Sob demanda (botão "Procurar transferências"), além da detecção
-         *     automática ao fim de cada importação/sync: últimos 90 dias (ver
+         * Sob demanda (botão "Procurar agora"), além da detecção automática ao
+         *     fim de cada importação/sync: últimos 90 dias (ver
          *     App\Domain\Transfers\Actions\DetectTransfers). `undo` não faz parte
          *     da resposta: só interessa a IngestTransactions, que mescla isso ao
          *     undo do próprio lote — aqui não existe lote nenhum. Os casts (int)
@@ -1397,13 +1397,6 @@ export interface components {
             tags?: components["schemas"]["TagResource"][];
             status: components["schemas"]["TransactionStatus"];
             source: components["schemas"]["TransactionSource"];
-            /**
-             * @description Só o frontend decide o texto de confirmação ao excluir uma perna de transferência
-             *     (duas pernas sem external_id: exclui as duas; a outra perna tem external_id —
-             *     veio do banco: exclui só esta, ver DeleteTransaction::handle()). Omitido, nunca
-             *     `null`, quando ausente (mesma razão de `rule_id` em `categorization()`).
-             */
-            external_id?: string;
             categorized_by: string | null;
             categorization: {
                 /** @constant */
@@ -1427,6 +1420,7 @@ export interface components {
                 number: number;
                 total: number;
             } | null;
+            deletes_only_this_leg?: boolean;
         };
         /**
          * TransactionSource
@@ -3614,6 +3608,7 @@ export interface operations {
         parameters: {
             query?: {
                 per_page?: number;
+                cursor?: string;
             };
             header?: never;
             path?: never;
@@ -3649,6 +3644,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
         };
     };
     "transferSuggestion.detect": {
