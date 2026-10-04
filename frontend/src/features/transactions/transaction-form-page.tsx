@@ -144,13 +144,9 @@ function EditTransactionPage({ id }: { id: number }) {
       ? `Parcela ${transaction.installment.number} de ${transaction.installment.total}. Valor, data e conta seguem o parcelamento; para mudar a compra inteira, use a aba Parcelamentos do cartão.`
       : undefined
 
-  // A perna que não é esta decide o alcance da exclusão (ver DeleteTransaction::handle() no
-  // backend): se ela veio do banco (external_id preenchido, ex.: ligada pela detecção
-  // automática), apagar só apaga esta perna e desliga o par — a outra perna do banco não pode
-  // desaparecer como dano colateral. Senão (a outra perna é comum), a transferência inteira é
-  // excluída.
-  const otherLeg = isTransfer ? (transfer.from.id === id ? transfer.to : transfer.from) : null
-  const deletesOnlyThisLeg = otherLeg !== null && otherLeg.external_id !== undefined
+  // `deletes_only_this_leg` já vem calculado por perna do backend (TransferResource, mesma
+  // regra de DeleteTransaction::handle()): nunca reimplementado aqui a partir de external_id.
+  const deletesOnlyThisLeg = isTransfer && (transfer.from.id === id ? transfer.from : transfer.to).deletes_only_this_leg === true
 
   return (
     <>

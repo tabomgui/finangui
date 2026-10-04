@@ -298,10 +298,12 @@ describe('TransactionFormPage', () => {
     expect(screen.getByText('As duas pernas serão excluídas.')).toBeInTheDocument()
   })
 
-  it('transferência com a outra perna vinda do banco: excluir avisa que só esta perna some', () => {
+  it('transferência cuja deletes_only_this_leg vem true do backend: excluir avisa que só esta perna some', () => {
     mockTransaction = transaction({ id: 1, transfer_id: 'uuid-1' })
     mockTransactionError = false
-    mockTransfer = transfer({ to: transaction({ id: 2, direction: 'in', transfer_id: 'uuid-1', account_id: 2, external_id: 'bank-1' }) })
+    // O backend (TransferResource) já calcula isto por perna a partir da regra de
+    // DeleteTransaction::handle(); o frontend só lê o valor, nunca reimplementa a regra.
+    mockTransfer = transfer({ from: transaction({ id: 1, direction: 'out', transfer_id: 'uuid-1', deletes_only_this_leg: true }) })
 
     renderPage()
 
