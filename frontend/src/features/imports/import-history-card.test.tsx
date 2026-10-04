@@ -28,7 +28,7 @@ function batch(overrides: Partial<ImportBatch>): ImportBatch {
     filename: 'extrato.csv',
     status: 'pending',
     stats: { failed: [] },
-    summary: { new: 0, duplicate: 0, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0 },
+    summary: { new: 0, duplicate: 0, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0, transfers_linked: 0, transfer_suggestions: 0 },
     revertible: false,
     created_at: '2026-10-01T10:00:00+00:00',
     completed_at: null,
@@ -86,7 +86,7 @@ describe('ImportHistoryCard', () => {
         batch({
           status: 'completed',
           stats: { inserted: 3, duplicates: 1, failed: [{ line: 4, reason: 'valor inválido' }] },
-          summary: { new: 3, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 1 },
+          summary: { new: 3, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 1, transfers_linked: 0, transfer_suggestions: 0 },
         }),
       ],
       isPending: false,

@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { queryKeys } from '@/api/query-keys'
-import type { Account, Category, Transaction } from '@/api/types'
+import type { Account, Category, Transaction, Transfer } from '@/api/types'
 import { TransactionFormPage } from './transaction-form-page'
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
@@ -36,10 +36,17 @@ vi.mock('@/api/queries/transactions', () => ({
   useDeleteTransaction: () => ({ mutateAsync: deleteTransactionMutateAsync }),
 }))
 
+let mockTransfer: Transfer | undefined
+const unlinkTransferMutateAsync = vi.fn()
+
 vi.mock('@/api/queries/transfers', () => ({
-  useTransfer: () => ({ data: undefined, isPending: false, isError: false }),
+  useTransfer: () => ({ data: mockTransfer, isPending: false, isError: false }),
   useCreateTransfer: () => ({ mutateAsync: vi.fn() }),
   useUpdateTransfer: () => ({ mutateAsync: vi.fn() }),
+}))
+
+vi.mock('@/api/queries/transfer-suggestions', () => ({
+  useUnlinkTransfer: () => ({ mutateAsync: unlinkTransferMutateAsync }),
 }))
 
 function account(overrides: Partial<Account> = {}): Account {
@@ -92,6 +99,19 @@ function transaction(overrides: Partial<Transaction> = {}): Transaction {
   }
 }
 
+function transfer(overrides: Partial<Transfer> = {}): Transfer {
+  return {
+    transfer_id: 'uuid-1',
+    date: '2026-10-01',
+    amount: 1000,
+    description: 'Transferência',
+    notes: null,
+    from: transaction({ id: 1, direction: 'out', transfer_id: 'uuid-1' }),
+    to: transaction({ id: 2, direction: 'in', transfer_id: 'uuid-1', account_id: 2 }),
+    ...overrides,
+  }
+}
+
 function category(overrides: Partial<Category> = {}): Category {
   return {
     id: 1,
@@ -135,8 +155,10 @@ beforeEach(() => {
   mockAccounts = []
   mockTransaction = undefined
   mockTransactionError = true
+  mockTransfer = undefined
   updateTransactionMutateAsync.mockReset().mockResolvedValue(undefined)
   deleteTransactionMutateAsync.mockReset().mockResolvedValue(undefined)
+  unlinkTransferMutateAsync.mockReset().mockResolvedValue(undefined)
   vi.mocked(toast.error).mockReset()
   vi.mocked(toast.success).mockReset()
 })
@@ -262,5 +284,46 @@ describe('TransactionFormPage', () => {
 
     await waitFor(() => expect(updateTransactionMutateAsync).toHaveBeenCalled())
     expect(toast.success).toHaveBeenCalledWith('Lançamento atualizado.')
+  })
+
+  it('transferência com a outra perna comum: excluir avisa que as duas pernas somem', () => {
+    mockTransaction = transaction({ id: 1, transfer_id: 'uuid-1' })
+    mockTransactionError = false
+    mockTransfer = transfer()
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir' }))
+
+    expect(screen.getByText('As duas pernas serão excluídas.')).toBeInTheDocument()
+  })
+
+  it('transferência cuja deletes_only_this_leg vem true do backend: excluir avisa que só esta perna some', () => {
+    mockTransaction = transaction({ id: 1, transfer_id: 'uuid-1' })
+    mockTransactionError = false
+    // O backend (TransferResource) já calcula isto por perna a partir da regra de
+    // DeleteTransaction::handle(); o frontend só lê o valor, nunca reimplementa a regra.
+    mockTransfer = transfer({ from: transaction({ id: 1, direction: 'out', transfer_id: 'uuid-1', deletes_only_this_leg: true }) })
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir' }))
+
+    expect(screen.getByText('Só este lançamento será excluído; o da outra conta volta a ser um lançamento comum.')).toBeInTheDocument()
+  })
+
+  it('"Desfazer transferência" chama useUnlinkTransfer e volta para a origem', async () => {
+    mockTransaction = transaction({ id: 1, transfer_id: 'uuid-1' })
+    mockTransactionError = false
+    mockTransfer = transfer()
+
+    renderPage([{ pathname: '/transacoes/1', state: { from: '/cartoes/5' } }])
+
+    fireEvent.click(screen.getByRole('button', { name: 'Desfazer transferência' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Desfazer' }))
+
+    await waitFor(() => expect(unlinkTransferMutateAsync).toHaveBeenCalledWith('uuid-1'))
+    await waitFor(() => expect(screen.getByText('Cartão')).toBeInTheDocument())
+    expect(toast.success).toHaveBeenCalledWith('Transferência desfeita.')
   })
 })

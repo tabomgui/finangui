@@ -10,7 +10,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
 vi.mock('@/api/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/client')>()
-  return { ...actual, api: { ...actual.api, PATCH: vi.fn() } }
+  return { ...actual, api: { ...actual.api, PATCH: vi.fn(), POST: vi.fn() } }
 })
 
 const { api } = await import('@/api/client')
@@ -79,5 +79,44 @@ describe('BulkActionBar', () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Tag: 1 transação de 2 não pôde ser atualizada.'))
     expect(onDone).toHaveBeenCalledTimes(1)
+  })
+
+  it('duas selecionadas com direções opostas, mesmo valor e contas diferentes: "Juntar como transferência" liga as duas', async () => {
+    const post = vi.mocked(api.POST)
+    post.mockResolvedValue({ data: { data: {} }, error: undefined, response: { ok: true, status: 201 } as Response })
+
+    const onDone = vi.fn()
+    renderBar([transaction({ id: 1, direction: 'out', account_id: 1 }), transaction({ id: 2, direction: 'in', account_id: 2 })], onDone)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Juntar como transferência' }))
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith('/transfers/link', { body: { out_transaction_id: 1, in_transaction_id: 2 } }),
+    )
+    expect(toast.success).toHaveBeenCalledWith('Transferência criada.')
+    expect(onDone).toHaveBeenCalledTimes(1)
+  })
+
+  it('seleção que não forma uma transferência (mesma direção) não mostra o botão', () => {
+    renderBar([transaction({ id: 1, direction: 'out' }), transaction({ id: 2, direction: 'out', account_id: 2 })], vi.fn())
+
+    expect(screen.queryByRole('button', { name: 'Juntar como transferência' })).not.toBeInTheDocument()
+  })
+
+  it('409 do backend mostra a mensagem recebida, sem encerrar a seleção', async () => {
+    const post = vi.mocked(api.POST)
+    post.mockResolvedValue({
+      data: undefined,
+      error: { code: 'transfer_link_invalid', message: 'Essas transações não formam uma transferência.' },
+      response: { ok: false, status: 409 } as Response,
+    })
+
+    const onDone = vi.fn()
+    renderBar([transaction({ id: 1, direction: 'out', account_id: 1 }), transaction({ id: 2, direction: 'in', account_id: 2 })], onDone)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Juntar como transferência' }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Essas transações não formam uma transferência.'))
+    expect(onDone).not.toHaveBeenCalled()
   })
 })

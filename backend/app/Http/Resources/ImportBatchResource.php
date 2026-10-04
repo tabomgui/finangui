@@ -51,7 +51,7 @@ final class ImportBatchResource extends JsonResource
      * nomenclatura difere entre as duas origens (`inserted` vs `new`, etc.).
      *
      * @param  array<string, mixed>  $stats
-     * @return array{new: int, duplicate: int, update: int, replace_installment: int, adopt: int, swap_pending: int, failed: int}
+     * @return array{new: int, duplicate: int, update: int, replace_installment: int, adopt: int, swap_pending: int, failed: int, transfers_linked: int, transfer_suggestions: int}
      */
     public static function summaryFromStats(array $stats): array
     {
@@ -66,6 +66,12 @@ final class ImportBatchResource extends JsonResource
             'adopt' => (int) ($stats['adopted'] ?? 0),
             'swap_pending' => (int) ($stats['swapped'] ?? 0),
             'failed' => count($failed),
+            // Só o resultado final de um lote detecta transferências (ver
+            // IngestTransactions e ImportPreviewResource::summary()): a
+            // prévia de um lote pendente nunca chega a rodar DetectTransfers,
+            // então aqui sempre lê de `stats` (ausente enquanto pendente).
+            'transfers_linked' => (int) ($stats['transfers_linked'] ?? 0),
+            'transfer_suggestions' => (int) ($stats['transfer_suggestions'] ?? 0),
         ];
     }
 
@@ -110,6 +116,8 @@ final class ImportBatchResource extends JsonResource
             'adopted' => $this->when(isset($this->stats['adopted']), fn () => (int) $this->stats['adopted']),
             'swapped' => $this->when(isset($this->stats['swapped']), fn () => (int) $this->stats['swapped']),
             'skipped' => $this->when(isset($this->stats['skipped']), fn () => (int) $this->stats['skipped']),
+            'transfers_linked' => $this->when(isset($this->stats['transfers_linked']), fn () => (int) $this->stats['transfers_linked']),
+            'transfer_suggestions' => $this->when(isset($this->stats['transfer_suggestions']), fn () => (int) $this->stats['transfer_suggestions']),
         ];
     }
 

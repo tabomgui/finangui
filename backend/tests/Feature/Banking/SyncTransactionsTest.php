@@ -284,17 +284,98 @@ describe('limpeza de pendentes antigos (listagem completa)', function () {
         expect(Transaction::query()->whereKey($projected->id)->exists())->toBeTrue();
     });
 
-    it('nunca exclui em lote uma perna de transferência pendente, mesmo antiga e ausente', function () {
+    it('exclui em lote uma perna de transferência pendente antiga e ausente, mas desliga o par antes: o outro lado sobrevive sem transfer_id', function () {
         $account = Account::factory()->create(['external_id' => 'acc-1']);
+        $otherAccount = Account::factory()->create();
+        $batch = ImportBatch::factory()->create(['account_id' => $account->id]);
+        $transferId = (string) Str::uuid();
         $transferLeg = Transaction::factory()->create([
             'account_id' => $account->id, 'external_id' => 'old-transfer', 'status' => TransactionStatus::Pending,
-            'source' => TransactionSource::Pluggy, 'date' => '2026-09-01', 'transfer_id' => Str::uuid(),
+            'source' => TransactionSource::Pluggy, 'date' => '2026-09-01', 'transfer_id' => $transferId,
+            'direction' => Direction::Out, 'amount' => 5000, 'import_batch_id' => $batch->id,
+        ]);
+        $otherLeg = Transaction::factory()->create([
+            'account_id' => $otherAccount->id, 'status' => TransactionStatus::Posted,
+            'date' => '2026-09-01', 'transfer_id' => $transferId,
+            'direction' => Direction::In, 'amount' => 5000,
         ]);
         $this->fake->transactionsByAccount['acc-1'] = [];
 
         $this->action->handle($account, [], $this->now, []);
 
-        expect(Transaction::query()->whereKey($transferLeg->id)->exists())->toBeTrue();
+        expect(Transaction::query()->whereKey($transferLeg->id)->exists())->toBeFalse()
+            ->and($otherLeg->refresh()->transfer_id)->toBeNull();
+    });
+
+    it('depois de desligar uma perna na limpeza, roda a detecção de novo para quem sobreviveu', function () {
+        $account = Account::factory()->create(['external_id' => 'acc-1']);
+        $otherAccount = Account::factory()->create();
+        $thirdAccount = Account::factory()->create();
+        $batch = ImportBatch::factory()->create(['account_id' => $account->id]);
+        $transferId = (string) Str::uuid();
+
+        Transaction::factory()->create([
+            'account_id' => $account->id, 'external_id' => 'old-transfer', 'status' => TransactionStatus::Pending,
+            'source' => TransactionSource::Pluggy, 'date' => '2026-09-01', 'transfer_id' => $transferId,
+            'direction' => Direction::Out, 'amount' => 5000, 'import_batch_id' => $batch->id,
+        ]);
+        $otherLeg = Transaction::factory()->create([
+            'account_id' => $otherAccount->id, 'status' => TransactionStatus::Posted,
+            'date' => '2026-09-01', 'transfer_id' => $transferId,
+            'direction' => Direction::In, 'amount' => 5000, 'description' => 'Transferência recebida',
+        ]);
+        // Candidata nova, só possível depois que otherLeg voltar a ser
+        // comum: mesmo valor e data, direção oposta, outra conta.
+        $newMatch = Transaction::factory()->create([
+            'account_id' => $thirdAccount->id, 'status' => TransactionStatus::Posted,
+            'date' => '2026-09-01', 'direction' => Direction::Out, 'amount' => 5000, 'description' => 'Transferência enviada',
+        ]);
+        $this->fake->transactionsByAccount['acc-1'] = [];
+
+        $this->action->handle($account, [], $this->now, []);
+
+        expect($otherLeg->refresh()->transfer_id)->not->toBeNull()
+            ->and($newMatch->refresh()->transfer_id)->toBe($otherLeg->transfer_id);
+    });
+
+    it('nunca apaga uma perna de transferência adotada (não inserida por este sync): pagamento de fatura cuja perna no cartão casou com a linha do banco', function () {
+        $card = Account::factory()->creditCard()->create(['external_id' => 'acc-1']);
+        $checking = Account::factory()->create();
+        $statement = CardStatement::factory()->create(['account_id' => $card->id, 'closing_date' => '2026-09-10', 'due_date' => '2026-09-20']);
+        Transaction::factory()->create(['account_id' => $card->id, 'statement_id' => $statement->id, 'amount' => 10000]);
+
+        $this->postJson("/api/v1/card-statements/{$statement->id}/payments", [
+            'from_account_id' => $checking->id, 'amount' => 10000, 'date' => '2026-09-01',
+        ])->assertCreated();
+
+        $cardLeg = Transaction::query()->where('account_id', $card->id)->where('statement_id', $statement->id)
+            ->where('direction', Direction::In)->latest('id')->first();
+        $transferId = $cardLeg->transfer_id;
+        expect($transferId)->not->toBeNull();
+
+        // O banco relata a mesma linha do pagamento (mesmo valor/direção, dentro da janela de
+        // DedupMatchers::matchCardPayment()): o sync principal adota a perna existente (ganha
+        // external_id e source pluggy, status pending) em vez de criar outra — e
+        // import_batch_id continua nulo, porque MatchedTransactionOutcomes::adopt() nunca grava
+        // isso.
+        $providerRow = syncProviderTransaction([
+            'id' => 'ext-pay-1', 'date' => '2026-09-01', 'amountCents' => 10000,
+            'direction' => Direction::In, 'description' => 'Pagamento recebido', 'pending' => true,
+        ]);
+
+        // A listagem completa da limpeza não reporta esse id de novo: pareceria "pendente
+        // antiga e ausente" para a limpeza, se ela devesse mesmo considerar esta perna — ela
+        // não deve, porque não foi este sync que a inseriu.
+        $this->fake->transactionsByAccount['acc-1'] = [];
+
+        $this->action->handle($card, [$providerRow], $this->now, []);
+
+        $cardLeg->refresh();
+        expect($cardLeg->external_id)->toBe('ext-pay-1')
+            ->and($cardLeg->source)->toBe(TransactionSource::Pluggy)
+            ->and($cardLeg->import_batch_id)->toBeNull()
+            ->and($cardLeg->transfer_id)->toBe($transferId)
+            ->and(Transaction::query()->whereKey($cardLeg->id)->exists())->toBeTrue();
     });
 
     it('também considera pendente futura (projected, não parcela) antiga e ausente na limpeza', function () {

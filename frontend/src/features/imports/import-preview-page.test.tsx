@@ -57,14 +57,14 @@ function preview(overrides: Partial<ImportPreview> = {}): ImportPreview {
       filename: 'extrato.csv',
       status: 'pending',
       stats: { failed: [] },
-      summary: { new: 0, duplicate: 0, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0 },
+      summary: { new: 0, duplicate: 0, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0, transfers_linked: 0, transfer_suggestions: 0 },
       revertible: false,
       created_at: '2026-10-01T10:00:00+00:00',
       completed_at: null,
       reverted_at: null,
     },
     rows: [previewRow({})],
-    summary: { new: 1, duplicate: 0, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0 },
+    summary: { new: 1, duplicate: 0, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0, transfers_linked: 0, transfer_suggestions: 0 },
     ...overrides,
   }
 }
@@ -99,7 +99,7 @@ describe('ImportPreviewPage', () => {
   it('mostra o resumo e o desfecho de cada linha', () => {
     previewState.data = preview({
       rows: [previewRow({ line: 1, outcome: 'new' }), previewRow({ line: 2, outcome: 'duplicate', description: 'Já visto' })],
-      summary: { new: 1, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0 },
+      summary: { new: 1, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0, transfers_linked: 0, transfer_suggestions: 0 },
     })
     renderPage()
 
@@ -115,7 +115,7 @@ describe('ImportPreviewPage', () => {
         previewRow({ line: 2, description: 'Mercado' }),
         previewRow({ line: 3, outcome: 'duplicate', description: 'Repetida' }),
       ],
-      summary: { new: 2, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0 },
+      summary: { new: 2, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0, transfers_linked: 0, transfer_suggestions: 0 },
     })
     confirmMutateAsync.mockResolvedValue({})
     renderPage()
@@ -131,7 +131,7 @@ describe('ImportPreviewPage', () => {
   it('linha duplicada aparece desmarcada e desabilitada, e não entra no total selecionado', () => {
     previewState.data = preview({
       rows: [previewRow({ line: 1, outcome: 'new', description: 'Nova' }), previewRow({ line: 2, outcome: 'duplicate', description: 'Repetida' })],
-      summary: { new: 1, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0 },
+      summary: { new: 1, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0, transfers_linked: 0, transfer_suggestions: 0 },
     })
     renderPage()
 
@@ -144,7 +144,7 @@ describe('ImportPreviewPage', () => {
   it('"Marcar todas" seleciona de novo as linhas importáveis, sem afetar a duplicada', () => {
     previewState.data = preview({
       rows: [previewRow({ line: 1, outcome: 'new', description: 'Padaria' }), previewRow({ line: 2, outcome: 'duplicate', description: 'Repetida' })],
-      summary: { new: 1, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0 },
+      summary: { new: 1, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0, transfers_linked: 0, transfer_suggestions: 0 },
     })
     renderPage()
 
@@ -232,14 +232,14 @@ describe('ImportPreviewPage', () => {
         filename: 'extrato.csv',
         status: 'completed',
         stats: { inserted: 2, duplicates: 1, failed: [] },
-        summary: { new: 2, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0 },
+        summary: { new: 2, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0, transfers_linked: 0, transfer_suggestions: 0 },
         revertible: true,
         created_at: '2026-10-01T10:00:00+00:00',
         completed_at: '2026-10-01T10:05:00+00:00',
         reverted_at: null,
       },
       rows: [],
-      summary: { new: 2, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0 },
+      summary: { new: 2, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0, transfers_linked: 0, transfer_suggestions: 0 },
     }
     renderPage()
 
@@ -259,14 +259,14 @@ describe('ImportPreviewPage', () => {
         filename: 'extrato.csv',
         status: 'reverted',
         stats: { inserted: 2, duplicates: 1, failed: [] },
-        summary: { new: 2, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0 },
+        summary: { new: 2, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0, transfers_linked: 0, transfer_suggestions: 0 },
         revertible: false,
         created_at: '2026-10-01T10:00:00+00:00',
         completed_at: '2026-10-01T10:05:00+00:00',
         reverted_at: '2026-10-01T11:00:00+00:00',
       },
       rows: [],
-      summary: { new: 2, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0 },
+      summary: { new: 2, duplicate: 1, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0, transfers_linked: 0, transfer_suggestions: 0 },
     }
     renderPage()
 

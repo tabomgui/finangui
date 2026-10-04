@@ -1,6 +1,7 @@
-import { List, Plus, TriangleAlert } from 'lucide-react'
+import { ArrowRight, List, Plus, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { useTransferSuggestions } from '@/api/queries/transfer-suggestions'
 import { useTransactions } from '@/api/queries/transactions'
 import { PageBody } from '@/components/layout/page-body'
 import { headerButton, PageHeader } from '@/components/layout/page-header'
@@ -18,6 +19,7 @@ import { activeFilterCount, effectiveTransactionFilters, filtersFromParams, para
 import { groupByDay } from './group-by-day'
 import { TransactionFilters } from './transaction-filters'
 import { TransactionRow } from './transaction-row'
+import { firstPageSuggestionsCount, suggestionsCountLabel } from '../transfers/suggestions-count'
 
 export function TransactionsPage() {
   const [params, setParams] = useSearchParams()
@@ -26,6 +28,8 @@ export function TransactionsPage() {
   const query = useTransactions(effectiveTransactionFilters(filters, showFuture))
   const transactions = query.data?.pages.flatMap((page) => page.data) ?? []
   const filtered = activeFilterCount(filters) > 0 || filters.search !== undefined
+
+  const pendingSuggestions = firstPageSuggestionsCount(useTransferSuggestions().data?.pages[0])
 
   const [selecting, setSelecting] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -63,6 +67,18 @@ export function TransactionsPage() {
         }
       />
       <PageBody>
+        {pendingSuggestions.count > 0 && (
+          <Link
+            to="/transferencias/sugestoes"
+            // bg-muted/hover:bg-accent, nunca uma variação com opacidade (/NN): esta superfície
+            // fica no topo do PageBody, sobre a faixa esmeralda do PageHeader — translúcida no
+            // hover deixaria a faixa aparecer atrás (ver CLAUDE.md).
+            className="flex items-center justify-between gap-2 rounded-xl bg-muted px-4 py-2 text-sm font-medium hover:bg-accent"
+          >
+            <span>{suggestionsCountLabel(pendingSuggestions)}</span>
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        )}
         <TransactionFilters filters={filters} />
         {!query.isError && transactions.length > 0 && (
           <div className="flex justify-end">

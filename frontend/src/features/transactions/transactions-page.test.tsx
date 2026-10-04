@@ -13,6 +13,16 @@ vi.mock('@/api/queries/transactions', () => ({
   useTransactions: (...args: unknown[]) => useTransactions(...args),
 }))
 
+type SuggestionsPageData = { data: { pages: { data: { id: number }[]; meta: { next_cursor: string | null } }[] } }
+
+const useTransferSuggestions = vi.fn<() => SuggestionsPageData>(() => ({
+  data: { pages: [{ data: [], meta: { next_cursor: null } }] },
+}))
+
+vi.mock('@/api/queries/transfer-suggestions', () => ({
+  useTransferSuggestions: () => useTransferSuggestions(),
+}))
+
 function renderPage(initialEntry = '/transacoes') {
   const client = new QueryClient()
   client.setQueryData(queryKeys.tags(), [])
@@ -119,5 +129,43 @@ describe('TransactionsPage', () => {
     fireEvent.click(toggle)
 
     expect(useTransactions).toHaveBeenLastCalledWith({})
+  })
+
+  it('com sugestões de transferência pendentes, mostra o link para a página delas', () => {
+    useTransactions.mockReturnValue({
+      data: { pages: [{ data: [] }] },
+      isPending: false,
+      isError: false,
+      isPlaceholderData: false,
+      isFetchingNextPage: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch,
+    })
+    useTransferSuggestions.mockReturnValueOnce({
+      data: { pages: [{ data: [{ id: 1 }, { id: 2 }], meta: { next_cursor: 'abc' } }] },
+    })
+
+    renderPage()
+
+    const link = screen.getByRole('link', { name: '2+ sugestões de transferência' })
+    expect(link).toHaveAttribute('href', '/transferencias/sugestoes')
+  })
+
+  it('sem sugestões de transferência pendentes, não mostra o link', () => {
+    useTransactions.mockReturnValue({
+      data: { pages: [{ data: [] }] },
+      isPending: false,
+      isError: false,
+      isPlaceholderData: false,
+      isFetchingNextPage: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch,
+    })
+
+    renderPage()
+
+    expect(screen.queryByText(/sugest(ão|ões) de transferência/)).not.toBeInTheDocument()
   })
 })

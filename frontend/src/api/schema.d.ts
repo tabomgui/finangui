@@ -633,6 +633,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/transfers/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * "Juntar à mão" (seleção em massa de transações): os ids podem vir em
+         *     qualquer ordem (ver LinkTransfer::handleAnyOrder()). Janela de 7
+         *     dias (maior que a da detecção automática): decisão humana, não um
+         *     palpite por pontuação
+         */
+        post: operations["transfer.link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/transfers/{transfer}": {
         parameters: {
             query?: never;
@@ -647,6 +669,101 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["transfer.update"];
+        trace?: never;
+    };
+    "/transfers/{transfer}/unlink": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["transfer.unlink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/transfer-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Paginada por cursor, como a listagem de transações
+         *     (TransactionController::index()): pode crescer bastante numa conta
+         *     movimentada, então nunca devolve tudo de uma vez
+         */
+        get: operations["transferSuggestion.index"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/transfer-suggestions/detect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sob demanda (botão "Procurar agora"), além da detecção automática ao
+         *     fim de cada importação/sync: últimos 90 dias (ver
+         *     App\Domain\Transfers\Actions\DetectTransfers). `undo` não faz parte
+         *     da resposta: só interessa a IngestTransactions, que mescla isso ao
+         *     undo do próprio lote — aqui não existe lote nenhum. Os casts (int)
+         *     são de propósito: sem eles, o Scramble perde o tipo exato ao ler de
+         *     volta uma chave de um array já desestruturado e documenta `linked`/
+         *     `suggested` como string
+         */
+        post: operations["transferSuggestion.detect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/transfer-suggestions/{suggestion}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["transferSuggestion.accept"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/transfer-suggestions/{suggestion}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["transferSuggestion.dismiss"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
 }
@@ -804,6 +921,8 @@ export interface components {
                 adopted?: number;
                 swapped?: number;
                 skipped?: number;
+                transfers_linked?: number;
+                transfer_suggestions?: number;
             };
             summary: {
                 new: number;
@@ -813,6 +932,14 @@ export interface components {
                 adopt: number;
                 swap_pending: number;
                 failed: number;
+                /**
+                 * @description Só o resultado final de um lote detecta transferências (ver
+                 *     IngestTransactions e ImportPreviewResource::summary()): a
+                 *     prévia de um lote pendente nunca chega a rodar DetectTransfers,
+                 *     então aqui sempre lê de `stats` (ausente enquanto pendente).
+                 */
+                transfers_linked: number;
+                transfer_suggestions: number;
             };
             revertible: boolean;
             created_at: string;
@@ -855,6 +982,8 @@ export interface components {
                     adopted?: number;
                     swapped?: number;
                     skipped?: number;
+                    transfers_linked?: number;
+                    transfer_suggestions?: number;
                 };
                 summary: {
                     new: number;
@@ -864,6 +993,14 @@ export interface components {
                     adopt: number;
                     swap_pending: number;
                     failed: number;
+                    /**
+                     * @description Só o resultado final de um lote detecta transferências (ver
+                     *     IngestTransactions e ImportPreviewResource::summary()): a
+                     *     prévia de um lote pendente nunca chega a rodar DetectTransfers,
+                     *     então aqui sempre lê de `stats` (ausente enquanto pendente).
+                     */
+                    transfers_linked: number;
+                    transfer_suggestions: number;
                 };
                 revertible: boolean;
                 created_at: string;
@@ -896,6 +1033,24 @@ export interface components {
                 adopt: number;
                 swap_pending: number;
                 failed: number;
+                transfers_linked: number;
+                transfer_suggestions: number;
+            } | {
+                new: number;
+                duplicate: number;
+                update: number;
+                replace_installment: number;
+                adopt: number;
+                swap_pending: number;
+                failed: number;
+                /**
+                 * @description Só o resultado final de um lote detecta transferências (ver
+                 *     IngestTransactions e ImportPreviewResource::summary()): a
+                 *     prévia de um lote pendente nunca chega a rodar DetectTransfers,
+                 *     então aqui sempre lê de `stats` (ausente enquanto pendente).
+                 */
+                transfers_linked: number;
+                transfer_suggestions: number;
             };
         };
         /** InstallmentPlanResource */
@@ -940,6 +1095,17 @@ export interface components {
                 external_id: string;
                 account_id?: number | null;
             }[];
+        };
+        /**
+         * LinkTransferRequest
+         * @description Só valida que as duas transações existem e são do usuário: qual delas é
+         *     a saída e qual é a entrada é decidido pela action, pela direção real de
+         *     cada uma (ver App\Http\Controllers\Api\V1\TransferController::link()) —
+         *     os nomes dos campos não precisam bater com a direção de verdade.
+         */
+        LinkTransferRequest: {
+            out_transaction_id: number;
+            in_transaction_id: number;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -1254,6 +1420,7 @@ export interface components {
                 number: number;
                 total: number;
             } | null;
+            deletes_only_this_leg?: boolean;
         };
         /**
          * TransactionSource
@@ -1274,6 +1441,13 @@ export interface components {
             notes: string | null;
             from: components["schemas"]["TransactionResource"];
             to: components["schemas"]["TransactionResource"];
+        };
+        /** TransferSuggestionResource */
+        TransferSuggestionResource: {
+            id: number;
+            score: number;
+            out: components["schemas"]["TransactionResource"];
+            in: components["schemas"]["TransactionResource"];
         };
         /**
          * UpdateAccountRequest
@@ -3272,6 +3446,47 @@ export interface operations {
             422: components["responses"]["ValidationException"];
         };
     };
+    "transfer.link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description `TransferResource` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TransferResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "transfer_link_invalid";
+                        message: string;
+                    };
+                };
+            };
+            422: components["responses"]["ValidationException"];
+        };
+    };
     "transfer.show": {
         parameters: {
             query?: never;
@@ -3365,6 +3580,174 @@ export interface operations {
                 };
             };
             422: components["responses"]["ValidationException"];
+        };
+    };
+    "transfer.unlink": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transfer: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "transferSuggestion.index": {
+        parameters: {
+            query?: {
+                per_page?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated set of `TransferSuggestionResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TransferSuggestionResource"][];
+                        links: {
+                            first: string | null;
+                            last: string | null;
+                            prev: string | null;
+                            next: string | null;
+                        };
+                        meta: {
+                            /** @description Base path for paginator generated URLs. */
+                            path: string | null;
+                            /** @description Number of items shown per page. */
+                            per_page: number;
+                            /** @description The "cursor" that points to the next set of items. */
+                            next_cursor: string | null;
+                            /** @description The "cursor" that points to the previous set of items. */
+                            prev_cursor: string | null;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "transferSuggestion.detect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            linked: number;
+                            suggested: number;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
+    "transferSuggestion.accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The suggestion ID */
+                suggestion: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `TransferResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TransferResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "transfer_suggestion_not_pending";
+                        message: string;
+                    } | {
+                        /** @enum {string} */
+                        code: "transfer_link_invalid";
+                        message: string;
+                    };
+                };
+            };
+        };
+    };
+    "transferSuggestion.dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The suggestion ID */
+                suggestion: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "transfer_suggestion_not_pending";
+                        message: string;
+                    };
+                };
+            };
         };
     };
 }

@@ -3,7 +3,18 @@ import type { ImportPreview } from '@/api/types'
 import { BATCH_STATUS_LABELS, BATCH_STATUS_VARIANT, FORMAT_OPTIONS, OUTCOME_LABELS, summaryText } from './import-labels'
 
 function summary(overrides: Partial<ImportPreview['summary']>): ImportPreview['summary'] {
-  return { new: 0, duplicate: 0, update: 0, replace_installment: 0, adopt: 0, swap_pending: 0, failed: 0, ...overrides }
+  return {
+    new: 0,
+    duplicate: 0,
+    update: 0,
+    replace_installment: 0,
+    adopt: 0,
+    swap_pending: 0,
+    failed: 0,
+    transfers_linked: 0,
+    transfer_suggestions: 0,
+    ...overrides,
+  }
 }
 
 describe('OUTCOME_LABELS', () => {
@@ -57,5 +68,11 @@ describe('summaryText', () => {
 
   it('inclui update e swap_pending quando presentes', () => {
     expect(summaryText(summary({ update: 1, swap_pending: 2 }))).toBe('1 atualizada · 2 pendentes confirmadas')
+  })
+
+  it('inclui transferências ligadas e sugeridas pela detecção automática do lote', () => {
+    expect(summaryText(summary({ transfers_linked: 2, transfer_suggestions: 1 }))).toBe(
+      '2 transferências ligadas · 1 sugestão de transferência',
+    )
   })
 })

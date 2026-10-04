@@ -1,8 +1,9 @@
-import { Trash2, Wand2 } from 'lucide-react'
+import { Trash2, Undo2, Wand2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAccounts } from '@/api/queries/accounts'
+import { useUnlinkTransfer } from '@/api/queries/transfer-suggestions'
 import { useCreateTransaction, useDeleteTransaction, useTransaction, useUpdateTransaction } from '@/api/queries/transactions'
 import { useCreateTransfer, useTransfer, useUpdateTransfer } from '@/api/queries/transfers'
 import { PageBody } from '@/components/layout/page-body'
@@ -96,8 +97,10 @@ function EditTransactionPage({ id }: { id: number }) {
   const updateTransaction = useUpdateTransaction()
   const updateTransfer = useUpdateTransfer()
   const remove = useDeleteTransaction()
+  const unlinkTransfer = useUnlinkTransfer()
   const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmUnlink, setConfirmUnlink] = useState(false)
 
   const notFound = isError || (transferId !== null && transferError)
   // O toast dispara num efeito, guardado por ref, para não duplicar sob StrictMode
@@ -141,6 +144,10 @@ function EditTransactionPage({ id }: { id: number }) {
       ? `Parcela ${transaction.installment.number} de ${transaction.installment.total}. Valor, data e conta seguem o parcelamento; para mudar a compra inteira, use a aba Parcelamentos do cartão.`
       : undefined
 
+  // `deletes_only_this_leg` já vem calculado por perna do backend (TransferResource, mesma
+  // regra de DeleteTransaction::handle()): nunca reimplementado aqui a partir de external_id.
+  const deletesOnlyThisLeg = isTransfer && (transfer.from.id === id ? transfer.from : transfer.to).deletes_only_this_leg === true
+
   return (
     <>
       <PageHeader
@@ -156,6 +163,16 @@ function EditTransactionPage({ id }: { id: number }) {
                 onClick={() => navigate(`/regras/nova?transacao=${id}`)}
               >
                 <Wand2 className="h-5 w-5" />
+              </button>
+            )}
+            {isTransfer && (
+              <button
+                type="button"
+                aria-label="Desfazer transferência"
+                className={headerIconButton}
+                onClick={() => setConfirmUnlink(true)}
+              >
+                <Undo2 className="h-5 w-5" />
               </button>
             )}
             <button type="button" aria-label="Excluir" className={headerIconButton} onClick={() => setConfirmDelete(true)}>
@@ -198,7 +215,9 @@ function EditTransactionPage({ id }: { id: number }) {
         title={isTransfer ? 'Excluir transferência?' : kind === 'installment' ? 'Excluir parcelamento?' : 'Excluir lançamento?'}
         description={
           isTransfer
-            ? 'As duas pernas da transferência serão excluídas.'
+            ? deletesOnlyThisLeg
+              ? 'Só este lançamento será excluído; o da outra conta volta a ser um lançamento comum.'
+              : 'As duas pernas serão excluídas.'
             : kind === 'installment'
               ? 'Todas as parcelas desta compra serão excluídas, inclusive as já lançadas. Para encerrar só as futuras, cancele o parcelamento na tela do cartão.'
               : undefined
@@ -211,6 +230,20 @@ function EditTransactionPage({ id }: { id: number }) {
           navigate(backTo, { replace: true })
         }}
       />
+      {isTransfer && (
+        <ConfirmDialog
+          open={confirmUnlink}
+          onOpenChange={setConfirmUnlink}
+          title="Desfazer transferência?"
+          description="As duas pernas viram lançamentos comuns, sem categoria. A detecção automática não vai juntá-las de novo."
+          confirmLabel="Desfazer"
+          onConfirm={async () => {
+            await unlinkTransfer.mutateAsync(transfer.transfer_id)
+            toast.success('Transferência desfeita.')
+            navigate(backTo, { replace: true })
+          }}
+        />
+      )}
     </>
   )
 }

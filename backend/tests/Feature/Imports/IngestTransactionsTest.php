@@ -324,6 +324,52 @@ it('mescla failed e skipped no stats final, mesmo não vindo do planner', functi
         ->and($batch->stats['skipped'])->toBe(2);
 });
 
+it('detecta e liga a transferência cuja outra perna já existe (de um lote anterior de outra conta)', function () {
+    $savings = Account::factory()->create(['user_id' => $this->user->id]);
+
+    $this->action->handle(
+        pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Nubank]),
+        [ingestRow(['description' => 'Transferência enviada', 'amount' => 20000, 'direction' => Direction::Out, 'date' => '2026-03-10', 'externalId' => 'out-1'])],
+    );
+
+    $batch = $this->action->handle(
+        pendingBatch(['account_id' => $savings->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Nubank]),
+        [ingestRow(['description' => 'Transferência recebida', 'amount' => 20000, 'direction' => Direction::In, 'date' => '2026-03-10', 'externalId' => 'in-1'])],
+    );
+
+    expect($batch->stats['transfers_linked'])->toBe(1)
+        ->and($batch->stats['transfer_suggestions'])->toBe(0);
+
+    $out = Transaction::where('external_id', 'out-1')->first();
+    $in = Transaction::where('external_id', 'in-1')->first();
+    expect($out->transfer_id)->not->toBeNull()
+        ->and($in->transfer_id)->toBe($out->transfer_id);
+});
+
+it('transferência ambígua entra em transfer_suggestions nas estatísticas do lote, sem ligar', function () {
+    $savings = Account::factory()->create(['user_id' => $this->user->id]);
+    $other = Account::factory()->create(['user_id' => $this->user->id]);
+
+    $this->action->handle(
+        pendingBatch(['account_id' => $savings->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Nubank]),
+        [ingestRow(['description' => 'Lancamento comum', 'amount' => 15000, 'direction' => Direction::In, 'date' => '2026-03-10', 'externalId' => 'in-amb-1'])],
+    );
+    $this->action->handle(
+        pendingBatch(['account_id' => $other->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Nubank]),
+        [ingestRow(['description' => 'Lancamento comum', 'amount' => 15000, 'direction' => Direction::In, 'date' => '2026-03-10', 'externalId' => 'in-amb-2'])],
+    );
+
+    $batch = $this->action->handle(
+        pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Nubank]),
+        [ingestRow(['description' => 'Lancamento comum', 'amount' => 15000, 'direction' => Direction::Out, 'date' => '2026-03-10', 'externalId' => 'out-amb-1'])],
+    );
+
+    expect($batch->stats['transfers_linked'])->toBe(0)
+        ->and($batch->stats['transfer_suggestions'])->toBe(2);
+
+    expect(Transaction::where('external_id', 'out-amb-1')->first()->transfer_id)->toBeNull();
+});
+
 it('é atômico: um erro no meio não deixa nada gravado', function () {
     $rows = [
         ingestRow(['externalId' => 'ok-1']),

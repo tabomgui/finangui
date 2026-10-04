@@ -11,7 +11,9 @@ use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Errors\ImportBatchNotRevertible;
 use App\Domain\Imports\Models\ImportBatch;
 use App\Domain\Transactions\Models\Transaction;
+use App\Domain\Transfers\Actions\UnlinkTransfer;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -30,11 +32,18 @@ use Illuminate\Support\Facades\DB;
  * Só o lote mais recente concluído de uma conta pode ser revertido: um
  * lote mais antigo pode ter sido a base de adoções/substituições de lotes
  * posteriores, e reverter fora de ordem bagunçaria esse histórico.
+ *
+ * Transação inserida pelo lote que foi ligada como perna de transferência
+ * (automaticamente por App\Domain\Transfers\Actions\DetectTransfers) é
+ * desligada antes de excluída: a outra perna é de outra conta (nunca deste
+ * mesmo lote) e volta a ser um lançamento comum em vez de ficar apontando
+ * para um par que não existe mais.
  */
 final class RevertImportBatch
 {
     public function __construct(
         private readonly AssignStatement $assignStatement,
+        private readonly UnlinkTransfer $unlinkTransfer,
     ) {}
 
     /**
@@ -67,6 +76,35 @@ final class RevertImportBatch
                 throw new ImportBatchNotRevertible('Reverta antes as importações mais recentes desta conta.');
             }
 
+            // Uma perna de transferência ligada automaticamente por este
+            // lote: a outra perna pertence a outra conta, por definição
+            // (ver App\Domain\Transfers\Support\TransferMatcher), então
+            // nunca está entre as transações deste lote — desliga antes de
+            // apagar, para ela voltar a ser um lançamento comum em vez de
+            // ficar com transfer_id apontando para um par que não existe
+            // mais. Sem remember: não houve decisão do usuário sobre o
+            // par, então uma futura detecção pode religá-lo normalmente.
+            $linkedTransferIds = Transaction::query()
+                ->where('import_batch_id', $locked->id)
+                ->whereNotNull('transfer_id')
+                ->pluck('transfer_id');
+
+            foreach ($linkedTransferIds as $transferId) {
+                try {
+                    $this->unlinkTransfer->handle($transferId, remember: false);
+                } catch (ModelNotFoundException) {
+                    // transfer_id órfão: a outra perna já não existe (nunca
+                    // deveria acontecer, mas UnlinkTransfer exige as duas
+                    // pernas presentes) — zera o campo desta mesma, em vez
+                    // de deixar a exceção abortar o revert inteiro; ela é
+                    // excluída já a seguir, de qualquer forma.
+                    Transaction::query()
+                        ->where('import_batch_id', $locked->id)
+                        ->where('transfer_id', $transferId)
+                        ->update(['transfer_id' => null]);
+                }
+            }
+
             Transaction::query()->where('import_batch_id', $locked->id)->delete();
 
             InstallmentPlan::query()
@@ -82,6 +120,16 @@ final class RevertImportBatch
 
                 if ($transaction === null) {
                     // Já não existe (ex.: excluída manualmente depois da importação): nada a restaurar.
+                    continue;
+                }
+
+                if ($transaction->transfer_id !== null) {
+                    // Esta é a entrada de undo gravada por DetectTransfers::applyLinks() para a
+                    // perna externa (de outra conta) que este lote ligou automaticamente — guarda
+                    // a categoria/fatura de antes da ligação. Se, desde então, a perna voltou a
+                    // ligar (outra detecção, ou "juntar à mão"), ela já é perna de um par atual:
+                    // aplicar o undo agora gravaria categoria/fatura numa perna de transferência,
+                    // violando o invariante (nunca tem categoria). Deixa como está.
                     continue;
                 }
 
