@@ -167,7 +167,26 @@ it('retorna as duas pernas ao buscar a transferência', function () {
         ->assertOk()
         ->assertJsonPath('data.transfer_id', $transfer['transfer_id'])
         ->assertJsonPath('data.from.direction', 'out')
-        ->assertJsonPath('data.to.direction', 'in');
+        ->assertJsonPath('data.to.direction', 'in')
+        // As duas pernas são manuais (sem external_id): excluir qualquer uma apaga as duas.
+        ->assertJsonPath('data.from.deletes_only_this_leg', false)
+        ->assertJsonPath('data.to.deletes_only_this_leg', false);
+});
+
+it('deletes_only_this_leg reflete a regra de DeleteTransaction por perna, não só globalmente', function () {
+    actingAsUser();
+    $checking = Account::factory()->create();
+    $savings = Account::factory()->create();
+    $manual = Transaction::factory()->create(['account_id' => $checking->id, 'direction' => Direction::Out, 'amount' => 10000, 'date' => '2026-10-01']);
+    $fromBank = Transaction::factory()->create(['account_id' => $savings->id, 'direction' => Direction::In, 'amount' => 10000, 'date' => '2026-10-01', 'external_id' => 'ext-bank-3']);
+    $transferId = app(LinkTransfer::class)->handle($manual, $fromBank);
+
+    $this->getJson("/api/v1/transfers/{$transferId}")
+        ->assertOk()
+        // Perna manual: a outra (banco) seria preservada, então excluir esta só apaga ela.
+        ->assertJsonPath('data.from.deletes_only_this_leg', true)
+        // Perna do banco: a outra (manual) não é preservada, então excluir esta apaga as duas.
+        ->assertJsonPath('data.to.deletes_only_this_leg', false);
 });
 
 it('recusa edição que move uma perna para conta de outra moeda', function () {

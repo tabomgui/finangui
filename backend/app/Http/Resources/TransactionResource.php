@@ -11,6 +11,23 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 final class TransactionResource extends JsonResource
 {
+    /** Só setado por TransferResource (ver withDeletesOnlyThisLeg()); omitido fora desse contexto. */
+    private ?bool $deletesOnlyThisLeg = null;
+
+    /**
+     * Regra de App\Domain\Transactions\Actions\DeleteTransaction: excluir esta perna só apaga
+     * ela (a outra desliga e volta a ser lançamento comum) quando a OUTRA perna veio do banco
+     * (`external_id` preenchido); senão, excluir qualquer uma apaga as duas. Calculado aqui pelo
+     * chamador (que tem as duas pernas) para o frontend usar no texto de confirmação em vez de
+     * reimplementar a regra.
+     */
+    public function withDeletesOnlyThisLeg(bool $value): self
+    {
+        $this->deletesOnlyThisLeg = $value;
+
+        return $this;
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -49,11 +66,6 @@ final class TransactionResource extends JsonResource
             'tags' => TagResource::collection($this->whenLoaded('tags')),
             'status' => $this->status,
             'source' => $this->source,
-            // Só o frontend decide o texto de confirmação ao excluir uma perna de transferência
-            // (duas pernas sem external_id: exclui as duas; a outra perna tem external_id —
-            // veio do banco: exclui só esta, ver DeleteTransaction::handle()). Omitido, nunca
-            // `null`, quando ausente (mesma razão de `rule_id` em `categorization()`).
-            'external_id' => $this->when($this->external_id !== null, fn () => (string) $this->external_id),
             'categorized_by' => $this->categorized_by,
             'categorization' => $this->categorization(),
             'is_ignored' => $this->is_ignored,
@@ -64,6 +76,7 @@ final class TransactionResource extends JsonResource
                 'number' => (int) $this->installment_number,
                 'total' => $this->installmentPlan->installments,
             ] : null,
+            'deletes_only_this_leg' => $this->when($this->deletesOnlyThisLeg !== null, fn (): bool => (bool) $this->deletesOnlyThisLeg),
         ];
     }
 

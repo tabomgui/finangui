@@ -29,8 +29,8 @@ final class TransferResource extends JsonResource
             'amount' => (int) $out->amount->cents,
             'description' => $out->description,
             'notes' => $out->notes === null ? null : (string) $out->notes,
-            'from' => TransactionResource::make($out),
-            'to' => TransactionResource::make($in),
+            'from' => TransactionResource::make($out)->withDeletesOnlyThisLeg($in->external_id !== null),
+            'to' => TransactionResource::make($in)->withDeletesOnlyThisLeg($out->external_id !== null),
         ];
     }
 }
