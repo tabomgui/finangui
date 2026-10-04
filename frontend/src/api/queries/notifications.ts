@@ -5,10 +5,16 @@ import { invalidateNotifications, queryKeys } from '@/api/query-keys'
 const PAGE_SIZE = 20
 const UNREAD_COUNT_REFETCH_INTERVAL = 5 * 60 * 1000
 
-/** Paginada por cursor, mais recentes primeiro (ver `useTransactions`/`useTransferSuggestions`). */
-export function useNotifications() {
+/**
+ * Paginada por cursor, mais recentes primeiro (ver `useTransactions`/`useTransferSuggestions`).
+ * `enabled` controla se a busca roda: o painel do sino (`notification-panel.tsx`) só existe depois
+ * do primeiro clique, mas continua montado entre aberturas (pra animação de fechar); passar
+ * `enabled: open` evita buscar enquanto está fechado e já garante dado fresco ao reabrir.
+ */
+export function useNotifications(enabled: boolean) {
   return useInfiniteQuery({
     queryKey: queryKeys.notifications(),
+    enabled,
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam }) =>
       unwrap(

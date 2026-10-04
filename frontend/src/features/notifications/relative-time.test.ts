@@ -19,4 +19,12 @@ describe('formatRelativeTime', () => {
   it('segundos (menos de um minuto)', () => {
     expect(formatRelativeTime('2026-10-04T11:59:30.000Z', now)).toBe('há 30 segundos')
   })
+
+  it('exatamente 1 dia: "ontem" (numeric: auto)', () => {
+    expect(formatRelativeTime('2026-10-03T12:00:00.000Z', now)).toBe('ontem')
+  })
+
+  it('meses', () => {
+    expect(formatRelativeTime('2026-08-04T12:00:00.000Z', now)).toBe('há 2 meses')
+  })
 })

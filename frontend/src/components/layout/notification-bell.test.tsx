@@ -1,55 +1,27 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Notification } from '@/api/types'
 import { NotificationBell } from './notification-bell'
 
-const { navigate, markReadMutate, markAllReadMutate, fetchNextPage } = vi.hoisted(() => ({
-  navigate: vi.fn(),
-  markReadMutate: vi.fn(),
-  markAllReadMutate: vi.fn(),
-  fetchNextPage: vi.fn(),
-}))
-
 let unreadCount = 0
-let notifications: Notification[] = []
-let hasNextPage = false
-
-vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }))
 
 vi.mock('@/api/queries/notifications', () => ({
   useUnreadCount: () => ({ data: unreadCount }),
-  useNotifications: () => ({
-    data: { pages: [{ data: notifications }] },
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage: false,
-    isPending: false,
-  }),
-  useMarkRead: () => ({ mutate: markReadMutate }),
-  useMarkAllRead: () => ({ mutate: markAllReadMutate, isPending: false }),
 }))
 
-function notification(overrides: Partial<Notification> = {}): Notification {
-  return {
-    id: 'a1',
-    type: 'statement_due',
-    title: 'Fatura do Nubank vence em 3 dias',
-    body: 'Confira o valor antes do vencimento.',
-    url: '/cartoes/1',
-    read_at: null,
-    created_at: '2026-10-04T10:00:00.000Z',
-    ...overrides,
-  }
-}
+// Mocka o módulo inteiro (o lazy-loaded): testa que o sino monta o painel com as props certas,
+// sem precisar da lista/Sheet/Popover reais de verdade aqui (isso é coberto em outros arquivos).
+vi.mock('@/features/notifications/notification-panel', () => ({
+  NotificationPanel: ({ variant, open, onOpenChange, unreadCount: count }: Record<string, unknown>) => (
+    <div data-testid="panel" data-variant={String(variant)} data-open={String(open)} data-unread={String(count)}>
+      <button type="button" onClick={() => (onOpenChange as (next: boolean) => void)(false)}>
+        fechar-painel
+      </button>
+    </div>
+  ),
+}))
 
 beforeEach(() => {
   unreadCount = 0
-  notifications = []
-  hasNextPage = false
-  navigate.mockReset()
-  markReadMutate.mockReset()
-  markAllReadMutate.mockReset()
-  fetchNextPage.mockReset()
 })
 
 describe('NotificationBell (header, mobile)', () => {
@@ -77,74 +49,55 @@ describe('NotificationBell (header, mobile)', () => {
     expect(screen.getByText('9+')).toBeInTheDocument()
   })
 
-  it('abre a lista ao clicar e mostra o estado vazio sem notificações', () => {
+  it('antes do primeiro clique, não monta o painel (nem o chunk lazy)', () => {
     render(<NotificationBell variant="header" />)
 
-    fireEvent.click(screen.getByLabelText('Notificações, 0 não lidas'))
-
-    expect(screen.getByText('Nenhuma notificação')).toBeInTheDocument()
+    expect(screen.queryByTestId('panel')).not.toBeInTheDocument()
   })
 
-  it('clicar numa notificação não lida com url interna marca como lida, navega e fecha', () => {
-    notifications = [notification()]
-
+  it('clicar no sino monta o painel aberto com o variant certo', async () => {
+    unreadCount = 3
     render(<NotificationBell variant="header" />)
-    fireEvent.click(screen.getByLabelText('Notificações, 0 não lidas'))
-    fireEvent.click(screen.getByText('Fatura do Nubank vence em 3 dias'))
 
-    expect(markReadMutate).toHaveBeenCalledWith('a1')
-    expect(navigate).toHaveBeenCalledWith('/cartoes/1')
-    expect(screen.queryByText('Nenhuma notificação')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Notificações, 3 não lidas'))
+
+    const panel = await screen.findByTestId('panel')
+    expect(panel).toHaveAttribute('data-variant', 'header')
+    expect(panel).toHaveAttribute('data-open', 'true')
+    expect(panel).toHaveAttribute('data-unread', '3')
   })
 
-  it('clicar numa notificação já lida não marca como lida de novo', () => {
-    notifications = [notification({ read_at: '2026-10-04T09:00:00.000Z' })]
-
+  it('fechar pelo painel mantém ele montado, só com open=false', async () => {
     render(<NotificationBell variant="header" />)
     fireEvent.click(screen.getByLabelText('Notificações, 0 não lidas'))
-    fireEvent.click(screen.getByText('Fatura do Nubank vence em 3 dias'))
+    await screen.findByTestId('panel')
 
-    expect(markReadMutate).not.toHaveBeenCalled()
-    expect(navigate).toHaveBeenCalledWith('/cartoes/1')
+    fireEvent.click(screen.getByText('fechar-painel'))
+
+    expect(screen.getByTestId('panel')).toHaveAttribute('data-open', 'false')
   })
 
-  it('url externa (protocol-relative) não navega', () => {
-    notifications = [notification({ url: '//evil.example.com' })]
-
+  it('passar o mouse ou focar não monta o painel por si só', () => {
     render(<NotificationBell variant="header" />)
-    fireEvent.click(screen.getByLabelText('Notificações, 0 não lidas'))
-    fireEvent.click(screen.getByText('Fatura do Nubank vence em 3 dias'))
+    const trigger = screen.getByLabelText('Notificações, 0 não lidas')
 
-    expect(navigate).not.toHaveBeenCalled()
-  })
+    fireEvent.pointerEnter(trigger)
+    fireEvent.focus(trigger)
 
-  it('"Marcar todas como lidas" chama a mutação', () => {
-    unreadCount = 2
-
-    render(<NotificationBell variant="header" />)
-    fireEvent.click(screen.getByLabelText('Notificações, 2 não lidas'))
-    fireEvent.click(screen.getByText('Marcar todas como lidas'))
-
-    expect(markAllReadMutate).toHaveBeenCalled()
+    expect(screen.queryByTestId('panel')).not.toBeInTheDocument()
   })
 })
 
 describe('NotificationBell (sidebar, desktop)', () => {
-  it('mostra a contagem de não lidas no botão ghost', () => {
-    unreadCount = 3
-
+  it('mostra a contagem de não lidas no botão ghost e monta o painel com variant="sidebar"', async () => {
+    unreadCount = 2
     render(<NotificationBell variant="sidebar" />)
 
-    expect(screen.getByText('3')).toBeInTheDocument()
-    expect(screen.getByLabelText('Notificações, 3 não lidas')).toBeInTheDocument()
-  })
+    expect(screen.getByText('2')).toBeInTheDocument()
 
-  it('abre o popover ao clicar e mostra a lista', () => {
-    notifications = [notification()]
+    fireEvent.click(screen.getByLabelText('Notificações, 2 não lidas'))
 
-    render(<NotificationBell variant="sidebar" />)
-    fireEvent.click(screen.getByLabelText('Notificações, 0 não lidas'))
-
-    expect(screen.getByText('Fatura do Nubank vence em 3 dias')).toBeInTheDocument()
+    const panel = await screen.findByTestId('panel')
+    expect(panel).toHaveAttribute('data-variant', 'sidebar')
   })
 })

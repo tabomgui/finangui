@@ -1,4 +1,4 @@
-import { Bell } from 'lucide-react'
+import { Bell, TriangleAlert } from 'lucide-react'
 import type { Notification } from '@/api/types'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,8 @@ import { formatRelativeTime } from './relative-time'
 type NotificationListProps = {
   notifications: Notification[]
   isPending: boolean
+  isError: boolean
+  onRetry: () => void
   hasNextPage: boolean
   isFetchingNextPage: boolean
   onLoadMore: () => void
@@ -16,9 +18,32 @@ type NotificationListProps = {
 
 /**
  * Lista pura (sem cabeçalho nem "marcar todas"): usada tanto dentro do `Sheet` (mobile) quanto do
- * `Popover` (desktop) do sino, que montam o cabeçalho cada um do seu jeito (ver `notification-bell.tsx`).
+ * `Popover` (desktop) do sino, que montam o cabeçalho cada um do seu jeito (ver `notification-panel.tsx`).
  */
-export function NotificationList({ notifications, isPending, hasNextPage, isFetchingNextPage, onLoadMore, onSelect }: NotificationListProps) {
+export function NotificationList({
+  notifications,
+  isPending,
+  isError,
+  onRetry,
+  hasNextPage,
+  isFetchingNextPage,
+  onLoadMore,
+  onSelect,
+}: NotificationListProps) {
+  if (isError) {
+    return (
+      <div className="flex items-center justify-between gap-2 p-3 text-sm text-muted-foreground">
+        <span className="flex items-center gap-2">
+          <TriangleAlert className="h-4 w-4" />
+          Não foi possível carregar as notificações.
+        </span>
+        <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+          Tentar de novo
+        </Button>
+      </div>
+    )
+  }
+
   if (isPending) {
     return (
       <div className="space-y-2 p-2">
@@ -50,6 +75,7 @@ export function NotificationList({ notifications, isPending, hasNextPage, isFetc
             />
             <span className="flex-1 space-y-0.5">
               <span className={unread ? 'block text-sm font-semibold text-foreground' : 'block text-sm font-medium text-foreground'}>
+                {unread && <span className="sr-only">Não lida: </span>}
                 {notification.title}
               </span>
               <span className="block text-sm text-muted-foreground">{notification.body}</span>
