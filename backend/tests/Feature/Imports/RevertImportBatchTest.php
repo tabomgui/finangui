@@ -11,6 +11,7 @@ use App\Domain\Imports\Enums\ImportBatchStatus;
 use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Errors\ImportBatchNotRevertible;
 use App\Domain\Imports\Models\ImportBatch;
+use App\Domain\Recurrences\Actions\DeleteRecurrence;
 use App\Domain\Recurrences\Models\Recurrence;
 use App\Domain\Rules\Models\Rule;
 use App\Domain\Tags\Models\Tag;
@@ -158,6 +159,40 @@ it('reverter uma prevista de recorrência adotada devolve data, valor e status p
         ->and($prevista->recurrence_id)->toBe($recurrence->id)
         ->and($prevista->recurrence_date->toDateString())->toBe('2026-03-05')
         ->and(Transaction::count())->toBe(1);
+});
+
+it('reverter uma prevista adotada cujo modelo de recorrência foi excluído no meio do caminho exclui a linha, em vez de deixar uma prevista órfã', function () {
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $this->account->id, 'user_id' => $this->user->id,
+        'description' => 'Aluguel', 'amount' => 150000, 'direction' => Direction::Out,
+    ]);
+    $prevista = Transaction::factory()->create([
+        'account_id' => $this->account->id, 'user_id' => $this->user->id,
+        'status' => 'projected', 'source' => 'recurrence', 'recurrence_id' => $recurrence->id,
+        'recurrence_date' => '2026-03-05', 'date' => '2026-03-05',
+        'description' => 'Aluguel', 'original_description' => 'Aluguel',
+        'amount' => 150000, 'direction' => Direction::Out,
+    ]);
+
+    $batch = $this->ingest->handle(
+        ImportBatch::factory()->create(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Nubank]),
+        [revertRow(['description' => 'Aluguel', 'amount' => 157500, 'date' => '2026-03-07', 'externalId' => 'rec-ext-2'])],
+    );
+
+    // A recorrência é excluída depois da adoção: a prevista já é um lançamento de
+    // verdade (status posted, external_id preenchido), então fica — só desliga
+    // recurrence_id/recurrence_date (DeleteRecurrence não sabe que um revert
+    // ainda vai acontecer).
+    app(DeleteRecurrence::class)->handle($recurrence);
+    expect($prevista->refresh()->recurrence_id)->toBeNull();
+
+    $this->revert->handle($batch);
+
+    // Restaurar devolveria status projected / source recurrence, mas sem
+    // recurrence_id (nunca fez parte do undo) ela ficaria uma prevista
+    // fantasma, que nada nunca mais confirma, pula ou regenera — exclui em
+    // vez disso.
+    expect(Transaction::query()->whereKey($prevista->id)->exists())->toBeFalse();
 });
 
 it('revert recalcula a fatura via AssignStatement quando a fatura salva no undo foi excluída (ex.: prune)', function () {

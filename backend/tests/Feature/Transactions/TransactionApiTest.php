@@ -322,6 +322,21 @@ it('exclui transação', function () {
     expect(Transaction::count())->toBe(0);
 });
 
+it('excluir uma ocorrência de recorrência ainda não confirmada passa por SkipOccurrence: grava a data pulada', function () {
+    $user = actingAsUser();
+    $account = Account::factory()->create(['user_id' => $user->id]);
+    $recurrence = Recurrence::factory()->create(['account_id' => $account->id, 'user_id' => $user->id]);
+    $occurrence = Transaction::factory()->create([
+        'account_id' => $account->id, 'status' => 'projected', 'source' => 'recurrence',
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-03-05', 'date' => '2026-03-05',
+    ]);
+
+    $this->deleteJson("/api/v1/transactions/{$occurrence->id}")->assertNoContent();
+
+    expect(Transaction::query()->whereKey($occurrence->id)->exists())->toBeFalse()
+        ->and($recurrence->refresh()->skipped_dates)->toBe(['2026-03-05']);
+});
+
 it('retorna 404 para transação de outro usuário', function () {
     $other = User::factory()->create();
     $account = Account::factory()->create(['user_id' => $other->id]);

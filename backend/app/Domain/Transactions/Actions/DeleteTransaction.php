@@ -3,6 +3,7 @@
 namespace App\Domain\Transactions\Actions;
 
 use App\Domain\Cards\Actions\DeleteInstallmentPlan;
+use App\Domain\Recurrences\Actions\SkipOccurrence;
 use App\Domain\Transactions\Models\Transaction;
 use App\Domain\Transfers\Actions\DeleteTransfer;
 use App\Domain\Transfers\Actions\UnlinkTransfer;
@@ -15,6 +16,7 @@ final class DeleteTransaction
         private readonly DeleteTransfer $deleteTransfer,
         private readonly DeleteInstallmentPlan $deleteInstallmentPlan,
         private readonly UnlinkTransfer $unlinkTransfer,
+        private readonly SkipOccurrence $skipOccurrence,
     ) {}
 
     /**
@@ -26,10 +28,18 @@ final class DeleteTransaction
      * usuário pediu só para esta: desliga o par (sem lembrar como
      * descartado) e exclui só a perna escolhida — a outra volta a ser um
      * lançamento comum. Excluir uma parcela exclui o parcelamento inteiro:
-     * a mesma razão de saldo da transferência manual.
+     * a mesma razão de saldo da transferência manual. Excluir uma
+     * ocorrência de recorrência ainda não confirmada passa por
+     * SkipOccurrence: grava a data pulada, para ela nunca voltar.
      */
     public function handle(Transaction $transaction): void
     {
+        if ($transaction->isUnconfirmedOccurrence()) {
+            $this->skipOccurrence->handle($transaction);
+
+            return;
+        }
+
         if ($transaction->isInstallment()) {
             $this->deleteInstallmentPlan->handle($transaction->installmentPlan);
 
