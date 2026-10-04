@@ -19,7 +19,9 @@ type BudgetRowProps = { item: BudgetItem; month: string; currency: string; onEdi
 
 export function BudgetRow({ item, month, currency, onEdit }: BudgetRowProps) {
   const [deleting, setDeleting] = useState(false)
-  const over = item.percent > 100
+  // Não usa `item.percent > 100`: ele é inteiro (arredondado) e pode ficar em 100 mesmo já
+  // tendo passado um pouco do orçamento — `remaining` é a fonte exata (`amount - spent`).
+  const over = item.remaining < 0
   // A largura da barra satura em 100%; o número ao lado continua mostrando o percentual real.
   const barWidth = Math.min(item.percent, 100)
 
@@ -67,7 +69,14 @@ export function BudgetRow({ item, month, currency, onEdit }: BudgetRowProps) {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-muted">
+      <div
+        role="progressbar"
+        aria-label={`Progresso do orçamento de ${item.category.name}`}
+        aria-valuenow={item.percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        className="h-2 overflow-hidden rounded-full bg-muted"
+      >
         <div className={cn('h-full rounded-full', over ? 'bg-expense' : 'bg-primary')} style={{ width: `${barWidth}%` }} />
       </div>
 

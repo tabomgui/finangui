@@ -4,9 +4,11 @@ import type { BudgetItem } from '@/api/types'
 import { BudgetRow } from './budget-row'
 
 const deleteMutateAsync = vi.fn()
+const saveMutateAsync = vi.fn()
 
 vi.mock('@/api/queries/budgets', () => ({
   useDeleteBudget: () => ({ mutateAsync: deleteMutateAsync, isPending: false }),
+  useSaveBudget: () => ({ mutateAsync: saveMutateAsync, isPending: false }),
 }))
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
@@ -31,6 +33,7 @@ async function openMenu(name: string | RegExp) {
 
 beforeEach(() => {
   deleteMutateAsync.mockReset().mockResolvedValue(undefined)
+  saveMutateAsync.mockReset().mockResolvedValue(undefined)
 })
 
 describe('BudgetRow', () => {
@@ -76,5 +79,32 @@ describe('BudgetRow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
 
     await waitFor(() => expect(deleteMutateAsync).toHaveBeenCalledWith({ category_id: 2, month: '2026-10' }))
+  })
+
+  it('item sem exceção do mês (fonte "default"): escolher o escopo do mês zera o valor com PUT, não apaga', async () => {
+    render(<BudgetRow item={item({ source: 'default' })} month="2026-10" currency="BRL" onEdit={vi.fn()} />)
+
+    await openMenu(/Ações do orçamento/)
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Remover' }))
+    fireEvent.click(screen.getByText('Sem orçamento só em outubro'))
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }))
+
+    await waitFor(() => expect(saveMutateAsync).toHaveBeenCalledWith({ category_id: 2, amount: 0, month: '2026-10' }))
+    expect(deleteMutateAsync).not.toHaveBeenCalled()
+  })
+
+  it('o orçamento fica vermelho quando `remaining` é negativo, mesmo com `percent` arredondado em 100', () => {
+    render(
+      <BudgetRow
+        item={item({ amount: 100000, spent: 100001, remaining: -1, percent: 100 })}
+        month="2026-10"
+        currency="BRL"
+        onEdit={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100')
+    expect(screen.getByText('100%')).toHaveClass('text-expense')
+    expect(screen.getByText('excedeu', { exact: false })).toBeInTheDocument()
   })
 })

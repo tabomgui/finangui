@@ -9,9 +9,12 @@ type BudgetScopeToggleProps = {
   onChange: (scope: BudgetScope) => void
   month: string
   disabled?: boolean
+  /** Sobrescreve o texto da opção "month" (padrão "Só {mês}"): usado quando ela não significa
+   * remover uma exceção (ver `budget-delete-dialog.tsx`, categoria sem exceção própria). */
+  monthLabel?: string
 }
 
-export function BudgetScopeToggle({ value, onChange, month, disabled }: BudgetScopeToggleProps) {
+export function BudgetScopeToggle({ value, onChange, month, disabled, monthLabel }: BudgetScopeToggleProps) {
   return (
     <ToggleGroup
       type="single"
@@ -31,7 +34,7 @@ export function BudgetScopeToggle({ value, onChange, month, disabled }: BudgetSc
         value="month"
         className="h-auto rounded-xl border-2 border-border bg-card py-2 text-foreground disabled:opacity-100 data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
       >
-        Só {monthName(month)}
+        {monthLabel ?? `Só ${monthName(month)}`}
       </ToggleGroupItem>
     </ToggleGroup>
   )
