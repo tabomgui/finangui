@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Domain\Notifications\Enums\NotificationType;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Notifications\DatabaseNotification;
@@ -15,12 +16,12 @@ use Illuminate\Notifications\DatabaseNotification;
 final class NotificationResource extends JsonResource
 {
     /**
-     * Os casts (string) são de propósito: `data` é um array cast genérico
-     * (sem shape conhecida) — sem eles, o Scramble não consegue atribuir um
-     * tipo à chave lida de volta dele (ver mesmo raciocínio em
-     * App\Http\Controllers\Api\V1\TransferSuggestionController::detect()).
+     * Os casts (string)/NotificationType::from() são de propósito: `data` é
+     * um array cast genérico (sem shape conhecida) — sem eles, o Scramble
+     * não consegue atribuir um tipo à chave lida de volta dele (ver mesmo
+     * raciocínio em App\Http\Controllers\Api\V1\TransferSuggestionController::detect()).
      *
-     * @return array{id: string, type: string, title: string, body: string, url: string, read_at: string|null, created_at: string}
+     * @return array{id: string, type: NotificationType, title: string, body: string, url: string, read_at: string|null, created_at: string}
      */
     public function toArray(Request $request): array
     {
@@ -29,7 +30,7 @@ final class NotificationResource extends JsonResource
 
         return [
             'id' => $this->id,
-            'type' => (string) $data['type'],
+            'type' => NotificationType::fromValue($data['type']),
             'title' => (string) $data['title'],
             'body' => (string) $data['body'],
             'url' => (string) $data['url'],

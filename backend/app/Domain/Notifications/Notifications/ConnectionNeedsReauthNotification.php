@@ -2,6 +2,7 @@
 
 namespace App\Domain\Notifications\Notifications;
 
+use App\Domain\Notifications\Enums\NotificationType;
 use App\Domain\Notifications\Support\DedupableNotification;
 use Illuminate\Notifications\Notification;
 
@@ -29,18 +30,18 @@ final class ConnectionNeedsReauthNotification extends Notification implements De
 
     public function dedupeKey(): string
     {
-        return "needs_reauth:{$this->connectionId}:{$this->date}";
+        return NotificationType::NeedsReauth->value.":{$this->connectionId}:{$this->date}";
     }
 
     /**
-     * @return array{type: string, key: string, title: string, body: string, url: string}
+     * @return array{type: NotificationType, key: string, title: string, body: string, url: string}
      */
     public function toArray(object $notifiable): array
     {
         $institution = $this->institutionName ?? 'banco';
 
         return [
-            'type' => 'needs_reauth',
+            'type' => NotificationType::NeedsReauth,
             'key' => $this->dedupeKey(),
             'title' => 'Reconexão necessária',
             'body' => "O {$institution} pediu para reconectar.",

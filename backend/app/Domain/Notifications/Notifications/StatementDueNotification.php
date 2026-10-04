@@ -2,6 +2,7 @@
 
 namespace App\Domain\Notifications\Notifications;
 
+use App\Domain\Notifications\Enums\NotificationType;
 use App\Domain\Notifications\Support\DedupableNotification;
 use Illuminate\Notifications\Notification;
 
@@ -28,16 +29,16 @@ final class StatementDueNotification extends Notification implements DedupableNo
 
     public function dedupeKey(): string
     {
-        return "statement_due:{$this->statementId}";
+        return NotificationType::StatementDue->value.":{$this->statementId}";
     }
 
     /**
-     * @return array{type: string, key: string, title: string, body: string, url: string}
+     * @return array{type: NotificationType, key: string, title: string, body: string, url: string}
      */
     public function toArray(object $notifiable): array
     {
         return [
-            'type' => 'statement_due',
+            'type' => NotificationType::StatementDue,
             'key' => $this->dedupeKey(),
             'title' => 'Fatura vencendo',
             'body' => "Fatura do {$this->cardName} vence {$this->dueWording()}.",
