@@ -6,6 +6,7 @@ use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Categories\Models\Category;
+use App\Domain\Recurrences\Models\Recurrence;
 use App\Domain\Rules\Support\TextNormalizer;
 use App\Domain\Tags\Models\Tag;
 use App\Domain\Transactions\Enums\Direction;
@@ -42,6 +43,7 @@ class Transaction extends Model
         'category_id', 'payee', 'status', 'source', 'external_id', 'categorized_by',
         'is_ignored', 'transfer_id', 'raw', 'statement_id',
         'installment_plan_id', 'installment_number', 'import_batch_id',
+        'recurrence_id', 'recurrence_date',
     ];
 
     /**
@@ -73,6 +75,7 @@ class Transaction extends Model
             'is_ignored' => 'boolean',
             'raw' => 'array',
             'installment_number' => 'integer',
+            'recurrence_date' => 'immutable_date',
         ];
     }
 
@@ -129,6 +132,14 @@ class Transaction extends Model
     public function installmentPlan(): BelongsTo
     {
         return $this->belongsTo(InstallmentPlan::class);
+    }
+
+    /**
+     * @return BelongsTo<Recurrence, $this>
+     */
+    public function recurrence(): BelongsTo
+    {
+        return $this->belongsTo(Recurrence::class);
     }
 
     public function isTransferLeg(): bool
