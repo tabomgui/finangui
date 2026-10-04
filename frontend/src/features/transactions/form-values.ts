@@ -27,6 +27,11 @@ export const entrySchema = z.object({
   is_ignored: z.boolean(),
   installments: z.number().int().min(1).max(48),
   statement_id: z.number().nullable(),
+  // Só usados na criação (toggle "Repetir"): ver `entry-form.tsx` e `transaction-form-page.tsx`.
+  // Nunca entram no corpo de StoreTransactionRequest (`toTransactionBody` não os inclui);
+  // quem envia é o POST /recurrences separado, disparado depois de criar a transação.
+  repeat: z.boolean(),
+  repeat_frequency: z.enum(['weekly', 'monthly', 'yearly']),
 })
 
 // `.nullable().refine(...)` no zod 4 estreita o tipo de SAÍDA (amount/account_id passam a `number`),
@@ -51,6 +56,8 @@ export function entryDefaults(
       is_ignored: transaction.is_ignored,
       installments: 1,
       statement_id: transaction.statement_id ?? null,
+      repeat: false,
+      repeat_frequency: 'monthly',
     }
   }
 
@@ -66,6 +73,8 @@ export function entryDefaults(
     is_ignored: false,
     installments: 1,
     statement_id: null,
+    repeat: false,
+    repeat_frequency: 'monthly',
   }
 }
 

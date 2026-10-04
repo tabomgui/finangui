@@ -223,3 +223,80 @@ describe('EntryForm', () => {
     expect(toTransactionBody(captured!, { initialStatementId: 50 })).not.toHaveProperty('statement_id')
   })
 })
+
+describe('Repetir', () => {
+  it('mostra o toggle só na criação, nunca ao editar', () => {
+    const client = new QueryClient()
+    mockAccounts = []
+
+    render(
+      <QueryClientProvider client={client}>
+        <EntryForm defaultValues={entryDefaults({ transaction })} onSubmit={vi.fn()} submitLabel="Salvar" mode="edit" />
+      </QueryClientProvider>,
+    )
+
+    expect(screen.queryByLabelText('Repetir')).not.toBeInTheDocument()
+  })
+
+  it('mostra a frequência só depois de ligar o toggle, e envia nos valores enviados', async () => {
+    const client = new QueryClient()
+    mockAccounts = []
+    let captured: EntryValues | undefined
+
+    render(
+      <QueryClientProvider client={client}>
+        <EntryForm
+          defaultValues={entryDefaults({ direction: 'out', accountId: 1, today: '2026-10-05' })}
+          onSubmit={async (values) => {
+            captured = values
+          }}
+          submitLabel="Salvar despesa"
+        />
+      </QueryClientProvider>,
+    )
+
+    expect(screen.queryByLabelText('Frequência')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('Repetir'))
+    expect(screen.getByLabelText('Frequência')).toHaveTextContent('Todo mês')
+
+    await chooseOption('Frequência', 'Toda semana')
+
+    fireEvent.change(screen.getByLabelText(/Valor/), { target: { value: '50,00' } })
+    fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Assinatura' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))
+
+    await waitFor(() => expect(captured).toBeDefined())
+    expect(captured).toMatchObject({ repeat: true, repeat_frequency: 'weekly' })
+  })
+
+  it('escolher 3x de parcelas esconde e desliga "Repetir"', async () => {
+    const client = new QueryClient()
+    mockAccounts = [cardA, checking]
+    let captured: EntryValues | undefined
+
+    render(
+      <QueryClientProvider client={client}>
+        <EntryForm
+          defaultValues={entryDefaults({ direction: 'out', accountId: 1, today: '2026-10-05' })}
+          onSubmit={async (values) => {
+            captured = values
+          }}
+          submitLabel="Salvar"
+        />
+      </QueryClientProvider>,
+    )
+
+    fireEvent.click(screen.getByLabelText('Repetir'))
+    await chooseOption('Parcelas', '3x')
+
+    expect(screen.queryByLabelText('Repetir')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText(/Valor/), { target: { value: '100,00' } })
+    fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Compra' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => expect(captured).toBeDefined())
+    expect(captured?.repeat).toBe(false)
+  })
+})

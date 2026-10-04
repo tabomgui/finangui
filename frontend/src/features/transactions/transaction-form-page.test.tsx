@@ -26,14 +26,21 @@ vi.mock('@/api/queries/cards', () => ({
 
 let mockTransaction: Transaction | undefined
 let mockTransactionError = true
+const createTransactionMutateAsync = vi.fn()
 const updateTransactionMutateAsync = vi.fn()
 const deleteTransactionMutateAsync = vi.fn()
 
 vi.mock('@/api/queries/transactions', () => ({
   useTransaction: () => ({ data: mockTransaction, isPending: false, isError: mockTransactionError }),
-  useCreateTransaction: () => ({ mutateAsync: vi.fn() }),
+  useCreateTransaction: () => ({ mutateAsync: createTransactionMutateAsync }),
   useUpdateTransaction: () => ({ mutateAsync: updateTransactionMutateAsync }),
   useDeleteTransaction: () => ({ mutateAsync: deleteTransactionMutateAsync }),
+}))
+
+const createRecurrenceMutateAsync = vi.fn()
+
+vi.mock('@/api/queries/recurrences', () => ({
+  useCreateRecurrence: () => ({ mutateAsync: createRecurrenceMutateAsync }),
 }))
 
 let mockTransfer: Transfer | undefined
@@ -156,6 +163,8 @@ beforeEach(() => {
   mockTransaction = undefined
   mockTransactionError = true
   mockTransfer = undefined
+  createTransactionMutateAsync.mockReset().mockResolvedValue(transaction({ id: 9 }))
+  createRecurrenceMutateAsync.mockReset().mockResolvedValue({ id: 1 })
   updateTransactionMutateAsync.mockReset().mockResolvedValue(undefined)
   deleteTransactionMutateAsync.mockReset().mockResolvedValue(undefined)
   unlinkTransferMutateAsync.mockReset().mockResolvedValue(undefined)
@@ -325,5 +334,37 @@ describe('TransactionFormPage', () => {
     await waitFor(() => expect(unlinkTransferMutateAsync).toHaveBeenCalledWith('uuid-1'))
     await waitFor(() => expect(screen.getByText('Cartão')).toBeInTheDocument())
     expect(toast.success).toHaveBeenCalledWith('Transferência desfeita.')
+  })
+
+  it('criação com "Repetir" ligado: cria a recorrência a partir da transação e avisa', async () => {
+    mockAccounts = [account({ id: 1, name: 'Inter' })]
+
+    renderPage(['/transacoes/nova'])
+
+    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '50,00' } })
+    fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Streaming' } })
+    fireEvent.click(screen.getByLabelText('Repetir'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))
+
+    await waitFor(() =>
+      expect(createRecurrenceMutateAsync).toHaveBeenCalledWith({ transaction_id: 9, frequency: 'monthly' }),
+    )
+    expect(toast.success).toHaveBeenCalledWith('Recorrência criada.')
+    expect(toast.success).toHaveBeenCalledWith('Lançamento salvo.')
+  })
+
+  it('criação: quando a transação casa com uma prevista, avisa a confirmação em vez do toast padrão', async () => {
+    mockAccounts = [account({ id: 1, name: 'Inter' })]
+    createTransactionMutateAsync.mockResolvedValue(transaction({ id: 9, recurrence: { id: 2, description: 'Aluguel' } }))
+
+    renderPage(['/transacoes/nova'])
+
+    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '1.500,00' } })
+    fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Aluguel' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))
+
+    await waitFor(() => expect(createTransactionMutateAsync).toHaveBeenCalled())
+    expect(toast.success).toHaveBeenCalledWith('Lançamento previsto de Aluguel confirmado.')
+    expect(toast.success).not.toHaveBeenCalledWith('Lançamento salvo.')
   })
 })

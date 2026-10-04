@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAccounts } from '@/api/queries/accounts'
+import { useCreateRecurrence } from '@/api/queries/recurrences'
 import { useUnlinkTransfer } from '@/api/queries/transfer-suggestions'
 import { useCreateTransaction, useDeleteTransaction, useTransaction, useUpdateTransaction } from '@/api/queries/transactions'
 import { useCreateTransfer, useTransfer, useUpdateTransfer } from '@/api/queries/transfers'
@@ -43,6 +44,7 @@ function NewTransactionPage() {
   const { data: allAccounts, isPending: isPendingAll } = useAccounts(true)
   const createTransaction = useCreateTransaction()
   const createTransfer = useCreateTransfer()
+  const createRecurrence = useCreateRecurrence()
   const navigate = useNavigate()
 
   if (isPending || isPendingAll) return <FullPageSpinner />
@@ -51,8 +53,8 @@ function NewTransactionPage() {
   const firstAccountId = accountFromParam?.id ?? accounts?.[0]?.id ?? null
   const backTo = backDestination(location.state?.from)
 
-  const done = () => {
-    toast.success('Lançamento salvo.')
+  const done = (message = 'Lançamento salvo.') => {
+    toast.success(message)
     navigate(backTo, { replace: true })
   }
 
@@ -79,8 +81,12 @@ function NewTransactionPage() {
             submitLabel={kind === 'out' ? 'Salvar despesa' : 'Salvar receita'}
             autoFocusAmount
             onSubmit={async (values) => {
-              await createTransaction.mutateAsync(toTransactionBody(values))
-              done()
+              const transaction = await createTransaction.mutateAsync(toTransactionBody(values))
+              if (values.repeat) {
+                await createRecurrence.mutateAsync({ transaction_id: transaction.id, frequency: values.repeat_frequency })
+                toast.success('Recorrência criada.')
+              }
+              done(transaction.recurrence && `Lançamento previsto de ${transaction.recurrence.description} confirmado.`)
             }}
           />
         )}

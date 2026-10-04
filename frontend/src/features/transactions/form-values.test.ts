@@ -39,6 +39,8 @@ describe('lançamento', () => {
       is_ignored: false,
       installments: 1,
       statement_id: null,
+      repeat: false,
+      repeat_frequency: 'monthly',
     })
   })
 
