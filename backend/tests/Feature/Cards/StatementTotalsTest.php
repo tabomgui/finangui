@@ -3,6 +3,7 @@
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Enums\StatementStatus;
 use App\Domain\Cards\Models\CardStatement;
+use App\Domain\Recurrences\Models\Recurrence;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
@@ -74,4 +75,44 @@ it('no dia do fechamento a fatura já está fechada', function () {
 
 it('ler total sem withTotals é erro de programação', function () {
     expect(fn () => CardStatement::query()->findOrFail($this->statement->id)->total())->toThrow(LogicException::class);
+});
+
+it('fatura fechada exclui do total uma ocorrência de recorrência ainda não confirmada', function () {
+    CarbonImmutable::setTestNow('2026-03-15');
+    $recurrence = Recurrence::factory()->create(['account_id' => $this->card->id, 'user_id' => $this->user->id]);
+    // closing_date (2026-03-03) já passou: a fatura está fechada.
+    linked([
+        'amount' => 5000, 'direction' => Direction::Out, 'status' => TransactionStatus::Projected,
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-03-01', 'date' => '2026-03-01',
+        'description' => 'Netflix', 'original_description' => 'Netflix',
+    ]);
+
+    expect(loaded()->total()->cents)->toBe(0);
+});
+
+it('fatura ainda aberta mantém a previsão de uma ocorrência de recorrência ainda não confirmada', function () {
+    CarbonImmutable::setTestNow('2026-03-15');
+    $open = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-04-03', 'due_date' => '2026-04-10']);
+    $recurrence = Recurrence::factory()->create(['account_id' => $this->card->id, 'user_id' => $this->user->id]);
+    Transaction::factory()->create([
+        'account_id' => $this->card->id, 'statement_id' => $open->id,
+        'amount' => 7000, 'direction' => Direction::Out, 'status' => TransactionStatus::Projected,
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-04-05', 'date' => '2026-04-05',
+        'description' => 'Netflix', 'original_description' => 'Netflix',
+    ]);
+
+    $loaded = CardStatement::query()->withTotals()->findOrFail($open->id);
+    expect($loaded->total()->cents)->toBe(7000);
+});
+
+it('fatura fechada mantém no total uma ocorrência de recorrência já adotada por importação/banco', function () {
+    CarbonImmutable::setTestNow('2026-03-15');
+    $recurrence = Recurrence::factory()->create(['account_id' => $this->card->id, 'user_id' => $this->user->id]);
+    linked([
+        'amount' => 5000, 'direction' => Direction::Out, 'status' => TransactionStatus::Projected, 'external_id' => 'ext-1',
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-03-01', 'date' => '2026-04-01',
+        'description' => 'Netflix', 'original_description' => 'Netflix',
+    ]);
+
+    expect(loaded()->total()->cents)->toBe(5000);
 });

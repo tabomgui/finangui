@@ -7,7 +7,6 @@ use App\Domain\Cards\Actions\AssignStatement;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Recurrences\Enums\Frequency;
 use App\Domain\Recurrences\Models\Recurrence;
-use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -16,15 +15,17 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Campos simples (conta, descrição, valor, categoria, match_pattern)
- * propagam para as ocorrências previstas com data >= hoje. Mudar o
+ * propagam para as ocorrências ainda não confirmadas
+ * (Transaction::isUnconfirmedOccurrence()) com data >= hoje. Mudar o
  * calendário (frequency, interval, day_of_month, starts_on, ends_on) exclui
- * as previstas com recurrence_date >= hoje - 5 (a mesma janela em que um
- * lançamento real ainda pode casar, evitando duas ocorrências do mesmo
- * período) e as que ficaram fora do novo intervalo (antes do novo starts_on
- * ou depois do novo ends_on), zera generated_until para hoje - 6 e gera de
- * novo. Pausar (is_active: false) faz a mesma limpeza; reativar avança
- * generated_until até pelo menos hoje - 6 e gera de novo a partir de hoje.
- * direction é imutável depois de criada — o request rejeita esse campo.
+ * as ocorrências ainda não confirmadas com recurrence_date >= hoje - 5 (a
+ * mesma janela em que um lançamento real ainda pode casar, evitando duas
+ * ocorrências do mesmo período) e as que ficaram fora do novo intervalo
+ * (antes do novo starts_on ou depois do novo ends_on), zera generated_until
+ * para hoje - 6 e gera de novo. Pausar (is_active: false) faz a mesma
+ * limpeza; reativar avança generated_until até pelo menos hoje - 6 e gera
+ * de novo a partir de hoje. direction é imutável depois de criada — o
+ * request rejeita esse campo.
  */
 final class UpdateRecurrence
 {
@@ -45,6 +46,8 @@ final class UpdateRecurrence
     public function handle(Recurrence $recurrence, array $input): Recurrence
     {
         return DB::transaction(function () use ($recurrence, $input) {
+            $input = $this->normalizeDayOfMonthInput($recurrence, $input);
+
             $previousAccountId = $recurrence->account_id;
             $wasActive = $recurrence->is_active;
             $calendarChanged = $this->changed($recurrence, $input, self::CALENDAR_FIELDS);
@@ -61,7 +64,7 @@ final class UpdateRecurrence
                 $this->deleteAffectedProjected($recurrence, $today);
                 $recurrence->generated_until = $today->subDays(6);
                 $recurrence->save();
-                CardStatement::pruneEmptyFuture($recurrence->account_id);
+                $this->pruneEmptyFutureStatements($recurrence->account_id, $previousAccountId);
             } elseif ($activeChanged && $recurrence->is_active) {
                 $recurrence->generated_until = self::later($recurrence->generated_until ?? $today->subDays(6), $today->subDays(6));
                 $recurrence->save();
@@ -74,7 +77,7 @@ final class UpdateRecurrence
                 $this->propagateSimpleFields($recurrence, $today);
 
                 if ($recurrence->account_id !== $previousAccountId) {
-                    CardStatement::pruneEmptyFuture($previousAccountId);
+                    $this->pruneEmptyFutureStatements($recurrence->account_id, $previousAccountId);
                 }
             }
 
@@ -109,6 +112,33 @@ final class UpdateRecurrence
     }
 
     /**
+     * Resolve day_of_month: null para o efetivo (dia de starts_on) antes de
+     * comparar contra o valor atual — senão, mandar explicitamente null
+     * quando o dia já é o de starts_on contaria como mudança de calendário
+     * (excluiria e regeneraria previstas sem necessidade nenhuma).
+     *
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function normalizeDayOfMonthInput(Recurrence $recurrence, array $input): array
+    {
+        if (! array_key_exists('day_of_month', $input) || $input['day_of_month'] !== null) {
+            return $input;
+        }
+
+        $frequency = $input['frequency'] ?? $recurrence->frequency->value;
+
+        if ($frequency !== Frequency::Monthly->value) {
+            return $input;
+        }
+
+        $startsOn = array_key_exists('starts_on', $input) ? CarbonImmutable::parse($input['starts_on']) : $recurrence->starts_on;
+        $input['day_of_month'] = $startsOn->day;
+
+        return $input;
+    }
+
+    /**
      * day_of_month só existe para frequência mensal; nela, sem valor
      * explícito, o padrão é o dia de starts_on (mesma regra da criação).
      */
@@ -124,11 +154,11 @@ final class UpdateRecurrence
     }
 
     /**
-     * Previstas afetadas por uma mudança de calendário ou pausa: as de
-     * sempre que vida (>= hoje - 5, evita duas ocorrências do mesmo período
-     * quando a geração for refeita) e as que o novo intervalo não cobre
-     * mais (antes do novo starts_on ou depois do novo ends_on), mesmo que
-     * já antigas.
+     * Ocorrências ainda não confirmadas afetadas por uma mudança de
+     * calendário ou pausa: as de sempre que vida (>= hoje - 5, evita duas
+     * ocorrências do mesmo período quando a geração for refeita) e as que
+     * o novo intervalo não cobre mais (antes do novo starts_on ou depois
+     * do novo ends_on), mesmo que já antigas.
      */
     private function deleteAffectedProjected(Recurrence $recurrence, CarbonImmutable $today): void
     {
@@ -136,7 +166,7 @@ final class UpdateRecurrence
 
         Transaction::query()
             ->where('recurrence_id', $recurrence->id)
-            ->where('status', TransactionStatus::Projected->value)
+            ->unconfirmedOccurrences()
             ->where(function (Builder $query) use ($recurrence, $threshold) {
                 $query->where('recurrence_date', '>=', $threshold)
                     ->orWhere('recurrence_date', '<', $recurrence->starts_on->toDateString());
@@ -155,7 +185,7 @@ final class UpdateRecurrence
         /** @var Collection<int, Transaction> $occurrences */
         $occurrences = Transaction::query()
             ->where('recurrence_id', $recurrence->id)
-            ->where('status', TransactionStatus::Projected->value)
+            ->unconfirmedOccurrences()
             ->where('recurrence_date', '>=', $today)
             ->get();
 
@@ -170,6 +200,15 @@ final class UpdateRecurrence
             $this->assignStatement->handle($transaction);
             $transaction->save();
         });
+    }
+
+    private function pruneEmptyFutureStatements(int $accountId, int $previousAccountId): void
+    {
+        CardStatement::pruneEmptyFuture($accountId);
+
+        if ($previousAccountId !== $accountId) {
+            CardStatement::pruneEmptyFuture($previousAccountId);
+        }
     }
 
     private static function later(CarbonImmutable $a, CarbonImmutable $b): CarbonImmutable

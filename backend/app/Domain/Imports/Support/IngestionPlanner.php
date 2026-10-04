@@ -178,7 +178,7 @@ final class IngestionPlanner
     private function adoptionPool(Collection $candidates, ?ImportFormat $format): Collection
     {
         return $candidates->filter(function (Transaction $t) use ($format) {
-            if ($t->installment_plan_id !== null || $this->isProjectedRecurrenceOccurrence($t)) {
+            if ($t->installment_plan_id !== null || $t->isUnconfirmedOccurrence()) {
                 return false;
             }
 
@@ -200,19 +200,7 @@ final class IngestionPlanner
      */
     private function recurrencePool(Collection $candidates): Collection
     {
-        return $candidates->filter(fn (Transaction $t) => $this->isProjectedRecurrenceOccurrence($t))->values();
-    }
-
-    /**
-     * Prevista de recorrência de verdade (status projected, recurrence_id
-     * preenchido, sem external_id — uma vez linkada a um external_id por
-     * qualquer caminho, ela deixa de ser uma prevista "livre"): só o
-     * RecurrenceMatcher decide o destino dela, nunca matchAdoption()/
-     * matchCardPayment() (ver adoptionPool()).
-     */
-    private function isProjectedRecurrenceOccurrence(Transaction $t): bool
-    {
-        return $t->status === TransactionStatus::Projected && $t->recurrence_id !== null && $t->external_id === null;
+        return $candidates->filter(fn (Transaction $t) => $t->isUnconfirmedOccurrence())->values();
     }
 
     /**

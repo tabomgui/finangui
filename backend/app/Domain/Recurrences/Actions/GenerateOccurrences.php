@@ -4,6 +4,7 @@ namespace App\Domain\Recurrences\Actions;
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Actions\AssignStatement;
+use App\Domain\Recurrences\Enums\Frequency;
 use App\Domain\Recurrences\Models\Recurrence;
 use App\Domain\Recurrences\Support\RecurrenceSchedule;
 use App\Domain\Rules\Support\TextNormalizer;
@@ -11,6 +12,7 @@ use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -21,7 +23,12 @@ use Illuminate\Support\Facades\DB;
  * data pulada (skipped_dates) nunca volta, mesmo com generated_until
  * reaberto por uma mudança de calendário. Conta de cartão nunca ganha
  * prevista com data anterior a hoje (não reabre fatura já fechada). Uma
- * recorrência inativa ou de conta arquivada não gera nada.
+ * recorrência inativa ou de conta arquivada não gera nada. Um período (mês
+ * para mensal, semana ISO para semanal, ano para anual) que já tem uma
+ * ocorrência confirmada (status diferente de projected) desta recorrência
+ * nunca ganha outra prevista — evita duplicar quando uma mudança de
+ * calendário reabre generated_until e recalcula um dia diferente dentro do
+ * mesmo período de algo que já foi lançado.
  *
  * Roda dentro de uma transação com a recorrência relida sob lockForUpdate
  * (is_active e generated_until podem ter mudado desde que o chamador leu o
@@ -64,6 +71,7 @@ final class GenerateOccurrences
 
             $dates = RecurrenceSchedule::dates($locked, $from, $to);
             $skippedDates = $locked->skipped_dates;
+            $confirmedPeriods = $this->confirmedPeriods($locked);
 
             $rows = [];
 
@@ -73,6 +81,10 @@ final class GenerateOccurrences
                 }
 
                 if ($account->isCreditCard() && CarbonImmutable::parse($date)->lessThan($today)) {
+                    continue;
+                }
+
+                if (isset($confirmedPeriods[self::periodKey($locked->frequency, CarbonImmutable::parse($date))])) {
                     continue;
                 }
 
@@ -137,6 +149,39 @@ final class GenerateOccurrences
         $this->assignStatement->handle($transaction);
 
         return $transaction->getAttributes();
+    }
+
+    /**
+     * Períodos (chave de self::periodKey()) que já têm uma ocorrência
+     * confirmada desta recorrência — qualquer status diferente de
+     * projected, inclusive uma pendente futura adotada por importação/banco
+     * que ainda é status projected mas já tem external_id (por isso usa
+     * isUnconfirmedOccurrence() invertido, não um filtro de status direto).
+     *
+     * @return array<string, bool>
+     */
+    private function confirmedPeriods(Recurrence $recurrence): array
+    {
+        return Transaction::query()
+            ->where('recurrence_id', $recurrence->id)
+            ->whereNot(fn (Builder $query) => $query->unconfirmedOccurrences())
+            ->pluck('recurrence_date')
+            ->mapWithKeys(fn ($date) => [self::periodKey($recurrence->frequency, CarbonImmutable::parse($date)) => true])
+            ->all();
+    }
+
+    /**
+     * Mesmo período (self::periodKey()) de uma ocorrência confirmada nunca
+     * ganha outra prevista: mês para mensal, semana ISO para semanal, ano
+     * para anual.
+     */
+    private static function periodKey(Frequency $frequency, CarbonImmutable $date): string
+    {
+        return match ($frequency) {
+            Frequency::Monthly => $date->format('Y-m'),
+            Frequency::Weekly => $date->format('o-W'),
+            Frequency::Yearly => $date->format('Y'),
+        };
     }
 
     private static function later(CarbonImmutable $a, CarbonImmutable $b): CarbonImmutable

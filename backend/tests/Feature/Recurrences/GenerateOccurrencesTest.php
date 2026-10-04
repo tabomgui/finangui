@@ -132,6 +132,50 @@ it('recorrência em cartão de crédito ganha fatura e nunca prevê data anterio
     expect($transaction->statement_id)->not->toBeNull();
 });
 
+it('não gera outra prevista no mesmo mês de uma ocorrência já confirmada (mensal)', function () {
+    CarbonImmutable::setTestNow('2026-03-10');
+    $recurrence = recurrenceModel();
+    app(GenerateOccurrences::class)->handle($recurrence);
+
+    // Lançamento de março já aconteceu (ex.: confirmado manualmente).
+    Transaction::query()->where('recurrence_date', '2026-03-05')->update(['status' => 'posted']);
+
+    // Como uma mudança de calendário faria: reabre generated_until e muda o dia.
+    $recurrence->update(['day_of_month' => 20, 'generated_until' => '2026-02-28']);
+
+    app(GenerateOccurrences::class)->handle($recurrence);
+
+    expect(occurrenceDates($recurrence))->not->toContain('2026-03-20')
+        ->and(occurrenceDates($recurrence))->toContain('2026-04-20');
+});
+
+it('não gera outra prevista na mesma semana ISO de uma ocorrência já confirmada (semanal)', function () {
+    CarbonImmutable::setTestNow('2026-03-10');
+    $recurrence = recurrenceModel(['frequency' => Frequency::Weekly, 'starts_on' => '2026-03-02', 'day_of_month' => null]);
+    app(GenerateOccurrences::class)->handle($recurrence);
+
+    // 2026-03-02 (segunda) já aconteceu; 2026-03-04 é quarta da mesma semana ISO.
+    Transaction::query()->where('recurrence_date', '2026-03-02')->update(['status' => 'posted']);
+    $recurrence->update(['starts_on' => '2026-03-04', 'generated_until' => '2026-03-01']);
+
+    app(GenerateOccurrences::class)->handle($recurrence);
+
+    expect(occurrenceDates($recurrence))->not->toContain('2026-03-04');
+});
+
+it('não gera outra prevista no mesmo ano de uma ocorrência já confirmada (anual)', function () {
+    CarbonImmutable::setTestNow('2026-06-01');
+    $recurrence = recurrenceModel(['frequency' => Frequency::Yearly, 'starts_on' => '2026-03-05', 'day_of_month' => null]);
+    app(GenerateOccurrences::class)->handle($recurrence);
+
+    Transaction::query()->where('recurrence_date', '2026-03-05')->update(['status' => 'posted']);
+    $recurrence->update(['starts_on' => '2026-06-10', 'generated_until' => '2026-01-01']);
+
+    app(GenerateOccurrences::class)->handle($recurrence);
+
+    expect(occurrenceDates($recurrence))->not->toContain('2026-06-10');
+});
+
 it('não toca em transação de outro usuário', function () {
     CarbonImmutable::setTestNow('2026-03-10');
     $recurrence = recurrenceModel();

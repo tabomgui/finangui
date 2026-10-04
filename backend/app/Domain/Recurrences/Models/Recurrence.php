@@ -6,7 +6,6 @@ use App\Domain\Accounts\Models\Account;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Recurrences\Enums\Frequency;
 use App\Domain\Transactions\Enums\Direction;
-use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\Concerns\BelongsToUser;
 use App\Support\Money\Money;
@@ -138,7 +137,8 @@ class Recurrence extends Model
         $today = CarbonImmutable::today()->toDateString();
 
         return fn (Builder $query) => $query
-            ->where('status', TransactionStatus::Projected->value)
+            // @phpstan-ignore method.notFound (escopo local de Transaction: o Closure devolvido não carrega o genérico Builder<Transaction> fora do call site)
+            ->unconfirmedOccurrences()
             ->where('recurrence_date', '>=', $today);
     }
 }

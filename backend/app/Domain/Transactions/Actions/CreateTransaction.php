@@ -98,9 +98,7 @@ final class CreateTransaction
 
         $pool = Transaction::query()
             ->where('account_id', $account->id)
-            ->where('status', TransactionStatus::Projected->value)
-            ->whereNotNull('recurrence_id')
-            ->whereNull('external_id')
+            ->unconfirmedOccurrences()
             ->whereBetween('recurrence_date', [$windowStart, $windowEnd])
             ->with('recurrence')
             ->lockForUpdate()

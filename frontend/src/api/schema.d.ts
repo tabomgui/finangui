@@ -1298,9 +1298,9 @@ export interface components {
             match_pattern: string | null;
             is_active: boolean;
             /**
-             * @description Só existe quando a recorrência veio de App\Domain\Recurrences\Queries\RecurrenceList
-             *     (withMin da próxima ocorrência prevista); chave omitida em vez de null — ver
-             *     CLAUDE.md sobre Readable<T> do openapi-fetch.
+             * @description Presente quando o controller carregou a próxima data (RecurrenceList::all(),
+             *     ou show/store/update via Recurrence::loadNextDate()); chave omitida em vez
+             *     de null nos outros casos — ver CLAUDE.md sobre Readable<T> do openapi-fetch.
              */
             next_date?: string;
         };

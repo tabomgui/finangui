@@ -2,18 +2,15 @@
 
 namespace App\Domain\Recurrences\Queries;
 
-use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
- * Previstas de recorrência com data < hoje - 5 dias: candidatas a "não
- * aconteceu?" (confirmar ou pular). Uma prevista ignorada não é pendência,
- * e uma prevista com external_id já deixou de ser uma prevista "livre"
- * (ver IngestionPlanner::isProjectedRecurrenceOccurrence()) — não deveria
- * acontecer (RecurrenceMatcher é o único caminho até ela, e ele sempre
- * confirma/posta ao casar), mas o filtro fica aqui por segurança.
+ * Ocorrências ainda não confirmadas (Transaction::isUnconfirmedOccurrence())
+ * com data < hoje - 5 dias: candidatas a "não aconteceu?" (confirmar ou
+ * pular). Uma prevista ignorada não é pendência, e uma de conta arquivada
+ * também não — a conta já saiu do fluxo do usuário.
  */
 final class OverdueOccurrences
 {
@@ -25,11 +22,10 @@ final class OverdueOccurrences
         $today ??= CarbonImmutable::today();
 
         return Transaction::query()
-            ->whereNotNull('recurrence_id')
-            ->whereNull('external_id')
-            ->where('status', TransactionStatus::Projected->value)
+            ->unconfirmedOccurrences()
             ->where('is_ignored', false)
             ->where('recurrence_date', '<', $today->subDays(5)->toDateString())
+            ->whereHas('account', fn ($query) => $query->where('is_archived', false))
             ->with(['account', 'category.parent', 'recurrence'])
             ->orderBy('recurrence_date')
             ->get();

@@ -153,6 +153,31 @@ class Transaction extends Model
     }
 
     /**
+     * Prevista de recorrência "livre": ainda não casada com nenhum
+     * lançamento real por nenhum caminho (importação, banco ou manual —
+     * uma vez linkada a um external_id ela deixa de ser isso, mesmo que o
+     * status continue projected, caso de uma pendente futura adotada). Só
+     * uma ocorrência assim pode ser excluída/pulada/propagada como mero
+     * palpite; qualquer outra já é (ou já foi) um lançamento de verdade.
+     */
+    public function isUnconfirmedOccurrence(): bool
+    {
+        return $this->status === TransactionStatus::Projected
+            && $this->recurrence_id !== null
+            && $this->external_id === null;
+    }
+
+    /**
+     * @param  Builder<Transaction>  $query
+     */
+    public function scopeUnconfirmedOccurrences(Builder $query): void
+    {
+        $query->where('status', TransactionStatus::Projected->value)
+            ->whereNotNull('recurrence_id')
+            ->whereNull('external_id');
+    }
+
+    /**
      * Transações que contam como receita/despesa em relatórios: lançadas, não
      * ignoradas, fora de transferências e fora de categorias marcadas como
      * transferência — incluindo subcategorias cujo pai é marcado como

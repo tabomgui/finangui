@@ -41,9 +41,9 @@ final class RecurrenceResource extends JsonResource
             'generated_until' => $this->generated_until?->toDateString(),
             'match_pattern' => $this->match_pattern,
             'is_active' => $this->is_active,
-            // Só existe quando a recorrência veio de App\Domain\Recurrences\Queries\RecurrenceList
-            // (withMin da próxima ocorrência prevista); chave omitida em vez de null — ver
-            // CLAUDE.md sobre Readable<T> do openapi-fetch.
+            // Presente quando o controller carregou a próxima data (RecurrenceList::all(),
+            // ou show/store/update via Recurrence::loadNextDate()); chave omitida em vez
+            // de null nos outros casos — ver CLAUDE.md sobre Readable<T> do openapi-fetch.
             'next_date' => $this->when(
                 $this->next_date !== null,
                 fn () => substr((string) $this->next_date, 0, 10),
