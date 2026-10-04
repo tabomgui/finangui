@@ -84,9 +84,13 @@ describe('GoalCard', () => {
   it('sem conta, expande a lista de aportes ao clicar em "Aportes"', () => {
     render(<GoalCard goal={goal()} currency="BRL" onEdit={vi.fn()} />)
 
+    const toggle = screen.getByRole('button', { name: 'Aportes' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByText('Nenhum aporte registrado ainda.')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Aportes' }))
 
+    fireEvent.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('Nenhum aporte registrado ainda.')).toBeInTheDocument()
   })
 

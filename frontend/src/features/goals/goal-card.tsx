@@ -98,13 +98,19 @@ export function GoalCard({ goal, currency, onEdit }: GoalCardProps) {
               type="button"
               variant="ghost"
               size="sm"
+              aria-expanded={expanded}
+              aria-controls={`goal-contributions-${goal.id}`}
               className="gap-1 px-0 text-muted-foreground hover:bg-transparent"
               onClick={() => setExpanded((current) => !current)}
             >
               {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               Aportes
             </Button>
-            {expanded && <GoalContributions goalId={goal.id} currency={currency} />}
+            {expanded && (
+              <div id={`goal-contributions-${goal.id}`}>
+                <GoalContributions goalId={goal.id} currency={currency} />
+              </div>
+            )}
           </div>
         )}
       </CardContent>
