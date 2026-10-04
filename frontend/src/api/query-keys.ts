@@ -50,6 +50,8 @@ export const queryKeys = {
   reportMonthly: (from: string, to: string, basis: ReportBasis) => ['reports', 'monthly', { from, to, basis }] as const,
   reportCategories: (aFrom: string, aTo: string, bFrom: string, bTo: string, basis: ReportBasis) =>
     ['reports', 'categories', { aFrom, aTo, bFrom, bTo, basis }] as const,
+  notifications: () => ['notifications', 'list'] as const,
+  notificationsUnreadCount: () => ['notifications', 'unread-count'] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {
@@ -127,4 +129,13 @@ export function invalidateImportBatchesList(queryClient: QueryClient) {
 
 export function invalidateBankConnections(queryClient: QueryClient) {
   return invalidate(queryClient, ['bank-connections'])
+}
+
+/**
+ * Notificações não entram em `invalidateLedger`: ler ou marcar como lida não muda saldo, lista
+ * ou resumo nenhum — só o sino (lista e `unread_count`), que esta chave cobre sozinha, prefixo
+ * comum de `notifications()` e `notificationsUnreadCount()`.
+ */
+export function invalidateNotifications(queryClient: QueryClient) {
+  return invalidate(queryClient, ['notifications'])
 }

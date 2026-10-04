@@ -1,6 +1,7 @@
 import { ArrowLeft } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { NotificationBell } from './notification-bell'
 import { headerIconButton, ThemeToggle } from './theme-toggle'
 
 export const headerButton = 'border-0 bg-white/20 text-white shadow-none hover:bg-white/30'
@@ -47,6 +48,7 @@ export function PageHeader({ title, subtitle, back, actions, children }: PageHea
           </div>
           <div className="flex items-center gap-2">
             {actions}
+            <NotificationBell variant="header" className="md:hidden" />
             <ThemeToggle variant="header" className="md:hidden" />
           </div>
         </div>

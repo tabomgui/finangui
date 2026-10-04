@@ -14,6 +14,12 @@ vi.mock('@/api/queries/reports', () => ({
   useMonthlyReport: () => ({ ...evolutionState, refetch: evolutionRefetch }),
   useCategoryComparison: () => ({ ...comparisonState, refetch: comparisonRefetch }),
 }))
+vi.mock('@/api/queries/notifications', () => ({
+  useUnreadCount: () => ({ data: 0 }),
+  useNotifications: () => ({ data: undefined, fetchNextPage: vi.fn(), hasNextPage: false, isFetchingNextPage: false, isPending: true }),
+  useMarkRead: () => ({ mutate: vi.fn() }),
+  useMarkAllRead: () => ({ mutate: vi.fn(), isPending: false }),
+}))
 
 function monthlyEvolution(overrides: Partial<MonthlyEvolution> = {}): MonthlyEvolution {
   return {

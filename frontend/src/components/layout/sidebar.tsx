@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Logo } from './logo'
 import { moreNav, newTransactionItem, type NavItem, primaryNav } from './nav-items'
+import { NotificationBell } from './notification-bell'
 import { ThemeToggle } from './theme-toggle'
 import { SignOutButton, UserSummary } from './user-menu-actions'
 
@@ -54,6 +55,7 @@ export function Sidebar() {
         <div className="flex-1">
           <UserSummary />
         </div>
+        <NotificationBell variant="sidebar" />
         <ThemeToggle />
         <SignOutButton />
       </div>

@@ -80,6 +80,8 @@ export type CategoryComparison = Schemas['CategoryComparisonResource']
 export type CategoryComparisonItem = CategoryComparison['items'][number]
 
 export type BankConnection = Schemas['BankConnectionResource']
+
+export type Notification = Schemas['NotificationResource']
 export type ConnectionStatus = Schemas['ConnectionStatus']
 export type BankProviderName = Schemas['BankProviderName']
 export type ConnectionAccount = BankConnection['accounts'][number]

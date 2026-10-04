@@ -19,6 +19,12 @@ vi.mock('@/api/queries/categories', () => ({
 }))
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+vi.mock('@/api/queries/notifications', () => ({
+  useUnreadCount: () => ({ data: 0 }),
+  useNotifications: () => ({ data: undefined, fetchNextPage: vi.fn(), hasNextPage: false, isFetchingNextPage: false, isPending: true }),
+  useMarkRead: () => ({ mutate: vi.fn() }),
+  useMarkAllRead: () => ({ mutate: vi.fn(), isPending: false }),
+}))
 
 function monthBudget(overrides: Partial<MonthBudget> = {}): MonthBudget {
   return {
