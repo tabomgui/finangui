@@ -7,6 +7,7 @@ use App\Domain\Transactions\Models\Transaction;
 use App\Domain\Transfers\Actions\DeleteTransfer;
 use App\Domain\Transfers\Actions\UnlinkTransfer;
 use App\Domain\Transfers\Support\TransferLegs;
+use Illuminate\Support\Facades\DB;
 
 final class DeleteTransaction
 {
@@ -40,8 +41,10 @@ final class DeleteTransaction
             $other = $legs['out']->id === $transaction->id ? $legs['in'] : $legs['out'];
 
             if ($other->external_id !== null) {
-                $this->unlinkTransfer->handle($transaction->transfer_id, remember: false);
-                $transaction->refresh()->delete();
+                DB::transaction(function () use ($transaction) {
+                    $this->unlinkTransfer->handle($transaction->transfer_id, remember: false);
+                    $transaction->refresh()->delete();
+                });
 
                 return;
             }

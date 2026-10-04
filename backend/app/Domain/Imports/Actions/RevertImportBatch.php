@@ -123,6 +123,16 @@ final class RevertImportBatch
                     continue;
                 }
 
+                if ($transaction->transfer_id !== null) {
+                    // Esta é a entrada de undo gravada por DetectTransfers::applyLinks() para a
+                    // perna externa (de outra conta) que este lote ligou automaticamente — guarda
+                    // a categoria/fatura de antes da ligação. Se, desde então, a perna voltou a
+                    // ligar (outra detecção, ou "juntar à mão"), ela já é perna de um par atual:
+                    // aplicar o undo agora gravaria categoria/fatura numa perna de transferência,
+                    // violando o invariante (nunca tem categoria). Deixa como está.
+                    continue;
+                }
+
                 $attributes = $item['attributes'];
                 $hasStatement = array_key_exists('statement_id', $attributes);
                 $savedStatementId = $attributes['statement_id'] ?? null;

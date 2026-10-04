@@ -218,7 +218,15 @@ final class SyncTransactions
     private function deleteStalePending(Account $account, array $receivedIds, string $threshold): void
     {
         $query = fn () => $this->stalePendingQuery($account, $threshold)
-            ->whereRaw('external_id <> ALL(?::text[])', [self::pgTextArray($receivedIds)]);
+            ->whereRaw('external_id <> ALL(?::text[])', [self::pgTextArray($receivedIds)])
+            // Uma perna de transferência só entra nesta limpeza quando foi de fato inserida por
+            // este sync (import_batch_id preenchido, ver IngestTransactions::insertNew()). Uma
+            // perna criada pelo usuário e só adotada depois (ex.: a perna de PayStatement no
+            // cartão casando com a linha do banco) nunca passa por aqui, mesmo com source já
+            // virado pluggy e status pending/projected (ver MatchedTransactionOutcomes::adopt(),
+            // que nunca grava import_batch_id) — ela não é "nossa" para apagar como lixo de sync.
+            // Transações sem transfer_id (a maioria) não são afetadas por esta condição.
+            ->where(fn (Builder $q) => $q->whereNull('transfer_id')->orWhereNotNull('import_batch_id'));
 
         $transferIds = $query()->whereNotNull('transfer_id')->pluck('transfer_id');
 
