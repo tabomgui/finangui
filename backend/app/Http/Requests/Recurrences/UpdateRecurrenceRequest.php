@@ -12,8 +12,9 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 /**
- * Atualização parcial (PATCH). direction não entra nas regras: é imutável
- * depois de criada (fora do escopo das regras de edição do plano).
+ * Atualização parcial (PATCH). direction é imutável depois de criada:
+ * prohibited em vez de simplesmente fora das regras, para o cliente receber
+ * 422 em vez de a chave ser silenciosamente ignorada.
  */
 final class UpdateRecurrenceRequest extends ApiRequest
 {
@@ -23,6 +24,7 @@ final class UpdateRecurrenceRequest extends ApiRequest
     public function rules(): array
     {
         return [
+            'direction' => ['prohibited'],
             'account_id' => ['sometimes', 'integer', Rule::exists('accounts', 'id')->where('user_id', $this->userId())],
             'category_id' => ['sometimes', 'nullable', 'integer', Rule::exists('categories', 'id')->where('user_id', $this->userId())],
             'description' => ['sometimes', 'required', 'string', 'max:255'],
@@ -78,21 +80,31 @@ final class UpdateRecurrenceRequest extends ApiRequest
         }
     }
 
+    /**
+     * Só quando category_id vem no corpo: um valor herdado do registro atual
+     * já era válido quando setado (direction nunca muda), revalidar seria
+     * reprovar um PATCH não relacionado por causa de uma categoria arquivada
+     * depois.
+     */
     private function validateCategoryDirection(Validator $validator): void
     {
-        $recurrence = $this->recurrence();
-        $categoryId = $this->has('category_id') ? $this->input('category_id') : $recurrence->category_id;
-
-        if ($categoryId === null) {
+        if (! $this->has('category_id') || $this->input('category_id') === null) {
             return;
         }
 
-        $category = Category::query()->find($categoryId);
+        $category = Category::query()->find($this->input('category_id'));
 
         if ($category === null) {
             return;
         }
 
+        if ($category->is_archived) {
+            $validator->errors()->add('category_id', 'Categoria arquivada.');
+
+            return;
+        }
+
+        $recurrence = $this->recurrence();
         $expectedKind = $recurrence->direction === Direction::Out ? CategoryKind::Expense : CategoryKind::Income;
 
         if ($category->kind !== $expectedKind) {

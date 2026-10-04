@@ -3,9 +3,6 @@
 namespace App\Domain\Recurrences\Queries;
 
 use App\Domain\Recurrences\Models\Recurrence;
-use App\Domain\Transactions\Enums\TransactionStatus;
-use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
@@ -19,13 +16,9 @@ final class RecurrenceList
      */
     public function all(): Collection
     {
-        $today = CarbonImmutable::today()->toDateString();
-
         $recurrences = Recurrence::query()
             ->with(['account', 'category'])
-            ->withMin(['transactions as next_date' => fn (Builder $query) => $query
-                ->where('status', TransactionStatus::Projected->value)
-                ->where('recurrence_date', '>=', $today)], 'recurrence_date')
+            ->withNextDate()
             ->get();
 
         return $this->sort($recurrences);

@@ -6,12 +6,15 @@ use App\Domain\Accounts\Models\Account;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Recurrences\Enums\Frequency;
 use App\Domain\Transactions\Enums\Direction;
+use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\Concerns\BelongsToUser;
 use App\Support\Money\Money;
 use App\Support\Money\MoneyCast;
 use Carbon\CarbonImmutable;
+use Closure;
 use Database\Factories\RecurrenceFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -31,7 +34,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable $starts_on
  * @property CarbonImmutable|null $ends_on
  * @property CarbonImmutable|null $generated_until
- * @property-read string|null $next_date carregado por App\Domain\Recurrences\Queries\RecurrenceList (withMin)
+ * @property list<string> $skipped_dates
+ * @property-read string|null $next_date carregado por scopeWithNextDate()/loadMin()
  */
 class Recurrence extends Model
 {
@@ -55,6 +59,7 @@ class Recurrence extends Model
     protected $attributes = [
         'interval' => 1,
         'is_active' => true,
+        'skipped_dates' => '[]',
     ];
 
     /**
@@ -72,6 +77,7 @@ class Recurrence extends Model
             'ends_on' => 'immutable_date',
             'generated_until' => 'immutable_date',
             'is_active' => 'boolean',
+            'skipped_dates' => 'array',
         ];
     }
 
@@ -102,5 +108,37 @@ class Recurrence extends Model
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class)->orderBy('recurrence_date');
+    }
+
+    /**
+     * Próxima ocorrência prevista (hoje em diante) num só select, sem N+1;
+     * usada pela listagem.
+     *
+     * @param  Builder<Recurrence>  $query
+     */
+    public function scopeWithNextDate(Builder $query): void
+    {
+        $query->withMin(['transactions as next_date' => self::nextDateConstraint()], 'recurrence_date');
+    }
+
+    /**
+     * Mesmo critério de scopeWithNextDate(), para um registro já carregado
+     * (show/store/update, que lidam com um só modelo em vez de uma lista).
+     */
+    public function loadNextDate(): static
+    {
+        return $this->loadMin(['transactions as next_date' => self::nextDateConstraint()], 'recurrence_date');
+    }
+
+    /**
+     * @return Closure(Builder<Transaction>): Builder<Transaction>
+     */
+    public static function nextDateConstraint(): Closure
+    {
+        $today = CarbonImmutable::today()->toDateString();
+
+        return fn (Builder $query) => $query
+            ->where('status', TransactionStatus::Projected->value)
+            ->where('recurrence_date', '>=', $today);
     }
 }

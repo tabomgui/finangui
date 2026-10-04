@@ -96,6 +96,18 @@ it('recorrência inativa não gera nada', function () {
         ->and($recurrence->refresh()->generated_until)->toBeNull();
 });
 
+it('conta arquivada não gera nada', function () {
+    CarbonImmutable::setTestNow('2026-03-10');
+    $this->account->update(['is_archived' => true]);
+    $recurrence = recurrenceModel();
+
+    $count = app(GenerateOccurrences::class)->handle($recurrence);
+
+    expect($count)->toBe(0)
+        ->and(occurrenceDates($recurrence))->toBe([])
+        ->and($recurrence->refresh()->generated_until)->toBeNull();
+});
+
 it('respeita ends_on: não gera depois do fim', function () {
     CarbonImmutable::setTestNow('2026-03-10');
     $recurrence = recurrenceModel(['ends_on' => '2026-02-20']);
@@ -106,14 +118,17 @@ it('respeita ends_on: não gera depois do fim', function () {
         ->and($recurrence->refresh()->generated_until->toDateString())->toBe('2026-02-20');
 });
 
-it('recorrência em cartão de crédito ganha fatura', function () {
+it('recorrência em cartão de crédito ganha fatura e nunca prevê data anterior a hoje', function () {
     CarbonImmutable::setTestNow('2026-03-10');
     $card = Account::factory()->creditCard(closingDay: 10, dueDay: 20)->create(['user_id' => $this->user->id]);
     $recurrence = recurrenceModel(['account_id' => $card->id]);
 
     app(GenerateOccurrences::class)->handle($recurrence);
 
-    $transaction = Transaction::query()->where('recurrence_date', '2026-01-05')->first();
+    // 01-05, 02-05 e 03-05 são antes de hoje (cartão não prevê o passado); só 04-05 é gerada.
+    expect(occurrenceDates($recurrence))->toBe(['2026-04-05']);
+
+    $transaction = Transaction::query()->where('recurrence_date', '2026-04-05')->first();
     expect($transaction->statement_id)->not->toBeNull();
 });
 

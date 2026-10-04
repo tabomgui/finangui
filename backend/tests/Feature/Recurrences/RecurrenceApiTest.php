@@ -1,6 +1,8 @@
 <?php
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Models\CardStatement;
+use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Recurrences\Actions\GenerateOccurrences;
 use App\Domain\Recurrences\Models\Recurrence;
@@ -59,14 +61,41 @@ it('aceita day_of_month ausente e usa o dia de starts_on como padrão', function
     expect($data['day_of_month'])->toBe(5);
 });
 
-it('omite next_date e category quando não há', function () {
+it('omite category quando não há', function () {
     CarbonImmutable::setTestNow('2026-01-10');
 
     $data = $this->postJson('/api/v1/recurrences', validRecurrencePayload(['category_id' => null]))
         ->assertCreated()->json('data');
 
-    expect($data)->not->toHaveKey('category')
-        ->and($data)->not->toHaveKey('next_date');
+    expect($data)->not->toHaveKey('category');
+});
+
+it('omite next_date quando ainda não há ocorrência prevista gerada', function () {
+    CarbonImmutable::setTestNow('2026-01-10');
+
+    // starts_on bem no futuro: fora da janela de geração (até o fim do próximo mês).
+    $data = $this->postJson('/api/v1/recurrences', validRecurrencePayload(['starts_on' => '2027-01-05']))
+        ->assertCreated()->json('data');
+
+    expect($data)->not->toHaveKey('next_date');
+});
+
+it('inclui next_date no show, no create e no update', function () {
+    CarbonImmutable::setTestNow('2026-01-10');
+
+    $created = $this->postJson('/api/v1/recurrences', validRecurrencePayload())
+        ->assertCreated()->json('data');
+
+    // starts_on (2026-01-05) já passou; a próxima prevista a partir de hoje (2026-01-10) é a de fevereiro.
+    expect($created)->toHaveKey('next_date')
+        ->and($created['next_date'])->toBe('2026-02-05');
+
+    $shown = $this->getJson("/api/v1/recurrences/{$created['id']}")->assertOk()->json('data');
+    expect($shown['next_date'])->toBe('2026-02-05');
+
+    $updated = $this->patchJson("/api/v1/recurrences/{$created['id']}", ['description' => 'Aluguel novo'])
+        ->assertOk()->json('data');
+    expect($updated['next_date'])->toBe('2026-02-05');
 });
 
 it('cria a partir de um lançamento existente, herdando os campos e virando a primeira ocorrência', function () {
@@ -108,6 +137,106 @@ it('409 quando a transação de origem não é elegível', function () {
 
     $this->postJson('/api/v1/recurrences', ['transaction_id' => $pending->id, 'frequency' => 'monthly'])
         ->assertStatus(409)->assertJsonPath('code', 'recurrence_transaction_ineligible');
+});
+
+it('não preenche o passado: starts_on antigo não gera as ocorrências entre ele e hoje', function () {
+    CarbonImmutable::setTestNow('2026-06-10');
+
+    $data = $this->postJson('/api/v1/recurrences', validRecurrencePayload(['starts_on' => '2026-01-05']))
+        ->assertCreated()->json('data');
+
+    $dates = Transaction::query()->where('recurrence_id', $data['id'])
+        ->orderBy('recurrence_date')->pluck('recurrence_date')->map(fn ($d) => $d->toDateString())->all();
+
+    // Nada de janeiro a maio: a primeira prevista cai dentro da janela hoje - 5 dias.
+    expect($dates)->not->toContain('2026-01-05', '2026-02-05', '2026-03-05', '2026-04-05', '2026-05-05')
+        ->and($dates)->not->toBeEmpty();
+});
+
+it('cria recorrência semanal e anual via API', function () {
+    CarbonImmutable::setTestNow('2026-03-10');
+
+    $weekly = $this->postJson('/api/v1/recurrences', validRecurrencePayload([
+        'frequency' => 'weekly', 'day_of_month' => null, 'starts_on' => '2026-03-09', 'interval' => 2,
+    ]))->assertCreated()->json('data');
+    expect($weekly['frequency'])->toBe('weekly')
+        ->and($weekly['day_of_month'])->toBeNull();
+
+    $yearly = $this->postJson('/api/v1/recurrences', validRecurrencePayload([
+        'frequency' => 'yearly', 'day_of_month' => null, 'starts_on' => '2025-03-15',
+    ]))->assertCreated()->json('data');
+    expect($yearly['frequency'])->toBe('yearly');
+});
+
+it('409 quando a transação de origem é uma parcela', function () {
+    $plan = InstallmentPlan::factory()->create(['user_id' => $this->user->id]);
+    $installment = Transaction::factory()->create([
+        'account_id' => $plan->account_id, 'installment_plan_id' => $plan->id, 'installment_number' => 1,
+        'status' => TransactionStatus::Posted,
+    ]);
+
+    $this->postJson('/api/v1/recurrences', ['transaction_id' => $installment->id, 'frequency' => 'monthly'])
+        ->assertStatus(409)->assertJsonPath('code', 'recurrence_transaction_ineligible');
+});
+
+it('422 quando transaction_id é de outro usuário', function () {
+    $other = User::factory()->create();
+    $otherAccount = Account::factory()->create(['user_id' => $other->id]);
+    $otherTransaction = Transaction::factory()->create(['account_id' => $otherAccount->id, 'user_id' => $other->id]);
+
+    $this->postJson('/api/v1/recurrences', ['transaction_id' => $otherTransaction->id, 'frequency' => 'monthly'])
+        ->assertStatus(422)->assertJsonValidationErrors('transaction_id');
+});
+
+it('422 quando account_id, direction ou starts_on contradizem a transação de origem', function () {
+    $otherAccount = Account::factory()->create(['user_id' => $this->user->id]);
+    $transaction = Transaction::factory()->create([
+        'account_id' => $this->account->id, 'date' => '2026-03-01', 'direction' => Direction::Out, 'status' => TransactionStatus::Posted,
+    ]);
+
+    $this->postJson('/api/v1/recurrences', [
+        'transaction_id' => $transaction->id, 'frequency' => 'monthly', 'account_id' => $otherAccount->id,
+    ])->assertStatus(422)->assertJsonValidationErrors('account_id');
+
+    $this->postJson('/api/v1/recurrences', [
+        'transaction_id' => $transaction->id, 'frequency' => 'monthly', 'direction' => 'in',
+    ])->assertStatus(422)->assertJsonValidationErrors('direction');
+
+    $this->postJson('/api/v1/recurrences', [
+        'transaction_id' => $transaction->id, 'frequency' => 'monthly', 'starts_on' => '2026-03-02',
+    ])->assertStatus(422)->assertJsonValidationErrors('starts_on');
+});
+
+it('aceita transaction_id com account_id/direction/starts_on repetindo os mesmos valores da transação', function () {
+    $transaction = Transaction::factory()->create([
+        'account_id' => $this->account->id, 'date' => '2026-03-01', 'direction' => Direction::Out, 'status' => TransactionStatus::Posted,
+    ]);
+
+    $this->postJson('/api/v1/recurrences', [
+        'transaction_id' => $transaction->id, 'frequency' => 'monthly',
+        'account_id' => $this->account->id, 'direction' => 'out', 'starts_on' => '2026-03-01',
+    ])->assertCreated();
+});
+
+it('não preenche o passado em conta de cartão: fatura já paga permanece paga', function () {
+    CarbonImmutable::setTestNow('2026-03-10');
+    $card = Account::factory()->creditCard(closingDay: 10, dueDay: 20)->create(['user_id' => $this->user->id]);
+    $checking = Account::factory()->create(['user_id' => $this->user->id]);
+    $statement = CardStatement::factory()->create(['account_id' => $card->id, 'closing_date' => '2026-01-10', 'due_date' => '2026-01-20']);
+    Transaction::factory()->create(['account_id' => $card->id, 'statement_id' => $statement->id, 'amount' => 10000, 'date' => '2026-01-05']);
+
+    $this->postJson("/api/v1/card-statements/{$statement->id}/payments", [
+        'from_account_id' => $checking->id, 'amount' => 10000, 'date' => '2026-01-08',
+    ])->assertCreated();
+    $this->getJson("/api/v1/card-statements/{$statement->id}")->assertJsonPath('data.status', 'paid');
+
+    $this->postJson('/api/v1/recurrences', [
+        'account_id' => $card->id, 'description' => 'Assinatura', 'amount' => 5000, 'direction' => 'out',
+        'frequency' => 'monthly', 'day_of_month' => 5, 'starts_on' => '2026-01-05',
+    ])->assertCreated();
+
+    expect(Transaction::query()->where('account_id', $card->id)->where('status', 'projected')->where('date', '<', '2026-03-10')->exists())->toBeFalse();
+    $this->getJson("/api/v1/card-statements/{$statement->id}")->assertJsonPath('data.status', 'paid');
 });
 
 it('422 quando falta campo obrigatório sem transaction_id', function () {
@@ -209,7 +338,38 @@ it('PATCH de calendário exclui as previstas futuras e gera de novo', function (
     $dates = Transaction::query()->where('recurrence_id', $recurrence->id)->orderBy('recurrence_date')
         ->pluck('recurrence_date')->map(fn ($d) => $d->toDateString())->all();
 
-    expect($dates)->toBe(['2026-01-05', '2026-02-05', '2026-03-05', '2026-03-20', '2026-04-20']);
+    // 2026-03-05 não volta: cairia no mesmo período de 2026-03-20 (ver a janela de hoje - 5 dias).
+    expect($dates)->toBe(['2026-01-05', '2026-02-05', '2026-03-20', '2026-04-20']);
+});
+
+it('PATCH de calendário também exclui previstas antigas que ficaram fora do novo intervalo', function () {
+    CarbonImmutable::setTestNow('2026-03-10');
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $this->account->id, 'starts_on' => '2026-01-05', 'day_of_month' => 5,
+    ]);
+    app(GenerateOccurrences::class)->handle($recurrence);
+
+    // Adiar starts_on para depois de janeiro: a prevista de janeiro, bem mais antiga que
+    // hoje - 5 dias, deixa de existir no novo intervalo e precisa ser excluída também.
+    $this->patchJson("/api/v1/recurrences/{$recurrence->id}", ['starts_on' => '2026-02-10'])
+        ->assertOk();
+
+    expect(Transaction::query()->where('recurrence_id', $recurrence->id)->where('recurrence_date', '2026-01-05')->exists())->toBeFalse();
+});
+
+it('PATCH de calendário não exclui ocorrência já lançada mesmo com recurrence_date >= hoje', function () {
+    CarbonImmutable::setTestNow('2026-03-10');
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $this->account->id, 'starts_on' => '2026-01-05', 'day_of_month' => 5,
+    ]);
+    app(GenerateOccurrences::class)->handle($recurrence);
+
+    $future = Transaction::query()->where('recurrence_id', $recurrence->id)->where('recurrence_date', '2026-04-05')->first();
+    $future->update(['status' => 'posted']);
+
+    $this->patchJson("/api/v1/recurrences/{$recurrence->id}", ['day_of_month' => 20])->assertOk();
+
+    expect(Transaction::query()->where('id', $future->id)->exists())->toBeTrue();
 });
 
 it('PATCH pausando exclui as previstas futuras; reativar gera de novo a partir de hoje', function () {
@@ -231,13 +391,15 @@ it('PATCH pausando exclui as previstas futuras; reativar gera de novo a partir d
     $dates = Transaction::query()->where('recurrence_id', $recurrence->id)->orderBy('recurrence_date')
         ->pluck('recurrence_date')->map(fn ($d) => $d->toDateString())->all();
 
-    expect($dates)->toBe(['2026-01-05', '2026-02-05', '2026-03-05', '2026-04-05']);
+    // 2026-03-05 não volta: ficou dentro da janela de hoje - 5 dias quando pausou.
+    expect($dates)->toBe(['2026-01-05', '2026-02-05', '2026-04-05']);
 });
 
-it('PATCH não aceita mudar direction', function () {
+it('422 ao tentar mudar direction', function () {
     $recurrence = Recurrence::factory()->create(['account_id' => $this->account->id, 'direction' => Direction::Out]);
 
-    $this->patchJson("/api/v1/recurrences/{$recurrence->id}", ['direction' => 'in'])->assertOk();
+    $this->patchJson("/api/v1/recurrences/{$recurrence->id}", ['direction' => 'in'])
+        ->assertStatus(422)->assertJsonValidationErrors('direction');
 
     expect($recurrence->refresh()->direction)->toBe(Direction::Out);
 });
@@ -254,7 +416,15 @@ it('exclui o modelo: remove as previstas e mantém as já lançadas sem recurren
 
     $this->deleteJson("/api/v1/recurrences/{$recurrence->id}")->assertNoContent();
 
+    $posted->refresh();
     expect(Recurrence::query()->count())->toBe(0)
-        ->and(Transaction::query()->where('id', $posted->id)->first()->recurrence_id)->toBeNull()
+        ->and($posted->recurrence_id)->toBeNull()
+        ->and($posted->recurrence_date)->toBeNull()
         ->and(Transaction::query()->where('status', 'projected')->count())->toBe(0);
+});
+
+it('404 para id não numérico nas rotas de recorrência', function () {
+    $this->getJson('/api/v1/recurrences/abc')->assertNotFound();
+    $this->patchJson('/api/v1/recurrences/abc', ['description' => 'x'])->assertNotFound();
+    $this->deleteJson('/api/v1/recurrences/abc')->assertNotFound();
 });

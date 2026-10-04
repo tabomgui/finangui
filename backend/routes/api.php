@@ -94,8 +94,8 @@ Route::prefix('v1')->group(function () {
         Route::get('recurrences/overdue', [RecurrenceController::class, 'overdue']);
         Route::post('recurrences/occurrences/{transaction}/confirm', [RecurrenceController::class, 'confirm'])->whereNumber('transaction');
         Route::post('recurrences/occurrences/{transaction}/skip', [RecurrenceController::class, 'skip'])->whereNumber('transaction');
-        Route::apiResource('recurrences', RecurrenceController::class)->except('update');
-        Route::patch('recurrences/{recurrence}', [RecurrenceController::class, 'update']);
+        Route::apiResource('recurrences', RecurrenceController::class)->except('update')->where(['recurrence' => '[0-9]+']);
+        Route::patch('recurrences/{recurrence}', [RecurrenceController::class, 'update'])->whereNumber('recurrence');
 
         Route::get('import-batches', [ImportBatchController::class, 'index']);
         Route::post('import-batches', [ImportBatchController::class, 'store'])->middleware('throttle:20,1,import-batches-store');

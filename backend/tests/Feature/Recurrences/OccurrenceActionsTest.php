@@ -100,6 +100,62 @@ it('confirma uma ocorrência com valor e data informados', function () {
     expect($occurrence->refresh()->recurrence_date->toDateString())->toBe('2026-01-05');
 });
 
+it('confirma uma ocorrência de cartão com nova data: a fatura é recalculada', function () {
+    CarbonImmutable::setTestNow('2026-03-05');
+    $card = Account::factory()->creditCard(closingDay: 10, dueDay: 20)->create(['user_id' => $this->user->id]);
+    $recurrence = occurrenceRecurrence(['account_id' => $card->id, 'starts_on' => '2026-03-05']);
+    app(GenerateOccurrences::class)->handle($recurrence);
+    $occurrence = Transaction::query()->where('recurrence_id', $recurrence->id)->where('recurrence_date', '2026-03-05')->firstOrFail();
+    $originalStatementId = $occurrence->statement_id;
+
+    CarbonImmutable::setTestNow('2026-03-15');
+
+    // 2026-03-12 já fechou a fatura de março (dia 10): cai na fatura seguinte.
+    $data = $this->postJson("/api/v1/recurrences/occurrences/{$occurrence->id}/confirm", ['date' => '2026-03-12'])
+        ->assertOk()->json('data');
+
+    expect($data['statement_id'])->not->toBeNull()
+        ->and($data['statement_id'])->not->toBe($originalStatementId);
+});
+
+it('422 ao confirmar com data no futuro', function () {
+    CarbonImmutable::setTestNow('2026-02-20');
+    $recurrence = occurrenceRecurrence();
+    app(GenerateOccurrences::class)->handle($recurrence);
+    $occurrence = Transaction::query()->where('recurrence_id', $recurrence->id)->where('recurrence_date', '2026-01-05')->firstOrFail();
+
+    $this->postJson("/api/v1/recurrences/occurrences/{$occurrence->id}/confirm", ['date' => '2026-02-21'])
+        ->assertStatus(422)->assertJsonValidationErrors('date');
+});
+
+it('ocorrência pulada não volta depois de uma mudança de calendário (ends_on)', function () {
+    CarbonImmutable::setTestNow('2026-01-10');
+    $recurrence = occurrenceRecurrence();
+    app(GenerateOccurrences::class)->handle($recurrence);
+    $occurrence = Transaction::query()->where('recurrence_id', $recurrence->id)->where('recurrence_date', '2026-01-05')->firstOrFail();
+
+    $this->postJson("/api/v1/recurrences/occurrences/{$occurrence->id}/skip")->assertNoContent();
+
+    $this->patchJson("/api/v1/recurrences/{$recurrence->id}", ['ends_on' => '2026-12-31'])->assertOk();
+
+    expect(Transaction::query()->where('recurrence_id', $recurrence->id)->where('recurrence_date', '2026-01-05')->exists())->toBeFalse();
+});
+
+it('ocorrência pulada não volta depois de pausar e reativar', function () {
+    CarbonImmutable::setTestNow('2026-01-10');
+    $recurrence = occurrenceRecurrence();
+    app(GenerateOccurrences::class)->handle($recurrence);
+    $occurrence = Transaction::query()->where('recurrence_id', $recurrence->id)->where('recurrence_date', '2026-01-05')->firstOrFail();
+
+    $this->postJson("/api/v1/recurrences/occurrences/{$occurrence->id}/skip")->assertNoContent();
+
+    $this->patchJson("/api/v1/recurrences/{$recurrence->id}", ['is_active' => false])->assertOk();
+    CarbonImmutable::setTestNow('2026-01-12');
+    $this->patchJson("/api/v1/recurrences/{$recurrence->id}", ['is_active' => true])->assertOk();
+
+    expect(Transaction::query()->where('recurrence_id', $recurrence->id)->where('recurrence_date', '2026-01-05')->exists())->toBeFalse();
+});
+
 it('pula uma ocorrência: exclui e nunca mais volta', function () {
     CarbonImmutable::setTestNow('2026-02-20');
     $recurrence = occurrenceRecurrence();

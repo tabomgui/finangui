@@ -13,7 +13,7 @@ final class ConfirmOccurrenceRequest extends ApiRequest
     {
         return [
             'amount' => ['sometimes', 'integer', 'min:1', 'max:1000000000000000'],
-            'date' => ['sometimes', 'date_format:Y-m-d'],
+            'date' => ['sometimes', 'date_format:Y-m-d', 'before_or_equal:today'],
         ];
     }
 }

@@ -36,7 +36,7 @@ final class RecurrenceController extends Controller
 
     public function show(Recurrence $recurrence): RecurrenceResource
     {
-        return RecurrenceResource::make($recurrence->load(['account', 'category']));
+        return RecurrenceResource::make($recurrence->load(['account', 'category'])->loadNextDate());
     }
 
     public function update(UpdateRecurrenceRequest $request, Recurrence $recurrence, UpdateRecurrence $updateRecurrence): RecurrenceResource

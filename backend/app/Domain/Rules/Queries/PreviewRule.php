@@ -38,7 +38,7 @@ final class PreviewRule
         // mas só para quem entrou nela (abaixo).
         $needsTags = $definition->usesAddTag();
 
-        $query = Transaction::query()->whereNull('transfer_id');
+        $query = Transaction::query()->whereNull('transfer_id')->excludingProjectedRecurrences();
         if ($needsTags) {
             $query->with('tags');
         }

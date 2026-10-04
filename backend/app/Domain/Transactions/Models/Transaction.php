@@ -170,4 +170,16 @@ class Transaction extends Model
                     ->where(fn (Builder $c2) => $c2->whereNull('parent_id')
                         ->orWhereHas('parent', fn (Builder $p) => $p->where('is_transfer', false)))));
     }
+
+    /**
+     * Fora de regras de categorização (prévia e aplicação retroativa): uma
+     * prevista de recorrência não é um lançamento de verdade ainda.
+     *
+     * @param  Builder<Transaction>  $query
+     */
+    public function scopeExcludingProjectedRecurrences(Builder $query): void
+    {
+        $query->where(fn (Builder $q) => $q->whereNull('recurrence_id')
+            ->orWhere('status', '!=', TransactionStatus::Projected->value));
+    }
 }

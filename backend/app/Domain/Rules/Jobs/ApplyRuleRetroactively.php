@@ -76,7 +76,7 @@ final class ApplyRuleRetroactively implements ShouldBeUnique, ShouldQueue
             // Carregar tags custa uma query a mais por lote; só compensa
             // quando a regra tem add_tag (as outras ações nunca tocam
             // $transaction->tags).
-            $query = Transaction::query()->whereNull('transfer_id');
+            $query = Transaction::query()->whereNull('transfer_id')->excludingProjectedRecurrences();
             if ($definition->usesAddTag()) {
                 $query->with('tags');
             }

@@ -25,7 +25,7 @@ final class StoreRecurrenceRequest extends ApiRequest
     public function rules(): array
     {
         return [
-            'transaction_id' => ['sometimes', 'integer', Rule::exists('transactions', 'id')->where('user_id', $this->userId())],
+            'transaction_id' => ['sometimes', 'nullable', 'integer', Rule::exists('transactions', 'id')->where('user_id', $this->userId())],
             'account_id' => ['required_without:transaction_id', 'integer', Rule::exists('accounts', 'id')->where('user_id', $this->userId())],
             'category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')->where('user_id', $this->userId())],
             'description' => ['required_without:transaction_id', 'string', 'max:255'],
@@ -54,7 +54,33 @@ final class StoreRecurrenceRequest extends ApiRequest
             $this->validateDayOfMonth($validator);
             $this->validateEndsOn($validator);
             $this->validateCategoryDirection($validator);
+            $this->validateTransactionConflicts($validator);
         }];
+    }
+
+    /**
+     * Com transaction_id, a transação manda na conta, direção e data: o
+     * corpo pode repetir os mesmos valores, mas não pode discordar dela.
+     */
+    private function validateTransactionConflicts(Validator $validator): void
+    {
+        $transaction = $this->referencedTransaction();
+
+        if ($transaction === null) {
+            return;
+        }
+
+        if ($this->filled('account_id') && $this->integer('account_id') !== $transaction->account_id) {
+            $validator->errors()->add('account_id', 'Precisa ser a mesma conta do lançamento.');
+        }
+
+        if ($this->filled('direction') && $this->input('direction') !== $transaction->direction->value) {
+            $validator->errors()->add('direction', 'Precisa ser a mesma direção do lançamento.');
+        }
+
+        if ($this->filled('starts_on') && $this->input('starts_on') !== $transaction->date->toDateString()) {
+            $validator->errors()->add('starts_on', 'Precisa ser a data do lançamento.');
+        }
     }
 
     private function validateDayOfMonth(Validator $validator): void
@@ -85,10 +111,21 @@ final class StoreRecurrenceRequest extends ApiRequest
             return;
         }
 
-        $direction = $this->effectiveDirection();
         $category = Category::query()->find($categoryId);
 
-        if ($direction === null || $category === null) {
+        if ($category === null) {
+            return;
+        }
+
+        if ($category->is_archived) {
+            $validator->errors()->add('category_id', 'Categoria arquivada.');
+
+            return;
+        }
+
+        $direction = $this->effectiveDirection();
+
+        if ($direction === null) {
             return;
         }
 

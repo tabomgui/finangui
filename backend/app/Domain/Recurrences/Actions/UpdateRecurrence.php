@@ -4,10 +4,13 @@ namespace App\Domain\Recurrences\Actions;
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Actions\AssignStatement;
+use App\Domain\Cards\Models\CardStatement;
+use App\Domain\Recurrences\Enums\Frequency;
 use App\Domain\Recurrences\Models\Recurrence;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -15,12 +18,13 @@ use Illuminate\Support\Facades\DB;
  * Campos simples (conta, descrição, valor, categoria, match_pattern)
  * propagam para as ocorrências previstas com data >= hoje. Mudar o
  * calendário (frequency, interval, day_of_month, starts_on, ends_on) exclui
- * essas previstas, zera generated_until para hoje - 1 e gera de novo.
- * Pausar (is_active: false) exclui as previstas futuras e zera
- * generated_until do mesmo jeito; reativar avança generated_until até pelo
- * menos hoje - 1 e gera de novo a partir de hoje. direction é imutável
- * depois de criada (fora das regras de edição do plano) — o request não
- * aceita esse campo.
+ * as previstas com recurrence_date >= hoje - 5 (a mesma janela em que um
+ * lançamento real ainda pode casar, evitando duas ocorrências do mesmo
+ * período) e as que ficaram fora do novo intervalo (antes do novo starts_on
+ * ou depois do novo ends_on), zera generated_until para hoje - 6 e gera de
+ * novo. Pausar (is_active: false) faz a mesma limpeza; reativar avança
+ * generated_until até pelo menos hoje - 6 e gera de novo a partir de hoje.
+ * direction é imutável depois de criada — o request rejeita esse campo.
  */
 final class UpdateRecurrence
 {
@@ -41,22 +45,25 @@ final class UpdateRecurrence
     public function handle(Recurrence $recurrence, array $input): Recurrence
     {
         return DB::transaction(function () use ($recurrence, $input) {
+            $previousAccountId = $recurrence->account_id;
             $wasActive = $recurrence->is_active;
             $calendarChanged = $this->changed($recurrence, $input, self::CALENDAR_FIELDS);
             $simpleChanged = $this->changed($recurrence, $input, self::SIMPLE_FIELDS);
 
             $recurrence->fill($input);
+            self::normalizeDayOfMonth($recurrence);
             $recurrence->save();
 
             $today = CarbonImmutable::today();
             $activeChanged = $wasActive !== $recurrence->is_active;
 
             if ($calendarChanged || ($activeChanged && ! $recurrence->is_active)) {
-                $this->deleteFutureProjected($recurrence, $today);
-                $recurrence->generated_until = $today->subDay();
+                $this->deleteAffectedProjected($recurrence, $today);
+                $recurrence->generated_until = $today->subDays(6);
                 $recurrence->save();
+                CardStatement::pruneEmptyFuture($recurrence->account_id);
             } elseif ($activeChanged && $recurrence->is_active) {
-                $recurrence->generated_until = self::later($recurrence->generated_until ?? $today->subDay(), $today->subDay());
+                $recurrence->generated_until = self::later($recurrence->generated_until ?? $today->subDays(6), $today->subDays(6));
                 $recurrence->save();
             }
 
@@ -65,9 +72,13 @@ final class UpdateRecurrence
                 $this->generateOccurrences->handle($recurrence, $today);
             } elseif ($simpleChanged) {
                 $this->propagateSimpleFields($recurrence, $today);
+
+                if ($recurrence->account_id !== $previousAccountId) {
+                    CardStatement::pruneEmptyFuture($previousAccountId);
+                }
             }
 
-            return $recurrence->load(['account', 'category']);
+            return $recurrence->load(['account', 'category'])->loadNextDate();
         });
     }
 
@@ -97,12 +108,43 @@ final class UpdateRecurrence
         };
     }
 
-    private function deleteFutureProjected(Recurrence $recurrence, CarbonImmutable $today): void
+    /**
+     * day_of_month só existe para frequência mensal; nela, sem valor
+     * explícito, o padrão é o dia de starts_on (mesma regra da criação).
+     */
+    private static function normalizeDayOfMonth(Recurrence $recurrence): void
     {
+        if ($recurrence->frequency !== Frequency::Monthly) {
+            $recurrence->day_of_month = null;
+
+            return;
+        }
+
+        $recurrence->day_of_month ??= $recurrence->starts_on->day;
+    }
+
+    /**
+     * Previstas afetadas por uma mudança de calendário ou pausa: as de
+     * sempre que vida (>= hoje - 5, evita duas ocorrências do mesmo período
+     * quando a geração for refeita) e as que o novo intervalo não cobre
+     * mais (antes do novo starts_on ou depois do novo ends_on), mesmo que
+     * já antigas.
+     */
+    private function deleteAffectedProjected(Recurrence $recurrence, CarbonImmutable $today): void
+    {
+        $threshold = $today->subDays(5)->toDateString();
+
         Transaction::query()
             ->where('recurrence_id', $recurrence->id)
             ->where('status', TransactionStatus::Projected->value)
-            ->where('recurrence_date', '>=', $today)
+            ->where(function (Builder $query) use ($recurrence, $threshold) {
+                $query->where('recurrence_date', '>=', $threshold)
+                    ->orWhere('recurrence_date', '<', $recurrence->starts_on->toDateString());
+
+                if ($recurrence->ends_on !== null) {
+                    $query->orWhere('recurrence_date', '>', $recurrence->ends_on->toDateString());
+                }
+            })
             ->delete();
     }
 
