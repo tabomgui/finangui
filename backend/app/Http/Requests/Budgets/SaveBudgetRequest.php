@@ -18,7 +18,10 @@ final class SaveBudgetRequest extends ApiRequest
     {
         return [
             'category_id' => ['required', 'integer', Rule::exists('categories', 'id')->where('user_id', $this->userId())],
-            'amount' => ['required', 'integer', 'min:1', 'max:1000000000000000'],
+            // min:0 aqui porque uma exceção de mês pode valer 0 ("sem orçamento
+            // neste mês" — ver SaveBudget); o padrão mensal exige > 0, checado
+            // em after() abaixo, que é onde outras regras cruzadas já vivem.
+            'amount' => ['required', 'integer', 'min:0', 'max:1000000000000000'],
             // Ausente = padrão mensal; quando informado, é a exceção daquele mês.
             'month' => ['sometimes', 'date_format:Y-m'],
         ];
@@ -30,9 +33,17 @@ final class SaveBudgetRequest extends ApiRequest
     public function after(): array
     {
         return [function (Validator $validator): void {
-            if ($validator->errors()->isEmpty()) {
-                $this->validateBudgetableCategory($validator);
+            if ($validator->errors()->isNotEmpty()) {
+                return;
             }
+
+            if (! $this->filled('month') && $this->integer('amount') < 1) {
+                $validator->errors()->add('amount', 'O orçamento padrão precisa ser maior que zero.');
+
+                return;
+            }
+
+            $this->validateBudgetableCategory($validator);
         }];
     }
 }

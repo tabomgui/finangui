@@ -59,11 +59,33 @@ it('rejeita categoria de receita, arquivada, de transferência ou de outro usuá
     $this->putJson('/api/v1/budgets', ['category_id' => $otherUsersCategory->id, 'amount' => 1000])->assertStatus(422)->assertJsonValidationErrors('category_id');
 });
 
+it('aceita exceção de mês com valor 0, mas exige valor positivo no padrão mensal', function () {
+    $category = Category::factory()->create();
+
+    $this->putJson('/api/v1/budgets', ['category_id' => $category->id, 'amount' => 0])
+        ->assertStatus(422)->assertJsonValidationErrors('amount');
+
+    $this->putJson('/api/v1/budgets', ['category_id' => $category->id, 'amount' => 50000])->assertOk();
+
+    $this->putJson('/api/v1/budgets', ['category_id' => $category->id, 'amount' => 0, 'month' => '2026-10'])
+        ->assertOk()
+        ->assertJsonCount(0, 'data.items');
+});
+
 it('exclui o padrão mensal', function () {
     $category = Category::factory()->create();
     Budget::factory()->create(['category_id' => $category->id, 'amount' => 50000]);
 
     $this->deleteJson('/api/v1/budgets', ['category_id' => $category->id])->assertNoContent();
+
+    expect(Budget::query()->count())->toBe(0);
+});
+
+it('exclui pela query string, não só pelo corpo', function () {
+    $category = Category::factory()->create();
+    Budget::factory()->create(['category_id' => $category->id, 'amount' => 50000]);
+
+    $this->delete("/api/v1/budgets?category_id={$category->id}")->assertNoContent();
 
     expect(Budget::query()->count())->toBe(0);
 });

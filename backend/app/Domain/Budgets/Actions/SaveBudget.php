@@ -20,14 +20,9 @@ final class SaveBudget
             ? CarbonImmutable::createFromFormat('!Y-m', $input['month'])->toDateString()
             : null;
 
-        $budget = Budget::query()->where('category_id', $input['category_id'])->where('month', $month)->first();
-
-        if ($budget === null) {
-            $budget = new Budget(['category_id' => $input['category_id'], 'month' => $month]);
-        }
-
-        $budget->fill(['amount' => $input['amount']])->save();
-
-        return $budget;
+        return Budget::query()->updateOrCreate(
+            ['category_id' => $input['category_id'], 'month' => $month],
+            ['amount' => $input['amount']],
+        );
     }
 }

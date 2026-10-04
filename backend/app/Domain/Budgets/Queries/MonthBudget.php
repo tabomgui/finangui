@@ -35,17 +35,28 @@ final class MonthBudget
             ->get();
         $defaults = $budgets->whereNull('month')->keyBy('category_id');
         $overrides = $budgets->whereNotNull('month')->keyBy('category_id');
-        /** @var Collection<int, int> $budgetedIds */
-        $budgetedIds = $budgets->pluck('category_id')->unique()->values();
+
+        // Uma exceção de valor 0 cancela o orçamento daquele mês (ver
+        // SaveBudget/SaveBudgetRequest): só entra em items/totals, e só
+        // conta para "esta categoria está orçada" nas regras abaixo, quem
+        // de fato tem valor positivo neste mês.
+        /** @var Collection<int, int> $activeIds */
+        $activeIds = $budgets->pluck('category_id')->unique()->values()
+            ->filter(function (int $categoryId) use ($defaults, $overrides) {
+                $budget = $overrides->get($categoryId) ?? $defaults->get($categoryId);
+
+                return $budget !== null && $budget->amount->cents > 0;
+            })
+            ->values();
 
         $nets = $this->netsByCategory($start, $end, $primaryCurrency);
         $noCategoryNet = $this->noCategoryNet($start, $end, $primaryCurrency);
 
-        $items = $budgetedIds
+        $items = $activeIds
             ->map(function (int $categoryId) use ($categories, $defaults, $overrides, $nets) {
                 $category = $categories->get($categoryId);
 
-                if ($category === null) {
+                if ($category === null || $this->isTransferCategory($category, $categories)) {
                     return null;
                 }
 
@@ -71,28 +82,41 @@ final class MonthBudget
                     'source' => $override !== null ? 'override' : 'default',
                     'spent' => $spent,
                     'remaining' => $amount - $spent,
-                    'percent' => $amount > 0 ? (int) round($spent * 100 / $amount) : 0,
+                    'percent' => $amount > 0 ? (int) floor($spent * 100 / $amount) : 0,
                 ];
             })
             ->filter()
             ->sortByDesc('percent')
             ->values();
 
+        // Totais ignoram o item cujo pai também está orçado (de verdade,
+        // valor > 0) neste mês: o gasto da filha já entra no total do pai
+        // via scopeIds acima, somar os dois de novo contaria em dobro.
+        $totalsIds = $activeIds->reject(function (int $categoryId) use ($categories, $activeIds) {
+            $parentId = $categories->get($categoryId)?->parent_id;
+
+            return $parentId !== null && $activeIds->contains($parentId);
+        });
+        $totalsItems = $items->whereIn('category.id', $totalsIds->all());
+
         $unbudgetedSpent = $categories
             ->reject(fn (Category $category) => $category->kind !== CategoryKind::Expense
-                || $budgetedIds->contains($category->id)
-                || ($category->parent_id !== null && $budgetedIds->contains($category->parent_id)))
-            ->sum(fn (Category $category) => $nets->get($category->id, 0));
+                || $activeIds->contains($category->id)
+                || ($category->parent_id !== null && $activeIds->contains($category->parent_id)))
+            // Cada categoria clampada a 0 antes de somar: um estorno maior
+            // que o gasto (líquido negativo) não pode abater o total de
+            // outra categoria sem orçamento.
+            ->sum(fn (Category $category) => max($nets->get($category->id, 0), 0));
 
         return new MonthBudgetResult(
             month: $month->format('Y-m'),
             currency: $primaryCurrency,
             items: $items->all(),
             totals: [
-                'budgeted' => (int) $items->sum('amount'),
-                'spent' => (int) $items->sum('spent'),
+                'budgeted' => (int) $totalsItems->sum('amount'),
+                'spent' => (int) $totalsItems->sum('spent'),
             ],
-            unbudgetedSpent: max((int) $unbudgetedSpent + $noCategoryNet, 0),
+            unbudgetedSpent: (int) $unbudgetedSpent + $noCategoryNet,
         );
     }
 
@@ -117,17 +141,42 @@ final class MonthBudget
         return $rows->mapWithKeys(fn (object $row) => [(int) $row->category_id => (int) $row->net]);
     }
 
+    /**
+     * Só saídas: uma entrada sem categoria não é estorno de nada (não há
+     * categoria para ela abater), diferente do líquido por categoria acima.
+     */
     private function noCategoryNet(string $start, string $end, string $primaryCurrency): int
     {
         $row = Transaction::query()
             ->reportable()
             ->whereBetween('transactions.date', [$start, $end])
             ->where('transactions.currency', $primaryCurrency)
+            ->where('transactions.direction', 'out')
             ->whereNull('transactions.category_id')
-            ->selectRaw("COALESCE(SUM(CASE WHEN transactions.direction = 'out' THEN transactions.amount ELSE -transactions.amount END), 0) AS net")
+            ->selectRaw('COALESCE(SUM(transactions.amount), 0) AS net')
             ->toBase()
             ->first();
 
         return (int) ($row->net ?? 0);
+    }
+
+    /**
+     * Uma categoria (ou o pai dela) pode virar transferência depois que um
+     * orçamento já existia; o item correspondente some da resposta, sem
+     * apagar o Budget em si (volta a aparecer se a categoria deixar de ser
+     * de transferência).
+     *
+     * @param  Collection<int, Category>  $categories
+     */
+    private function isTransferCategory(Category $category, Collection $categories): bool
+    {
+        if ($category->is_transfer) {
+            return true;
+        }
+
+        $parent = $category->parent_id !== null ? $categories->get($category->parent_id) : null;
+
+        // @phpstan-ignore nullsafe.neverNull (falso positivo: Larastan não enxerga que Collection::get() pode voltar null; em runtime o pai pode não estar carregado)
+        return $parent?->is_transfer ?? false;
     }
 }
