@@ -24,7 +24,6 @@ use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -398,17 +397,18 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
     }
 
     /**
-     * Roda sempre dentro de UserContext::run() (handle()/failed() já
-     * cuidam disso antes de chamar sync()/writeStatus()): Auth::user() é o
-     * dono da conexão. NotificationDeduper evita duplicar caso writeStatus()
-     * seja chamado de novo com o mesmo resultado antes do estado em memória
-     * refletir a mudança.
+     * Busca o usuário pelo dono da própria conexão (não Auth::user()): esta
+     * notificação é só um efeito colateral de writeStatus() ter gravado
+     * needs_reauth, e não deve depender do guard continuar com o mesmo
+     * usuário ativo até aqui. NotificationDeduper evita duplicar caso
+     * writeStatus() seja chamado de novo com o mesmo resultado antes do
+     * estado em memória refletir a mudança.
      */
     private function notifyNeedsReauth(BankConnection $connection): void
     {
-        $user = Auth::user();
+        $user = User::query()->find($connection->user_id);
 
-        if (! $user instanceof User) {
+        if ($user === null) {
             return;
         }
 
