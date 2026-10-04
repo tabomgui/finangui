@@ -8,6 +8,13 @@ import { monthAxisLabel } from './period'
 
 type EvolutionChartProps = { months: MonthlyEvolutionMonth[]; currency: string }
 
+// Largura fixa do eixo Y, grande o bastante para o rótulo abreviado mais largo que
+// `formatCompactMoney` produz num resultado negativo ("-R$ 99,9 mil", a string mais larga entre as
+// testadas) sem cortar à esquerda: medido com `canvas.measureText` no mesmo tamanho de fonte dos
+// ticks (12px) deu ~65px; os 8px restantes cobrem o espaçamento interno que o recharts reserva
+// entre o texto e a borda do eixo.
+const Y_AXIS_WIDTH = 80
+
 /**
  * Evolução mensal de receita, despesa e resultado: barras agrupadas (cores `--income`/`--expense`
  * do tema) com uma linha de resultado sobreposta, num único eixo de valor (as três séries são a
@@ -37,7 +44,7 @@ export function EvolutionChart({ months, currency }: EvolutionChartProps) {
               tickFormatter={(value: number) => formatCompactMoney(value, currency)}
               tickLine={false}
               axisLine={false}
-              width={64}
+              width={Y_AXIS_WIDTH}
               tick={{ fill: 'var(--color-muted-foreground)', fontSize: 12 }}
             />
             <Tooltip

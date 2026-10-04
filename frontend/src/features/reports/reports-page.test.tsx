@@ -98,7 +98,10 @@ describe('ReportsPage', () => {
     renderPage('/relatorios?mesA=2026-09&mesB=2026-10')
 
     expect(screen.getByRole('table', { hidden: true, name: /receita, despesa e resultado por mês/i })).toBeInTheDocument()
-    expect(screen.getByText('Moradia')).toBeInTheDocument()
+    // "Moradia" aparece duas vezes: na lista (abaixo de sm) e na tabela (sm e acima) — só uma delas
+    // fica visível por vez via classe responsiva, mas as duas existem no DOM em teste (jsdom não
+    // avalia media query).
+    expect(screen.getAllByText('Moradia').length).toBeGreaterThan(0)
     expect(screen.getByText('Período A')).toBeInTheDocument()
     expect(screen.getByText('Período B')).toBeInTheDocument()
   })
