@@ -113,7 +113,7 @@ final class IngestionPlanner
 
             if ($recurrenceMatch !== null) {
                 $usedIds[$recurrenceMatch->id] = true;
-                $decisions[$index] = new RowDecision($row, RowOutcome::Adopt, $recurrenceMatch->id, $recurrenceMatch);
+                $decisions[$index] = new RowDecision($row, RowOutcome::Adopt, $recurrenceMatch->id, $recurrenceMatch, matchedByRecurrence: true);
 
                 continue;
             }
@@ -159,22 +159,26 @@ final class IngestionPlanner
     /**
      * Parcelas não são lançamentos manuais livres: têm seu próprio
      * casamento (replace_installment) e nunca entram aqui, mesmo sem
-     * external_id. Sem external_id, qualquer outro lançamento é candidato.
-     * Com external_id, só entra quando o lote é da sincronização bancária
-     * (Pluggy) e o lançamento já existente não veio do próprio banco —
-     * um lançamento manual, de CSV ou de OFX ainda não confirmado, com o
-     * seu próprio id sintético, que o banco agora está relatando com um id
-     * dele: mesmos limiares de valor/data/descrição de matchAdoption()
-     * (e matchCardPayment(), que usa o mesmo pool) decidem se de fato bate.
-     */
-    /**
+     * external_id. Uma prevista de recorrência também nunca entra aqui:
+     * RecurrenceMatcher (tentado antes, ver recurrencePool()) é o único
+     * caminho até ela — senão a tolerância de descrição genérica daqui
+     * (sem olhar match_pattern) poderia confirmá-la por trás da regra mais
+     * estrita que o usuário configurou. Sem external_id, qualquer outro
+     * lançamento é candidato. Com external_id, só entra quando o lote é da
+     * sincronização bancária (Pluggy) e o lançamento já existente não veio
+     * do próprio banco — um lançamento manual, de CSV ou de OFX ainda não
+     * confirmado, com o seu próprio id sintético, que o banco agora está
+     * relatando com um id dele: mesmos limiares de valor/data/descrição de
+     * matchAdoption() (e matchCardPayment(), que usa o mesmo pool) decidem
+     * se de fato bate.
+     *
      * @param  Collection<int, Transaction>  $candidates
      * @return Collection<int, Transaction>
      */
     private function adoptionPool(Collection $candidates, ?ImportFormat $format): Collection
     {
         return $candidates->filter(function (Transaction $t) use ($format) {
-            if ($t->installment_plan_id !== null) {
+            if ($t->installment_plan_id !== null || $this->isProjectedRecurrenceOccurrence($t)) {
                 return false;
             }
 
@@ -187,19 +191,28 @@ final class IngestionPlanner
     }
 
     /**
-     * Previstas de recorrência ainda não confirmadas (status projected,
-     * recurrence_id preenchido): candidatas ao casamento de
-     * RecurrenceMatcher::bestMatch(), tentado antes da adoção de manuais
-     * comuns (ver matchAdoption() acima).
+     * Previstas de recorrência ainda não confirmadas: candidatas ao
+     * casamento de RecurrenceMatcher::bestMatch(), tentado antes da adoção
+     * de manuais comuns (ver matchAdoption() acima).
      *
      * @param  Collection<int, Transaction>  $candidates
      * @return Collection<int, Transaction>
      */
     private function recurrencePool(Collection $candidates): Collection
     {
-        return $candidates->filter(
-            fn (Transaction $t) => $t->status === TransactionStatus::Projected && $t->recurrence_id !== null
-        )->values();
+        return $candidates->filter(fn (Transaction $t) => $this->isProjectedRecurrenceOccurrence($t))->values();
+    }
+
+    /**
+     * Prevista de recorrência de verdade (status projected, recurrence_id
+     * preenchido, sem external_id — uma vez linkada a um external_id por
+     * qualquer caminho, ela deixa de ser uma prevista "livre"): só o
+     * RecurrenceMatcher decide o destino dela, nunca matchAdoption()/
+     * matchCardPayment() (ver adoptionPool()).
+     */
+    private function isProjectedRecurrenceOccurrence(Transaction $t): bool
+    {
+        return $t->status === TransactionStatus::Projected && $t->recurrence_id !== null && $t->external_id === null;
     }
 
     /**

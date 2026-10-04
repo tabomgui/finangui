@@ -175,6 +175,27 @@ it('com match_pattern, não casa quando a descrição real não contém o padrã
     expect($match)->toBeNull();
 });
 
+it('match_pattern que normaliza para vazio (só dígitos) cai na sobreposição de tokens, nunca casa tudo', function () {
+    // Dado antigo/gravado por outro caminho: a validação de
+    // Store/UpdateRecurrenceRequest já impede isso para dados novos, mas o
+    // matcher nunca deve tratar um padrão vazio como "sem padrão" via
+    // str_contains($x, '') — isso casaria qualquer descrição.
+    $prevista = occurrence([
+        'amount' => 150000, 'date' => '2026-03-05', 'description' => 'Aluguel Apartamento',
+        'recurrence' => ['match_pattern' => '000'],
+    ]);
+
+    $semSemelhanca = $this->matcher->bestMatch(
+        pool([$prevista]), [], amount: 150000, direction: Direction::Out, date: '2026-03-05', description: 'Padaria Do Bairro',
+    );
+    $comSemelhanca = $this->matcher->bestMatch(
+        pool([$prevista]), [], amount: 150000, direction: Direction::Out, date: '2026-03-05', description: 'Pagamento Aluguel Apartamento',
+    );
+
+    expect($semSemelhanca)->toBeNull()
+        ->and($comSemelhanca?->id)->toBe($prevista->id);
+});
+
 it('não reaproveita uma prevista já usada noutra linha do mesmo lote', function () {
     $prevista = occurrence(['amount' => 150000, 'date' => '2026-03-05']);
 

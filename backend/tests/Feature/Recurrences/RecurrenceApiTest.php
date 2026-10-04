@@ -277,6 +277,22 @@ it('422 quando ends_on vem antes de starts_on', function () {
         ->assertStatus(422)->assertJsonValidationErrors('ends_on');
 });
 
+it('422 quando match_pattern não tem nenhuma letra', function () {
+    // Um padrão só com dígitos/pontuação normaliza para vazio em
+    // TextNormalizer::key() e, sem essa validação, casaria qualquer
+    // descrição em RecurrenceMatcher.
+    $this->postJson('/api/v1/recurrences', validRecurrencePayload(['match_pattern' => '12-34']))
+        ->assertStatus(422)->assertJsonValidationErrors('match_pattern');
+});
+
+it('aceita match_pattern com pelo menos uma letra', function () {
+    CarbonImmutable::setTestNow('2026-01-10');
+
+    $this->postJson('/api/v1/recurrences', validRecurrencePayload(['match_pattern' => 'Netflix']))
+        ->assertCreated()
+        ->assertJsonPath('data.match_pattern', 'Netflix');
+});
+
 it('lista com ativas primeiro e depois por próxima data', function () {
     CarbonImmutable::setTestNow('2026-03-10');
 
@@ -402,6 +418,15 @@ it('422 ao tentar mudar direction', function () {
         ->assertStatus(422)->assertJsonValidationErrors('direction');
 
     expect($recurrence->refresh()->direction)->toBe(Direction::Out);
+});
+
+it('422 ao editar match_pattern para algo sem nenhuma letra', function () {
+    $recurrence = Recurrence::factory()->create(['account_id' => $this->account->id]);
+
+    $this->patchJson("/api/v1/recurrences/{$recurrence->id}", ['match_pattern' => '000'])
+        ->assertStatus(422)->assertJsonValidationErrors('match_pattern');
+
+    expect($recurrence->refresh()->match_pattern)->toBeNull();
 });
 
 it('exclui o modelo: remove as previstas e mantém as já lançadas sem recurrence_id', function () {

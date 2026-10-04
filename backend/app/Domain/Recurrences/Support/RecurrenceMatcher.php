@@ -82,9 +82,16 @@ final class RecurrenceMatcher
     private static function descriptionMatches(Transaction $candidate, string $description): bool
     {
         $pattern = $candidate->recurrence?->match_pattern;
+        $patternKey = $pattern !== null ? TextNormalizer::key($pattern) : '';
 
-        if ($pattern !== null && $pattern !== '') {
-            return str_contains(TextNormalizer::key($description), TextNormalizer::key($pattern));
+        // Um padrão que normaliza para vazio (ex.: só dígitos ou pontuação)
+        // nunca deve cair no caminho do match_pattern: str_contains() com
+        // agulha vazia é sempre verdadeiro, o que casaria qualquer descrição
+        // real. A validação (StoreRecurrenceRequest/UpdateRecurrenceRequest)
+        // já exige pelo menos uma letra, mas o guard fica aqui também —
+        // dados antigos ou gravados por outro caminho não ficam reféns disso.
+        if ($patternKey !== '') {
+            return str_contains(TextNormalizer::key($description), $patternKey);
         }
 
         return TokenSimilarity::overlap($candidate->description, $description) >= 0.6;

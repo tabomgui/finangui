@@ -1,17 +1,20 @@
 <?php
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Actions\AssignStatement;
 use App\Domain\Cards\Actions\PayStatement;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Imports\Actions\IngestTransactions;
+use App\Domain\Imports\Actions\RevertImportBatch;
 use App\Domain\Imports\Data\ParsedRow;
 use App\Domain\Imports\Enums\ImportBatchStatus;
 use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Errors\ImportBatchNotPending;
 use App\Domain\Imports\Models\ImportBatch;
 use App\Domain\Imports\Support\FormatDetector;
+use App\Domain\Recurrences\Models\Recurrence;
 use App\Domain\Rules\Models\Rule;
 use App\Domain\Tags\Models\Tag;
 use App\Domain\Transactions\Enums\Direction;
@@ -116,6 +119,80 @@ it('adoção mantém categoria, descrição, notas e tags do manual e grava exte
             'external_id' => null, 'source' => 'manual', 'original_description' => 'Mercado',
         ]],
     ]);
+});
+
+it('adoção de prevista de recorrência por uma linha pending grava o status pela linha, não posted', function () {
+    $this->travelTo('2026-03-10');
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $this->account->id, 'user_id' => $this->user->id,
+        'description' => 'Aluguel', 'amount' => 150000, 'direction' => Direction::Out,
+    ]);
+    $occurrence = Transaction::factory()->create([
+        'account_id' => $this->account->id, 'user_id' => $this->user->id,
+        'status' => 'projected', 'source' => 'recurrence',
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-03-05', 'date' => '2026-03-05',
+        'description' => 'Aluguel', 'original_description' => 'Aluguel',
+        'amount' => 150000, 'direction' => Direction::Out,
+    ]);
+
+    $batch = $this->action->handle(
+        pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
+        [ingestRow(['description' => 'Aluguel', 'amount' => 150000, 'date' => '2026-03-07', 'externalId' => 'rec-pend-1', 'pending' => true])],
+    );
+
+    expect($batch->stats['adopted'])->toBe(1);
+
+    $occurrence->refresh();
+    expect($occurrence->status)->toBe(TransactionStatus::Pending)
+        ->and($occurrence->external_id)->toBe('rec-pend-1')
+        ->and($occurrence->date->toDateString())->toBe('2026-03-07')
+        ->and($occurrence->amount->cents)->toBe(150000)
+        ->and($occurrence->recurrence_id)->toBe($recurrence->id);
+});
+
+it('adoção de prevista de cartão recalcula a fatura quando o real cai noutro ciclo; revert devolve a fatura original', function () {
+    $card = Account::factory()->creditCard(closingDay: 10, dueDay: 20)->create(['user_id' => $this->user->id]);
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $card->id, 'user_id' => $this->user->id,
+        'description' => 'Assinatura Cartao', 'amount' => 10000, 'direction' => Direction::Out,
+    ]);
+    $occurrence = Transaction::factory()->create([
+        'account_id' => $card->id, 'user_id' => $this->user->id,
+        'status' => 'projected', 'source' => 'recurrence',
+        'recurrence_id' => $recurrence->id, 'recurrence_date' => '2026-03-08', 'date' => '2026-03-08',
+        'description' => 'Assinatura Cartao', 'original_description' => 'Assinatura Cartao',
+        'amount' => 10000, 'direction' => Direction::Out,
+    ]);
+    app(AssignStatement::class)->handle($occurrence);
+    $occurrence->save();
+    $originalStatementId = $occurrence->statement_id;
+    expect($originalStatementId)->not->toBeNull();
+
+    // 10/03 já é dia de fechamento (closingDay 10): a compra rola para o
+    // ciclo seguinte, diferente do ciclo da prevista (fechamento 10/03
+    // ainda não chegado quando ela foi gerada em 08/03).
+    $batch = $this->action->handle(
+        pendingBatch(['account_id' => $card->id, 'user_id' => $this->user->id, 'format' => ImportFormat::NubankCard]),
+        [ingestRow(['description' => 'Assinatura Cartao', 'amount' => 10000, 'date' => '2026-03-10', 'externalId' => 'card-rec-1'])],
+    );
+
+    expect($batch->stats['adopted'])->toBe(1);
+
+    $occurrence->refresh();
+    expect($occurrence->status)->toBe(TransactionStatus::Posted)
+        ->and($occurrence->date->toDateString())->toBe('2026-03-10')
+        ->and($occurrence->statement_id)->not->toBeNull()
+        ->and($occurrence->statement_id)->not->toBe($originalStatementId);
+
+    $newStatementId = $occurrence->statement_id;
+
+    app(RevertImportBatch::class)->handle($batch);
+
+    $occurrence->refresh();
+    expect($occurrence->status)->toBe(TransactionStatus::Projected)
+        ->and($occurrence->date->toDateString())->toBe('2026-03-08')
+        ->and($occurrence->statement_id)->toBe($originalStatementId)
+        ->and($occurrence->statement_id)->not->toBe($newStatementId);
 });
 
 it('cartão: compra comum ganha fatura e parcela nova sem plano cria o plano e projeta as próximas', function () {

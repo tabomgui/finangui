@@ -16,7 +16,6 @@ use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Models\Rule;
 use App\Domain\Rules\Support\HistoryCategorizer;
 use App\Domain\Rules\Support\TextNormalizer;
-use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 
 /**
@@ -138,13 +137,12 @@ final class ImportPreview
             }
 
             $transaction = $decision->transaction;
-            $isRecurrenceOccurrence = $transaction->status === TransactionStatus::Projected && $transaction->recurrence_id !== null;
 
             $matches[$transaction->id] = [
                 'id' => $transaction->id,
                 'date' => $transaction->date->toDateString(),
                 'description' => $transaction->description,
-                'kind' => $isRecurrenceOccurrence ? 'recurrence' : 'manual',
+                'kind' => $decision->matchedByRecurrence ? 'recurrence' : 'manual',
             ];
         }
 

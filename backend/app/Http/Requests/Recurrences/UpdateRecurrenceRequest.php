@@ -34,7 +34,8 @@ final class UpdateRecurrenceRequest extends ApiRequest
             'day_of_month' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:31'],
             'starts_on' => ['sometimes', 'date_format:Y-m-d'],
             'ends_on' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
-            'match_pattern' => ['sometimes', 'nullable', 'string', 'max:80'],
+            // /\pL/u exige ao menos uma letra: ver StoreRecurrenceRequest.
+            'match_pattern' => ['sometimes', 'nullable', 'string', 'max:80', 'regex:/\pL/u'],
             'is_active' => ['sometimes', 'boolean'],
         ];
     }

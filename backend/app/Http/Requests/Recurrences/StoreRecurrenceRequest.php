@@ -36,7 +36,10 @@ final class StoreRecurrenceRequest extends ApiRequest
             'day_of_month' => ['nullable', 'integer', 'min:1', 'max:31'],
             'starts_on' => ['required_without:transaction_id', 'date_format:Y-m-d'],
             'ends_on' => ['nullable', 'date_format:Y-m-d'],
-            'match_pattern' => ['nullable', 'string', 'max:80'],
+            // /\pL/u exige ao menos uma letra: um padrão só com dígitos ou
+            // pontuação normaliza para vazio em TextNormalizer::key() e
+            // casaria qualquer descrição (ver RecurrenceMatcher).
+            'match_pattern' => ['nullable', 'string', 'max:80', 'regex:/\pL/u'],
             'is_active' => ['sometimes', 'boolean'],
         ];
     }
