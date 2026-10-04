@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, expectOk, unwrap } from '@/api/client'
-import { invalidateLedger, queryKeys } from '@/api/query-keys'
+import { invalidateGoals, queryKeys } from '@/api/query-keys'
 import type { components } from '@/api/schema'
 
 type StoreGoalRequest = components['schemas']['StoreGoalRequest']
@@ -18,7 +18,7 @@ export function useCreateGoal() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (body: StoreGoalRequest) => (await unwrap(api.POST('/goals', { body }))).data,
-    onSuccess: () => invalidateLedger(queryClient),
+    onSuccess: () => invalidateGoals(queryClient),
   })
 }
 
@@ -27,7 +27,7 @@ export function useUpdateGoal() {
   return useMutation({
     mutationFn: async ({ id, body }: { id: number; body: UpdateGoalRequest }) =>
       (await unwrap(api.PATCH('/goals/{goal}', { params: { path: { goal: id } }, body }))).data,
-    onSuccess: () => invalidateLedger(queryClient),
+    onSuccess: () => invalidateGoals(queryClient),
   })
 }
 
@@ -37,7 +37,7 @@ export function useDeleteGoal() {
     mutationFn: async (id: number) => {
       await expectOk(api.DELETE('/goals/{goal}', { params: { path: { goal: id } } }))
     },
-    onSuccess: () => invalidateLedger(queryClient),
+    onSuccess: () => invalidateGoals(queryClient),
   })
 }
 
@@ -54,7 +54,7 @@ export function useCreateGoalContribution(goalId: number) {
   return useMutation({
     mutationFn: async (body: StoreGoalContributionRequest) =>
       (await unwrap(api.POST('/goals/{goal}/contributions', { params: { path: { goal: goalId } }, body }))).data,
-    onSuccess: () => invalidateLedger(queryClient),
+    onSuccess: () => invalidateGoals(queryClient),
   })
 }
 
@@ -68,6 +68,6 @@ export function useDeleteGoalContribution(goalId: number) {
         }),
       )
     },
-    onSuccess: () => invalidateLedger(queryClient),
+    onSuccess: () => invalidateGoals(queryClient),
   })
 }

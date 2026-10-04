@@ -2,7 +2,9 @@ import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
 import {
   invalidateBankConnections,
+  invalidateBudgets,
   invalidateCategories,
+  invalidateGoals,
   invalidateImportBatchesList,
   invalidateImports,
   invalidateLedger,
@@ -30,6 +32,9 @@ function seed(client: QueryClient) {
     queryKeys.importBatches(),
     queryKeys.importBatch(1),
     queryKeys.bankConnections(),
+    queryKeys.budgets('2026-10'),
+    queryKeys.goals(),
+    queryKeys.goalContributions(1),
   ]) {
     client.setQueryData(key, 'x')
   }
@@ -56,9 +61,11 @@ describe('query keys', () => {
     expect(invalidated(client)).toEqual([
       'accounts',
       'bank-connections',
+      'budgets',
       'card-statements',
       'cards',
       'dashboard',
+      'goals',
       'installment-plans',
       'rule-preview',
       'transactions',
@@ -110,5 +117,19 @@ describe('query keys', () => {
     seed(client)
     await invalidateBankConnections(client)
     expect(invalidated(client)).toEqual(['bank-connections'])
+  })
+
+  it('invalidateBudgets invalida só o orçamento, nunca transações/contas/etc.', async () => {
+    const client = new QueryClient()
+    seed(client)
+    await invalidateBudgets(client)
+    expect(invalidated(client)).toEqual(['budgets'])
+  })
+
+  it('invalidateGoals invalida metas e seus aportes (mesmo prefixo), nunca o resto do razão', async () => {
+    const client = new QueryClient()
+    seed(client)
+    await invalidateGoals(client)
+    expect(invalidated(client)).toEqual(['goals'])
   })
 })

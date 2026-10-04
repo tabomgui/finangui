@@ -132,6 +132,20 @@ export function invalidateBankConnections(queryClient: QueryClient) {
 }
 
 /**
+ * Orçar/editar/remover uma categoria não muda transação, conta, cartão nem nada mais do razão —
+ * só a própria tela de orçamento. `invalidateLedger` inclui `budgets` pelo motivo contrário
+ * (transações mudam o gasto); mutações do orçamento em si usam esta, bem mais estreita.
+ */
+export function invalidateBudgets(queryClient: QueryClient) {
+  return invalidate(queryClient, ['budgets'])
+}
+
+/** Mesma lógica de `invalidateBudgets`: criar/editar/remover meta ou aporte só afeta metas. */
+export function invalidateGoals(queryClient: QueryClient) {
+  return invalidate(queryClient, ['goals'])
+}
+
+/**
  * Notificações não entram em `invalidateLedger`: ler ou marcar como lida não muda saldo, lista
  * ou resumo nenhum — só o sino (lista e `unread_count`), que esta chave cobre sozinha, prefixo
  * comum de `notifications()` e `notificationsUnreadCount()`.

@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, expectOk, unwrap } from '@/api/client'
-import { invalidateLedger, queryKeys } from '@/api/query-keys'
+import { invalidateBudgets, queryKeys } from '@/api/query-keys'
 import type { components } from '@/api/schema'
 
 type SaveBudgetRequest = components['schemas']['SaveBudgetRequest']
@@ -17,7 +17,7 @@ export function useSaveBudget() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (body: SaveBudgetRequest) => (await unwrap(api.PUT('/budgets', { body }))).data,
-    onSuccess: () => invalidateLedger(queryClient),
+    onSuccess: () => invalidateBudgets(queryClient),
   })
 }
 
@@ -27,6 +27,6 @@ export function useDeleteBudget() {
     mutationFn: async (query: { category_id: number; month?: string }) => {
       await expectOk(api.DELETE('/budgets', { params: { query } }))
     },
-    onSuccess: () => invalidateLedger(queryClient),
+    onSuccess: () => invalidateBudgets(queryClient),
   })
 }
