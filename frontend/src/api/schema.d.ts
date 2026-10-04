@@ -607,6 +607,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reports/monthly": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["report.monthly"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["report.categories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/rules/order": {
         parameters: {
             query?: never;
@@ -1027,6 +1059,24 @@ export interface components {
             is_overdue: boolean;
             has_divergence: boolean;
         };
+        /** CategoryComparisonResource */
+        CategoryComparisonResource: {
+            currency: string;
+            items: {
+                category_id: number | null;
+                name: string;
+                icon: string | null;
+                color: string | null;
+                a: number;
+                b: number;
+                delta: number;
+                delta_percent?: number;
+            }[];
+            totals: {
+                a: number;
+                b: number;
+            };
+        };
         /**
          * CategoryKind
          * @enum {string}
@@ -1092,8 +1142,8 @@ export interface components {
              *     Readable<T> do openapi-fetch.
              */
             account?: {
-                id: number | null;
-                name: string | null;
+                id: number;
+                name: string;
             };
             color: string | null;
             icon: string | null;
@@ -1346,6 +1396,16 @@ export interface components {
             };
             unbudgeted_spent: number;
         };
+        /** MonthlyEvolutionResource */
+        MonthlyEvolutionResource: {
+            currency: string;
+            months: {
+                month: string;
+                income: number;
+                expense: number;
+                net: number;
+            }[];
+        };
         /** PayStatementRequest */
         PayStatementRequest: {
             from_account_id: number;
@@ -1457,6 +1517,12 @@ export interface components {
             ids: number[];
         };
         /**
+         * ReportBasis
+         * @description Visão de competência dos relatórios: purchase (data do lançamento) ou statement (vencimento da fatura, para transações de cartão).
+         * @enum {string}
+         */
+        ReportBasis: "purchase" | "statement";
+        /**
          * RowOutcome
          * @description Destino de uma linha decidido pela cascata de dedup (ver IngestionPlanner).
          * @enum {string}
@@ -1515,6 +1581,11 @@ export interface components {
         /** SaveBudgetRequest */
         SaveBudgetRequest: {
             category_id: number;
+            /**
+             * @description min:0 aqui porque uma exceção de mês pode valer 0 ("sem orçamento
+             *      neste mês" — ver SaveBudget); o padrão mensal exige > 0, checado
+             *     em after() abaixo, que é onde outras regras cruzadas já vivem.
+             */
             amount: number;
             /** @description Ausente = padrão mensal; quando informado, é a exceção daquele mês. */
             month?: string;
@@ -3744,6 +3815,64 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "report.monthly": {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                basis?: components["schemas"]["ReportBasis"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `MonthlyEvolutionResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["MonthlyEvolutionResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "report.categories": {
+        parameters: {
+            query: {
+                a_from: string;
+                a_to: string;
+                b_from: string;
+                b_to: string;
+                basis?: components["schemas"]["ReportBasis"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `CategoryComparisonResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["CategoryComparisonResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
             422: components["responses"]["ValidationException"];
         };
     };
