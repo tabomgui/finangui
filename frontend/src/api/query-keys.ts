@@ -45,6 +45,8 @@ export const queryKeys = {
   recurrence: (id: number) => ['recurrences', 'detail', id] as const,
   overdueOccurrences: () => ['recurrences', 'overdue'] as const,
   budgets: (month: string) => ['budgets', month] as const,
+  goals: () => ['goals'] as const,
+  goalContributions: (goalId: number) => ['goals', goalId, 'contributions'] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {

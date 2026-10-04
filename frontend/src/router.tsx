@@ -51,6 +51,7 @@ export const router = createBrowserRouter([
             lazy: lazyPage(() => import('@/features/recurrences/recurrences-page'), 'RecurrencesPage'),
           },
           { path: 'orcamento', lazy: lazyPage(() => import('@/features/budgets/budgets-page'), 'BudgetsPage') },
+          { path: 'metas', lazy: lazyPage(() => import('@/features/goals/goals-page'), 'GoalsPage') },
           { path: 'configuracoes', lazy: lazyPage(() => import('@/features/settings/settings-page'), 'SettingsPage') },
           { path: '*', element: <NotFoundPage /> },
         ],

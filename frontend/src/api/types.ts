@@ -70,6 +70,9 @@ export type MonthBudget = Schemas['MonthBudgetResource']
 export type BudgetItem = MonthBudget['items'][number]
 export type BudgetSource = BudgetItem['source']
 
+export type Goal = Schemas['GoalResource']
+export type GoalContribution = Schemas['GoalContributionResource']
+
 export type BankConnection = Schemas['BankConnectionResource']
 export type ConnectionStatus = Schemas['ConnectionStatus']
 export type BankProviderName = Schemas['BankProviderName']
