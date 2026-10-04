@@ -16,7 +16,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 final class CategoryComparisonResource extends JsonResource
 {
     /**
-     * @return array{currency: string, items: list<array<string, mixed>>, totals: array{a: int, b: int}}
+     * @return array{currency: string, items: list<array<string, mixed>>, totals: array<string, mixed>}
      */
     public function toArray(Request $request): array
     {
@@ -28,7 +28,25 @@ final class CategoryComparisonResource extends JsonResource
         return [
             'currency' => $this->currency,
             'items' => $items,
-            'totals' => $this->totals,
+            'totals' => $this->totalsToArray(),
+        ];
+    }
+
+    /**
+     * delta_percent some quando a === 0 (divisão sem sentido), mesma regra
+     * de itemToArray().
+     *
+     * @return array<string, mixed>
+     */
+    private function totalsToArray(): array
+    {
+        $totals = $this->totals;
+
+        return [
+            'a' => $totals['a'],
+            'b' => $totals['b'],
+            'delta' => $totals['delta'],
+            'delta_percent' => $this->when($totals['a'] !== 0, fn () => (int) round($totals['delta'] * 100 / $totals['a'])),
         ];
     }
 

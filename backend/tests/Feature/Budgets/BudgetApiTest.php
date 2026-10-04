@@ -22,7 +22,20 @@ it('usa o valor padrão quando não há exceção para o mês', function () {
         ->assertJsonPath('data.items.0.source', 'default')
         ->assertJsonPath('data.items.0.spent', 20000)
         ->assertJsonPath('data.items.0.remaining', 30000)
-        ->assertJsonPath('data.items.0.percent', 40);
+        ->assertJsonPath('data.items.0.percent', 40)
+        ->assertJsonPath('data.totals.remaining', 30000);
+});
+
+it('totals.remaining fica negativo quando o gasto passa do orçado', function () {
+    $category = Category::factory()->create();
+    Budget::factory()->create(['category_id' => $category->id, 'amount' => 20000]);
+    Transaction::factory()->for($this->account)->create(['date' => '2026-10-05', 'amount' => 35000, 'category_id' => $category->id]);
+
+    $this->getJson('/api/v1/budgets?month=2026-10')
+        ->assertOk()
+        ->assertJsonPath('data.totals.budgeted', 20000)
+        ->assertJsonPath('data.totals.spent', 35000)
+        ->assertJsonPath('data.totals.remaining', -15000);
 });
 
 it('usa a exceção do mês quando existe, sem afetar outros meses', function () {
@@ -72,7 +85,8 @@ it('filha com orçamento próprio conta no dela e também no total do pai, mas o
     expect($items[$parent->id]['spent'])->toBe(35000)
         ->and($items[$child->id]['spent'])->toBe(25000)
         ->and($response->json('data.totals.spent'))->toBe(35000)
-        ->and($response->json('data.totals.budgeted'))->toBe(100000);
+        ->and($response->json('data.totals.budgeted'))->toBe(100000)
+        ->and($response->json('data.totals.remaining'))->toBe(65000);
 });
 
 it('filha orçada com pai sem orçamento conta normalmente nos totais', function () {
@@ -86,7 +100,8 @@ it('filha orçada com pai sem orçamento conta normalmente nos totais', function
 
     expect($response->json('data.items'))->toHaveCount(1)
         ->and($response->json('data.totals.spent'))->toBe(25000)
-        ->and($response->json('data.totals.budgeted'))->toBe(30000);
+        ->and($response->json('data.totals.budgeted'))->toBe(30000)
+        ->and($response->json('data.totals.remaining'))->toBe(5000);
 });
 
 it('abate estornos (entradas não-transferência) do gasto, com mínimo zero', function () {
@@ -185,7 +200,7 @@ it('exceção de valor 0 cancela o orçamento do mês: some dos items/totals e o
 
     $october = $this->getJson('/api/v1/budgets?month=2026-10')->assertOk();
     expect($october->json('data.items'))->toHaveCount(0)
-        ->and($october->json('data.totals'))->toBe(['budgeted' => 0, 'spent' => 0])
+        ->and($october->json('data.totals'))->toBe(['budgeted' => 0, 'spent' => 0, 'remaining' => 0])
         ->and($october->json('data.unbudgeted_spent'))->toBe(12000);
 
     // O padrão mensal continua valendo nos outros meses.

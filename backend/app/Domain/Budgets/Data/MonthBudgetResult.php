@@ -9,7 +9,7 @@ final readonly class MonthBudgetResult
 {
     /**
      * @param  list<array{category: array{id: int, name: string, icon: string|null, color: string|null}, amount: int, source: 'default'|'override', spent: int, remaining: int, percent: int}>  $items
-     * @param  array{budgeted: int, spent: int}  $totals
+     * @param  array{budgeted: int, spent: int, remaining: int}  $totals
      */
     public function __construct(
         public string $month,

@@ -29,10 +29,10 @@ it('compara despesa por categoria-raiz entre dois períodos, somando filhas no p
         ->and($item['b'])->toBe(50000)
         ->and($item['delta'])->toBe(20000)
         ->and($item['delta_percent'])->toBe(67)
-        ->and($response->json('data.totals'))->toBe(['a' => 30000, 'b' => 50000]);
+        ->and($response->json('data.totals'))->toBe(['a' => 30000, 'b' => 50000, 'delta' => 20000, 'delta_percent' => 67]);
 });
 
-it('omite delta_percent quando a é zero', function () {
+it('omite delta_percent (do item e dos totais) quando a é zero', function () {
     $category = Category::factory()->create();
     Transaction::factory()->for($this->account)->create(['date' => '2026-02-05', 'amount' => 10000, 'category_id' => $category->id]);
 
@@ -42,7 +42,9 @@ it('omite delta_percent quando a é zero', function () {
 
     expect($item)->not->toHaveKey('delta_percent')
         ->and($item['a'])->toBe(0)
-        ->and($item['b'])->toBe(10000);
+        ->and($item['b'])->toBe(10000)
+        ->and($response->json('data.totals'))->not->toHaveKey('delta_percent')
+        ->and($response->json('data.totals.delta'))->toBe(10000);
 });
 
 it('separa lançamentos sem categoria e ordena pelo maior entre a e b', function () {

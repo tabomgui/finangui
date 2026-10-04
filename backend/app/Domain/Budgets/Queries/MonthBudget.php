@@ -108,13 +108,17 @@ final class MonthBudget
             // outra categoria sem orçamento.
             ->sum(fn (Category $category) => max($nets->get($category->id, 0), 0));
 
+        $budgeted = (int) $totalsItems->sum('amount');
+        $spent = (int) $totalsItems->sum('spent');
+
         return new MonthBudgetResult(
             month: $month->format('Y-m'),
             currency: $primaryCurrency,
             items: $items->all(),
             totals: [
-                'budgeted' => (int) $totalsItems->sum('amount'),
-                'spent' => (int) $totalsItems->sum('spent'),
+                'budgeted' => $budgeted,
+                'spent' => $spent,
+                'remaining' => $budgeted - $spent,
             ],
             unbudgetedSpent: (int) $unbudgetedSpent + $noCategoryNet,
         );

@@ -18,7 +18,7 @@ final class MonthBudgetResource extends JsonResource
      *     month: string,
      *     currency: string,
      *     items: list<array{category: array{id: int, name: string, icon: string|null, color: string|null}, amount: int, source: 'default'|'override', spent: int, remaining: int, percent: int}>,
-     *     totals: array{budgeted: int, spent: int},
+     *     totals: array{budgeted: int, spent: int, remaining: int},
      *     unbudgeted_spent: int,
      * }
      */

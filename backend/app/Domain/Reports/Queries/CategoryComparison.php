@@ -61,10 +61,13 @@ final class CategoryComparison
             ->sortByDesc(fn (CategoryComparisonItem $item) => max($item->a, $item->b))
             ->values();
 
+        $a = (int) $items->sum('a');
+        $b = (int) $items->sum('b');
+
         return new CategoryComparisonResult(
             $primaryCurrency,
             $items->all(),
-            ['a' => (int) $items->sum('a'), 'b' => (int) $items->sum('b')],
+            ['a' => $a, 'b' => $b, 'delta' => $b - $a],
         );
     }
 
