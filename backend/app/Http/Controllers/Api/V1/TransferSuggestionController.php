@@ -8,10 +8,10 @@ use App\Domain\Transfers\Actions\DismissTransferSuggestion;
 use App\Domain\Transfers\Enums\TransferSuggestionStatus;
 use App\Domain\Transfers\Models\TransferSuggestion;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Transfers\IndexTransferSuggestionsRequest;
 use App\Http\Resources\TransferResource;
 use App\Http\Resources\TransferSuggestionResource;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
 
@@ -22,7 +22,7 @@ final class TransferSuggestionController extends Controller
      * (TransactionController::index()): pode crescer bastante numa conta
      * movimentada, então nunca devolve tudo de uma vez.
      */
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(IndexTransferSuggestionsRequest $request): AnonymousResourceCollection
     {
         $suggestions = TransferSuggestion::query()
             ->where('status', TransferSuggestionStatus::Pending)
@@ -35,8 +35,8 @@ final class TransferSuggestionController extends Controller
     }
 
     /**
-     * Sob demanda (botão "Procurar transferências"), além da detecção
-     * automática ao fim de cada importação/sync: últimos 90 dias (ver
+     * Sob demanda (botão "Procurar agora"), além da detecção automática ao
+     * fim de cada importação/sync: últimos 90 dias (ver
      * App\Domain\Transfers\Actions\DetectTransfers). `undo` não faz parte
      * da resposta: só interessa a IngestTransactions, que mescla isso ao
      * undo do próprio lote — aqui não existe lote nenhum. Os casts (int)
