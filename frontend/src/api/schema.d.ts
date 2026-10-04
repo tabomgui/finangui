@@ -148,6 +148,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/budgets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["budget.index"];
+        put: operations["budget.save"];
+        post?: never;
+        delete: operations["budget.destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cards": {
         parameters: {
             query?: never;
@@ -303,6 +319,76 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/goals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["goals.index"];
+        put?: never;
+        post: operations["goals.store"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/goals/{goal}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["goals.show"];
+        put?: never;
+        post?: never;
+        delete: operations["goals.destroy"];
+        options?: never;
+        head?: never;
+        patch: operations["goal.update"];
+        trace?: never;
+    };
+    "/goals/{goal}/contributions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["goalContribution.index"];
+        put?: never;
+        post: operations["goalContribution.store"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/goals/{goal}/contributions/{contribution}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * $contribution não é vinculado por model binding de propósito: precisa
+         *     ser buscado dentro de $goal->contributions() para que um aporte de uma
+         *     meta não possa ser apagado através da URL de outra (as duas podem ser
+         *     do mesmo usuário e passariam pelo escopo de BelongsToUser sem isso)
+         */
+        delete: operations["goalContribution.destroy"];
         options?: never;
         head?: never;
         patch?: never;
@@ -987,6 +1073,36 @@ export interface components {
          * @enum {string}
          */
         Frequency: "weekly" | "monthly" | "yearly";
+        /** GoalContributionResource */
+        GoalContributionResource: {
+            id: number;
+            amount: number;
+            date: string;
+            note: string | null;
+        };
+        /** GoalResource */
+        GoalResource: {
+            id: number;
+            name: string;
+            target_amount: number;
+            target_date: string | null;
+            account_id: number | null;
+            /**
+             * @description Omitido sem conta vinculada (não `null`): ver CLAUDE.md sobre
+             *     Readable<T> do openapi-fetch.
+             */
+            account?: {
+                id: number | null;
+                name: string | null;
+            };
+            color: string | null;
+            icon: string | null;
+            achieved_at: string | null;
+            progress: number;
+            remaining: number;
+            percent: number;
+            monthly_needed?: number;
+        };
         /** ImportBatchResource */
         ImportBatchResource: {
             id: number;
@@ -1206,6 +1322,30 @@ export interface components {
             email: string;
             password: string;
         };
+        /** MonthBudgetResource */
+        MonthBudgetResource: {
+            month: string;
+            currency: string;
+            items: {
+                category: {
+                    id: number;
+                    name: string;
+                    icon: string | null;
+                    color: string | null;
+                };
+                amount: number;
+                /** @enum {string} */
+                source: "default" | "override";
+                spent: number;
+                remaining: number;
+                percent: number;
+            }[];
+            totals: {
+                budgeted: number;
+                spent: number;
+            };
+            unbudgeted_spent: number;
+        };
         /** PayStatementRequest */
         PayStatementRequest: {
             from_account_id: number;
@@ -1372,6 +1512,13 @@ export interface components {
             last_applied_at: string | null;
             last_applied_changes: number | null;
         };
+        /** SaveBudgetRequest */
+        SaveBudgetRequest: {
+            category_id: number;
+            amount: number;
+            /** @description Ausente = padrão mensal; quando informado, é a exceção daquele mês. */
+            month?: string;
+        };
         /** SaveTagRequest */
         SaveTagRequest: {
             name: string;
@@ -1408,6 +1555,28 @@ export interface components {
             icon?: string | null;
             color?: string | null;
             is_transfer?: boolean;
+        };
+        /** StoreGoalContributionRequest */
+        StoreGoalContributionRequest: {
+            /**
+             * @description Negativo = retirada; nunca zero. Se a meta tem conta vinculada, o
+             *     aporte é rejeitado como erro de negócio (ver CreateGoalContribution),
+             *     não aqui: a regra depende do estado da meta, não só do formato do campo.
+             */
+            amount: number;
+            /** Format: date */
+            date: string;
+            note?: string | null;
+        };
+        /** StoreGoalRequest */
+        StoreGoalRequest: {
+            name: string;
+            target_amount: number;
+            /** Format: date */
+            target_date?: string | null;
+            account_id?: number | null;
+            color?: string | null;
+            icon?: string | null;
         };
         /** StoreImportBatchRequest */
         StoreImportBatchRequest: {
@@ -1637,6 +1806,20 @@ export interface components {
             color?: string | null;
             is_transfer?: boolean;
             is_archived?: boolean;
+        };
+        /**
+         * UpdateGoalRequest
+         * @description target_date não exige "after:today" aqui: a regra é só na criação (uma
+         *     meta cujo alvo já passou continua editável, ex.: para adiar a data).
+         */
+        UpdateGoalRequest: {
+            name?: string;
+            target_amount?: number;
+            /** Format: date */
+            target_date?: string | null;
+            account_id?: number | null;
+            color?: string | null;
+            icon?: string | null;
         };
         /** UpdateInstallmentPlanRequest */
         UpdateInstallmentPlanRequest: {
@@ -2205,6 +2388,83 @@ export interface operations {
             404: components["responses"]["ModelNotFoundException"];
         };
     };
+    "budget.index": {
+        parameters: {
+            query?: {
+                month?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `MonthBudgetResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["MonthBudgetResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "budget.save": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveBudgetRequest"];
+            };
+        };
+        responses: {
+            /** @description `MonthBudgetResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["MonthBudgetResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "budget.destroy": {
+        parameters: {
+            query: {
+                category_id: number;
+                month?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
     "card.index": {
         parameters: {
             query?: {
@@ -2651,6 +2911,222 @@ export interface operations {
             };
             401: components["responses"]["AuthenticationException"];
             422: components["responses"]["ValidationException"];
+        };
+    };
+    "goals.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Array of `GoalResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GoalResource"][];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
+    "goals.store": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoreGoalRequest"];
+            };
+        };
+        responses: {
+            /** @description `GoalResource` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GoalResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "goals.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The goal ID */
+                goal: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `GoalResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GoalResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "goals.destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The goal ID */
+                goal: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "goal.update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The goal ID */
+                goal: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["UpdateGoalRequest"];
+            };
+        };
+        responses: {
+            /** @description `GoalResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GoalResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "goalContribution.index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The goal ID */
+                goal: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Array of `GoalContributionResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GoalContributionResource"][];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "goalContribution.store": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The goal ID */
+                goal: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoreGoalContributionRequest"];
+            };
+        };
+        responses: {
+            /** @description `GoalContributionResource` */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GoalContributionResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "goalContribution.destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The goal ID */
+                goal: number;
+                contribution: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
         };
     };
     "importBatch.index": {

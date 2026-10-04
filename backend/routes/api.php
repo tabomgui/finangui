@@ -10,6 +10,8 @@ use App\Http\Controllers\Api\V1\CardController;
 use App\Http\Controllers\Api\V1\CardStatementController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\GoalContributionController;
+use App\Http\Controllers\Api\V1\GoalController;
 use App\Http\Controllers\Api\V1\ImportBatchController;
 use App\Http\Controllers\Api\V1\InstallmentPlanController;
 use App\Http\Controllers\Api\V1\MeController;
@@ -38,6 +40,13 @@ Route::prefix('v1')->group(function () {
         Route::get('budgets', [BudgetController::class, 'index']);
         Route::put('budgets', [BudgetController::class, 'save']);
         Route::delete('budgets', [BudgetController::class, 'destroy']);
+
+        Route::apiResource('goals', GoalController::class)->except('update')->where(['goal' => '[0-9]+']);
+        Route::patch('goals/{goal}', [GoalController::class, 'update'])->whereNumber('goal');
+        Route::get('goals/{goal}/contributions', [GoalContributionController::class, 'index'])->whereNumber('goal');
+        Route::post('goals/{goal}/contributions', [GoalContributionController::class, 'store'])->whereNumber('goal');
+        Route::delete('goals/{goal}/contributions/{contribution}', [GoalContributionController::class, 'destroy'])
+            ->whereNumber('goal')->whereNumber('contribution');
 
         // Updates são parciais (PATCH): apiResource()->except('update') tira o
         // PUT/PATCH padrão (que registraria os dois verbos) e o Route::patch
