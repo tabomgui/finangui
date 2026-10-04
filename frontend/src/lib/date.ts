@@ -55,6 +55,16 @@ export function formatMonth(key: string): string {
   return capitalize(format(parseDateOnly(`${key}-01`), "MMMM 'de' yyyy", { locale: ptBR }))
 }
 
+/** Dia/mês ("31/10"), sem o ano — usado no saldo previsto para o fim do mês atual. */
+export function formatDayMonth(value: string): string {
+  return format(parseDateOnly(value), 'dd/MM')
+}
+
+/** Nome do mês em minúsculas, sem o ano ("novembro") — usado em textos como "fim de novembro". */
+export function monthName(key: string): string {
+  return format(parseDateOnly(`${key}-01`), 'MMMM', { locale: ptBR })
+}
+
 /** Primeiro e último dia do mês ("YYYY-MM"), para filtrar transações por período. */
 export function monthRange(key: string): { from: string; to: string } {
   const start = parseDateOnly(`${key}-01`)
