@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\V1\ImportBatchController;
 use App\Http\Controllers\Api\V1\InstallmentPlanController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\RecurrenceController;
+use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\RuleController;
 use App\Http\Controllers\Api\V1\TagController;
 use App\Http\Controllers\Api\V1\TransactionController;
@@ -47,6 +48,9 @@ Route::prefix('v1')->group(function () {
         Route::post('goals/{goal}/contributions', [GoalContributionController::class, 'store'])->whereNumber('goal');
         Route::delete('goals/{goal}/contributions/{contribution}', [GoalContributionController::class, 'destroy'])
             ->whereNumber('goal')->whereNumber('contribution');
+
+        Route::get('reports/monthly', [ReportController::class, 'monthly']);
+        Route::get('reports/categories', [ReportController::class, 'categories']);
 
         // Updates são parciais (PATCH): apiResource()->except('update') tira o
         // PUT/PATCH padrão (que registraria os dois verbos) e o Route::patch

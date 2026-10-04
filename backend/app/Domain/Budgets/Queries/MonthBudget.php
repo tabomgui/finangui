@@ -2,6 +2,7 @@
 
 namespace App\Domain\Budgets\Queries;
 
+use App\Domain\Budgets\Data\MonthBudgetResult;
 use App\Domain\Budgets\Models\Budget;
 use App\Domain\Categories\Enums\CategoryKind;
 use App\Domain\Categories\Models\Category;
@@ -18,16 +19,8 @@ final class MonthBudget
      * das filhas (a filha pode também ter orçamento próprio, contando nos
      * dois). Só três consultas no total (categorias, orçamentos do mês,
      * gasto por categoria), sem N+1 por item orçado.
-     *
-     * @return array{
-     *     month: string,
-     *     currency: string,
-     *     items: list<array{category: array{id: int, name: string, icon: string|null, color: string|null}, amount: int, source: 'default'|'override', spent: int, remaining: int, percent: int}>,
-     *     totals: array{budgeted: int, spent: int},
-     *     unbudgeted_spent: int,
-     * }
      */
-    public function for(CarbonImmutable $month): array
+    public function for(CarbonImmutable $month): MonthBudgetResult
     {
         $start = $month->startOfMonth()->toDateString();
         $end = $month->endOfMonth()->toDateString();
@@ -91,16 +84,16 @@ final class MonthBudget
                 || ($category->parent_id !== null && $budgetedIds->contains($category->parent_id)))
             ->sum(fn (Category $category) => $nets->get($category->id, 0));
 
-        return [
-            'month' => $month->format('Y-m'),
-            'currency' => $primaryCurrency,
-            'items' => $items->all(),
-            'totals' => [
+        return new MonthBudgetResult(
+            month: $month->format('Y-m'),
+            currency: $primaryCurrency,
+            items: $items->all(),
+            totals: [
                 'budgeted' => (int) $items->sum('amount'),
                 'spent' => (int) $items->sum('spent'),
             ],
-            'unbudgeted_spent' => max((int) $unbudgetedSpent + $noCategoryNet, 0),
-        ];
+            unbudgetedSpent: max((int) $unbudgetedSpent + $noCategoryNet, 0),
+        );
     }
 
     /**
