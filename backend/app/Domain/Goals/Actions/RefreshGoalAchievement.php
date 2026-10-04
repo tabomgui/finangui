@@ -21,9 +21,18 @@ final class RefreshGoalAchievement
 {
     public function handle(Goal $goal): Goal
     {
-        if ($goal->achieved_at === null && GoalProgress::achieved($goal)) {
-            $goal->forceFill(['achieved_at' => CarbonImmutable::now()])->save();
+        if ($goal->achieved_at !== null || ! GoalProgress::achieved($goal)) {
+            return $goal;
         }
+
+        $now = CarbonImmutable::now();
+
+        // Atômico (achieved_at IS NULL na própria query, não num if lido
+        // antes): duas chamadas concorrentes não gravam achieved_at duas
+        // vezes. Sem tocar updated_at — isso não é uma edição do usuário.
+        Goal::withoutTimestamps(fn () => Goal::query()->whereKey($goal->id)->whereNull('achieved_at')->update(['achieved_at' => $now]));
+
+        $goal->achieved_at = $now;
 
         return $goal;
     }

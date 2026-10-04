@@ -39,6 +39,13 @@ it('zera o percentual quando o progresso é negativo, sem afetar o restante', fu
         ->and($result['remaining'])->toBe(120000);
 });
 
+it('percentual arredonda para baixo: 100 só quando de fato bate o alvo', function () {
+    // 20000 / 30000 = 66,67%: arredondar para cima daria 67.
+    $result = GoalProgress::calculate(20000, 30000, null, CarbonImmutable::now());
+
+    expect($result['percent'])->toBe(66);
+});
+
 it('limita o percentual a 100 quando o progresso passa do alvo', function () {
     $result = GoalProgress::calculate(150000, 100000, null, CarbonImmutable::now());
 

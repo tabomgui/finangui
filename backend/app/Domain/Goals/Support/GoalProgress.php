@@ -27,7 +27,9 @@ final class GoalProgress
     public static function calculate(int $progress, int $targetAmount, ?CarbonImmutable $targetDate, CarbonImmutable $now): array
     {
         $remaining = (int) max($targetAmount - $progress, 0);
-        $percent = $targetAmount > 0 ? (int) min(100, max(0, round($progress * 100 / $targetAmount))) : 0;
+        // floor, não round: 100% só quando o progresso de fato alcança o
+        // alvo, nunca por arredondamento de uma fração como 99,6%.
+        $percent = $targetAmount > 0 ? (int) min(100, max(0, floor($progress * 100 / $targetAmount))) : 0;
 
         $result = [
             'progress' => $progress,

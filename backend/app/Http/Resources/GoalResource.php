@@ -23,7 +23,7 @@ final class GoalResource extends JsonResource
      *     target_amount: int,
      *     target_date: string|null,
      *     account_id: int|null,
-     *     account?: array{id: int|null, name: string|null},
+     *     account?: array{id: int, name: string},
      *     color: string|null,
      *     icon: string|null,
      *     achieved_at: string|null,
@@ -38,6 +38,7 @@ final class GoalResource extends JsonResource
         /** @var Goal $goal */
         $goal = $this->resource;
         $progress = GoalProgress::for($goal);
+        $account = $goal->account;
 
         return [
             'id' => $this->id,
@@ -47,9 +48,9 @@ final class GoalResource extends JsonResource
             'account_id' => $this->account_id,
             // Omitido sem conta vinculada (não `null`): ver CLAUDE.md sobre
             // Readable<T> do openapi-fetch.
-            'account' => $this->when($this->account_id !== null, fn () => [
-                'id' => $goal->account?->id,
-                'name' => $goal->account?->name,
+            'account' => $this->when($account !== null, fn () => [
+                'id' => $account->id,
+                'name' => $account->name,
             ]),
             'color' => $this->color,
             'icon' => $this->icon,

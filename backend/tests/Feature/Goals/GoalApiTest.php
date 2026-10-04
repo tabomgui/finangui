@@ -4,6 +4,7 @@ use App\Domain\Accounts\Models\Account;
 use App\Domain\Goals\Models\Goal;
 use App\Domain\Goals\Models\GoalContribution;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
     actingAsUser();
@@ -41,6 +42,18 @@ it('rejeita conta de outro usuário', function () {
     $this->postJson('/api/v1/goals', ['name' => 'Carro', 'target_amount' => 300000, 'account_id' => $otherAccount->id])
         ->assertStatus(422)
         ->assertJsonValidationErrors('account_id');
+});
+
+it('rejeita conta de cartão de crédito, arquivada ou de outra moeda', function () {
+    $creditCard = Account::factory()->creditCard()->create();
+    $archived = Account::factory()->archived()->create();
+    $usd = Account::factory()->create(['currency' => 'USD']);
+
+    foreach ([$creditCard, $archived, $usd] as $account) {
+        $this->postJson('/api/v1/goals', ['name' => 'Carro', 'target_amount' => 300000, 'account_id' => $account->id])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('account_id');
+    }
 });
 
 it('usa o saldo da conta vinculada como progresso', function () {
@@ -140,6 +153,95 @@ it('atualiza uma meta', function () {
         ->assertOk()
         ->assertJsonPath('data.name', 'Novo')
         ->assertJsonPath('data.target_amount', 200000);
+});
+
+it('aumentar o alvo acima do progresso desfaz achieved_at, só por mudar o alvo', function () {
+    $goal = Goal::factory()->create(['target_amount' => 100000]);
+    GoalContribution::factory()->for($goal)->create(['amount' => 100000]);
+
+    $this->getJson("/api/v1/goals/{$goal->id}")->assertJsonPath('data.achieved_at', fn ($value) => $value !== null);
+
+    $this->patchJson("/api/v1/goals/{$goal->id}", ['target_amount' => 150000])
+        ->assertOk()
+        ->assertJsonPath('data.achieved_at', null)
+        ->assertJsonPath('data.percent', 66);
+});
+
+it('aumentar o alvo sem passar do progresso não desfaz achieved_at', function () {
+    $goal = Goal::factory()->create(['target_amount' => 100000]);
+    GoalContribution::factory()->for($goal)->create(['amount' => 150000]);
+
+    $this->getJson("/api/v1/goals/{$goal->id}")->assertJsonPath('data.achieved_at', fn ($value) => $value !== null);
+
+    $this->patchJson("/api/v1/goals/{$goal->id}", ['target_amount' => 120000])
+        ->assertJsonPath('data.achieved_at', fn ($value) => $value !== null);
+});
+
+it('editar outro campo não desfaz achieved_at, mesmo que o progresso tenha caído', function () {
+    $goal = Goal::factory()->create(['target_amount' => 100000]);
+    $contribution = GoalContribution::factory()->for($goal)->create(['amount' => 100000]);
+
+    $this->getJson("/api/v1/goals/{$goal->id}")->assertJsonPath('data.achieved_at', fn ($value) => $value !== null);
+
+    $contribution->delete();
+
+    $this->patchJson("/api/v1/goals/{$goal->id}", ['name' => 'Novo nome'])
+        ->assertJsonPath('data.achieved_at', fn ($value) => $value !== null)
+        ->assertJsonPath('data.progress', 0);
+});
+
+it('grava achieved_at sem tocar updated_at', function () {
+    $goal = Goal::factory()->create(['target_amount' => 50000]);
+    $updatedAtBefore = $goal->updated_at;
+
+    GoalContribution::factory()->for($goal)->create(['amount' => 50000]);
+
+    expect(Goal::query()->findOrFail($goal->id)->updated_at->equalTo($updatedAtBefore))->toBeTrue();
+});
+
+it('recusa vincular conta a uma meta que já tem aportes', function () {
+    $goal = Goal::factory()->create();
+    GoalContribution::factory()->for($goal)->create(['amount' => 10000]);
+    $account = Account::factory()->create();
+
+    $this->patchJson("/api/v1/goals/{$goal->id}", ['account_id' => $account->id])
+        ->assertStatus(409)
+        ->assertJsonPath('code', 'goal_has_contributions');
+});
+
+it('lista inclui a conta vinculada de cada meta', function () {
+    $account = Account::factory()->create(['opening_balance' => 70000]);
+    $goal = Goal::factory()->create(['account_id' => $account->id, 'target_amount' => 100000]);
+
+    $this->getJson('/api/v1/goals')
+        ->assertOk()
+        ->assertJsonPath('data.0.account.id', $account->id)
+        ->assertJsonPath('data.0.account.name', $account->name)
+        ->assertJsonPath('data.0.progress', 70000);
+
+    expect(Goal::query()->findOrFail($goal->id))->not->toBeNull();
+});
+
+it('lista metas sem uma consulta extra por meta para somar aportes', function () {
+    $goals = Goal::factory()->count(3)->create(['target_amount' => 1000000]);
+    foreach ($goals as $goal) {
+        GoalContribution::factory()->for($goal)->create(['amount' => 1000]);
+    }
+
+    DB::enableQueryLog();
+    $this->getJson('/api/v1/goals')->assertOk();
+    $queries = DB::getQueryLog();
+    DB::disableQueryLog();
+
+    // Uma consulta separada por meta aparece sem nunca mencionar "goals":
+    // o withSum correto embute a soma como subconsulta dentro do próprio
+    // select de goals, então a string da query principal cita as duas tabelas.
+    $standaloneContributionQueries = array_filter(
+        $queries,
+        fn (array $entry) => str_contains($entry['query'], 'from "goal_contributions"') && ! str_contains($entry['query'], 'from "goals"'),
+    );
+
+    expect($standaloneContributionQueries)->toBe([]);
 });
 
 it('exclui uma meta', function () {

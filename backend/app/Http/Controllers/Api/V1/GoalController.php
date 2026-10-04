@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Domain\Goals\Actions\RefreshGoalAchievement;
+use App\Domain\Goals\Actions\UpdateGoal;
 use App\Domain\Goals\Models\Goal;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Goals\StoreGoalRequest;
@@ -38,9 +39,9 @@ final class GoalController extends Controller
         return GoalResource::make($this->find($goal->id));
     }
 
-    public function update(UpdateGoalRequest $request, Goal $goal, RefreshGoalAchievement $refreshGoalAchievement): GoalResource
+    public function update(UpdateGoalRequest $request, Goal $goal, UpdateGoal $updateGoal, RefreshGoalAchievement $refreshGoalAchievement): GoalResource
     {
-        $goal->update($request->validated());
+        $updateGoal->handle($goal, $request->validated());
         $refreshGoalAchievement->handle($goal);
 
         return GoalResource::make($this->find($goal->id));
@@ -58,7 +59,9 @@ final class GoalController extends Controller
      */
     private function baseQuery(): Builder
     {
-        return Goal::query()->with(['account' => fn ($query) => $query->withBalance()]);
+        return Goal::query()
+            ->with(['account' => fn ($query) => $query->withBalance()])
+            ->withSum('contributions', 'amount');
     }
 
     private function find(int $id): Goal

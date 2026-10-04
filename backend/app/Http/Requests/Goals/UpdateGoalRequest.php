@@ -3,7 +3,9 @@
 namespace App\Http\Requests\Goals;
 
 use App\Http\Requests\ApiRequest;
+use App\Http\Requests\Goals\Concerns\ValidatesGoalAccount;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 /**
  * target_date não exige "after:today" aqui: a regra é só na criação (uma
@@ -11,6 +13,8 @@ use Illuminate\Validation\Rule;
  */
 final class UpdateGoalRequest extends ApiRequest
 {
+    use ValidatesGoalAccount;
+
     /**
      * @return array<string, mixed>
      */
@@ -24,5 +28,17 @@ final class UpdateGoalRequest extends ApiRequest
             'color' => ['sometimes', 'nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'icon' => ['sometimes', 'nullable', 'string', 'max:50'],
         ];
+    }
+
+    /**
+     * @return array<int, callable>
+     */
+    public function after(): array
+    {
+        return [function (Validator $validator): void {
+            if ($validator->errors()->isEmpty()) {
+                $this->validateGoalAccount($validator);
+            }
+        }];
     }
 }

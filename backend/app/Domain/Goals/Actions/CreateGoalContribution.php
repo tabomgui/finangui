@@ -13,6 +13,10 @@ use App\Domain\Goals\Models\GoalContribution;
  */
 final class CreateGoalContribution
 {
+    public function __construct(
+        private readonly RefreshGoalAchievement $refreshGoalAchievement,
+    ) {}
+
     /**
      * @param  array{amount: int, date: string, note?: string|null}  $input  dados já validados
      */
@@ -24,7 +28,7 @@ final class CreateGoalContribution
 
         $contribution = $goal->contributions()->create($input);
 
-        (new RefreshGoalAchievement)->handle($goal);
+        $this->refreshGoalAchievement->handle($goal);
 
         return $contribution;
     }

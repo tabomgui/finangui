@@ -3,10 +3,14 @@
 namespace App\Http\Requests\Goals;
 
 use App\Http\Requests\ApiRequest;
+use App\Http\Requests\Goals\Concerns\ValidatesGoalAccount;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 final class StoreGoalRequest extends ApiRequest
 {
+    use ValidatesGoalAccount;
+
     /**
      * @return array<string, mixed>
      */
@@ -20,5 +24,17 @@ final class StoreGoalRequest extends ApiRequest
             'color' => ['nullable', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'icon' => ['nullable', 'string', 'max:50'],
         ];
+    }
+
+    /**
+     * @return array<int, callable>
+     */
+    public function after(): array
+    {
+        return [function (Validator $validator): void {
+            if ($validator->errors()->isEmpty()) {
+                $this->validateGoalAccount($validator);
+            }
+        }];
     }
 }
