@@ -1445,6 +1445,11 @@ export interface components {
             starts_on?: string;
             /** Format: date */
             ends_on?: string | null;
+            /**
+             * @description /\pL/u exige ao menos uma letra: um padrão só com dígitos ou
+             *     pontuação normaliza para vazio em TextNormalizer::key() e
+             *     casaria qualquer descrição (ver RecurrenceMatcher).
+             */
             match_pattern?: string | null;
             is_active?: boolean;
         };
@@ -1664,6 +1669,7 @@ export interface components {
             starts_on?: string;
             /** Format: date */
             ends_on?: string | null;
+            /** @description /\pL/u exige ao menos uma letra: ver StoreRecurrenceRequest. */
             match_pattern?: string | null;
             is_active?: boolean;
         };

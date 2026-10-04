@@ -73,7 +73,7 @@ final class UpdateTransaction
                 $transaction->tags()->sync($tagIds);
             }
 
-            return $transaction->load(['account', 'category.parent', 'tags', 'installmentPlan']);
+            return $transaction->load(['account', 'category.parent', 'tags', 'installmentPlan', 'recurrence']);
         });
     }
 
