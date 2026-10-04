@@ -50,6 +50,20 @@ describe('ImportPreviewRow', () => {
     expect(screen.getByText(/Casa com: Mercado em 28\/09\/2026/)).toBeInTheDocument()
   })
 
+  it('mostra o aviso de lançamento previsto quando o match é com uma recorrência', () => {
+    render(
+      <ImportPreviewRow
+        row={row({ outcome: 'adopt', match: { id: 9, date: '2026-09-28', description: 'Netflix', kind: 'recurrence' } })}
+        selected
+        selectable
+        onToggle={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Casa com lançamento previsto')).toBeInTheDocument()
+    expect(screen.queryByText(/Casa com: Netflix/)).not.toBeInTheDocument()
+  })
+
   it('não mostra a linha de match quando ausente (parcela intra-arquivo)', () => {
     render(
       <ImportPreviewRow row={row({ outcome: 'replace_installment', installment: { number: 1, total: 3 } })} selected selectable onToggle={vi.fn()} />,
