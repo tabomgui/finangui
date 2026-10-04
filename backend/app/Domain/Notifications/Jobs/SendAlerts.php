@@ -12,6 +12,7 @@ use App\Domain\Recurrences\Queries\OverdueOccurrences;
 use App\Models\User;
 use App\Support\UserContext;
 use Carbon\CarbonImmutable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Notifications\DatabaseNotification;
@@ -22,10 +23,29 @@ use Throwable;
  * atrasados), por usuário, dentro de UserContext, e apaga notificações lidas
  * com mais de 90 dias. Uma falha isolada num usuário é reportada e não
  * impede os demais de receber seus alertas.
+ *
+ * ShouldBeUnique: só uma execução por vez (ex.: o agendamento disparando de
+ * novo antes da anterior terminar) — reforça a deduplicação por key
+ * (App\Domain\Notifications\Support\NotificationDeduper), que já protege
+ * mesmo sem isso, mas evita o trabalho duplicado de varrer todo usuário de
+ * novo em paralelo. $timeout abaixo de DB_QUEUE_RETRY_AFTER (660s, ver
+ * .env.example), mesmo raciocínio de App\Domain\Banking\Jobs\SyncConnection.
  */
-final class SendAlerts implements ShouldQueue
+final class SendAlerts implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
+
+    public int $timeout = 600;
+
+    public function uniqueId(): string
+    {
+        return self::class;
+    }
+
+    public function uniqueFor(): int
+    {
+        return 3600;
+    }
 
     public function handle(MonthBudget $monthBudget, OverdueOccurrences $overdueOccurrences, NotificationDeduper $deduper): void
     {
@@ -101,17 +121,29 @@ final class SendAlerts implements ShouldQueue
     }
 
     /**
-     * Uma notificação agregada por dia, nunca uma por ocorrência.
+     * Uma notificação agregada por dia, nunca uma por ocorrência —
+     * OverdueOccurrences::count() conta sem carregar os registros nem os
+     * relacionamentos, que esta notificação nem usa. Antes de criar a de
+     * hoje, marca como lida qualquer notificação deste tipo de um dia
+     * anterior: o número de ontem já não representa a pendência atual.
      */
     private function occurrenceAlerts(User $user, CarbonImmutable $today, OverdueOccurrences $overdueOccurrences, NotificationDeduper $deduper): void
     {
-        $count = $overdueOccurrences->handle($today)->count();
+        $count = $overdueOccurrences->count($today);
 
         if ($count === 0) {
             return;
         }
 
-        $deduper->send($user, new OccurrencesOverdueNotification($count, $today->toDateString()));
+        $notification = new OccurrencesOverdueNotification($count, $today->toDateString());
+
+        $user->notifications()
+            ->where('type', OccurrencesOverdueNotification::class)
+            ->whereNull('read_at')
+            ->whereRaw("data::jsonb ->> 'key' != ?", [$notification->dedupeKey()])
+            ->update(['read_at' => CarbonImmutable::now()]);
+
+        $deduper->send($user, $notification);
     }
 
     /**

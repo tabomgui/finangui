@@ -139,6 +139,68 @@ it('cria um único alerta agregado para as previstas atrasadas do dia', function
         ->and($notification->data['body'])->toBe('2 lançamentos previstos não confirmados.');
 });
 
+it('usa o singular quando é só um lançamento previsto atrasado', function () {
+    CarbonImmutable::setTestNow('2026-03-01');
+    $user = User::factory()->create();
+    $account = Account::factory()->create(['user_id' => $user->id]);
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $account->id, 'user_id' => $user->id, 'day_of_month' => 5,
+        'starts_on' => '2026-01-05', 'ends_on' => '2026-01-05',
+    ]);
+
+    UserContext::run($user, fn () => app(GenerateOccurrences::class)->handle($recurrence->refresh()));
+
+    CarbonImmutable::setTestNow('2026-02-12');
+
+    runSendAlerts();
+
+    $notification = notificationsOf($user)->firstWhere('data.type', 'occurrence_overdue');
+    expect($notification->data['body'])->toBe('1 lançamento previsto não confirmado.');
+});
+
+it('marca como lida a notificação de previstos atrasados de um dia anterior ao criar a de hoje', function () {
+    CarbonImmutable::setTestNow('2026-03-01');
+    $user = User::factory()->create();
+    $account = Account::factory()->create(['user_id' => $user->id]);
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $account->id, 'user_id' => $user->id, 'day_of_month' => 5, 'starts_on' => '2026-01-05',
+    ]);
+
+    UserContext::run($user, fn () => app(GenerateOccurrences::class)->handle($recurrence->refresh()));
+
+    CarbonImmutable::setTestNow('2026-02-12');
+    runSendAlerts();
+    $yesterday = notificationsOf($user)->firstWhere('data.type', 'occurrence_overdue');
+    expect($yesterday->read_at)->toBeNull();
+
+    CarbonImmutable::setTestNow('2026-02-13');
+    runSendAlerts();
+
+    expect($yesterday->refresh()->read_at)->not->toBeNull();
+    $today = notificationsOf($user)->firstWhere('data.key', 'occurrence_overdue:2026-02-13');
+    expect($today->read_at)->toBeNull();
+});
+
+it('orçamento estourado de um mês anterior não alerta no mês atual', function () {
+    CarbonImmutable::setTestNow('2026-10-15');
+    $user = User::factory()->create();
+    $account = Account::factory()->create(['user_id' => $user->id]);
+    $category = Category::factory()->create(['user_id' => $user->id]);
+    Budget::factory()->create(['category_id' => $category->id, 'amount' => 20000]);
+    // Setembro: estourou, mas é mês passado.
+    Transaction::factory()->create([
+        'account_id' => $account->id, 'category_id' => $category->id, 'date' => '2026-09-05', 'amount' => 50000,
+    ]);
+    // Outubro (mês atual): dentro do limite.
+    Transaction::factory()->create([
+        'account_id' => $account->id, 'category_id' => $category->id, 'date' => '2026-10-05', 'amount' => 5000,
+    ]);
+
+    runSendAlerts();
+
+    expect(notificationsOf($user)->firstWhere('data.type', 'budget_exceeded'))->toBeNull();
+});
+
 it('é idempotente: rodar duas vezes não duplica nenhum alerta', function () {
     CarbonImmutable::setTestNow('2026-03-10');
     $user = User::factory()->create();

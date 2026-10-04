@@ -16,6 +16,7 @@ it('lista notificações paginadas por cursor, mais recentes primeiro, com unrea
     $response = $this->getJson('/api/v1/notifications?per_page=1')
         ->assertOk()
         ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.type', 'occurrence_overdue')
         ->assertJsonPath('data.0.body', '2 lançamentos previstos não confirmados.')
         ->assertJsonPath('meta.unread_count', 2);
 
@@ -24,7 +25,7 @@ it('lista notificações paginadas por cursor, mais recentes primeiro, com unrea
 
     $this->getJson('/api/v1/notifications?per_page=1&cursor='.urlencode($cursor))
         ->assertOk()
-        ->assertJsonPath('data.0.body', '1 lançamentos previstos não confirmados.')
+        ->assertJsonPath('data.0.body', '1 lançamento previsto não confirmado.')
         ->assertJsonPath('meta.next_cursor', null);
 });
 
