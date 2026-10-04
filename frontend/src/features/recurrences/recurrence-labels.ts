@@ -14,6 +14,18 @@ export const INTERVAL_UNIT_LABELS: Record<Frequency, string> = {
   yearly: 'anos',
 }
 
+const INTERVAL_UNIT_SINGULAR: Record<Frequency, string> = {
+  weekly: 'semana',
+  monthly: 'mês',
+  yearly: 'ano',
+}
+
+/** "A cada 1 mês." / "A cada 3 meses." — dica do campo Intervalo. */
+export function intervalHint(frequency: Frequency, interval: number): string {
+  const unit = interval === 1 ? INTERVAL_UNIT_SINGULAR[frequency] : INTERVAL_UNIT_LABELS[frequency]
+  return `A cada ${interval} ${unit}.`
+}
+
 /** Resumo em uma linha da frequência de uma recorrência, usado na lista e no formulário. */
 export function frequencyLabel(recurrence: Recurrence): string {
   const { frequency, interval } = recurrence

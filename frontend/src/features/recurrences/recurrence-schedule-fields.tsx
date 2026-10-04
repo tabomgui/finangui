@@ -5,7 +5,7 @@ import { DateInput } from '@/components/shared/date-input'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { RecurrenceFormValues } from './recurrence-form-dialog'
-import { FREQUENCY_LABELS, INTERVAL_UNIT_LABELS } from './recurrence-labels'
+import { FREQUENCY_LABELS, intervalHint as describeInterval } from './recurrence-labels'
 
 const FREQUENCIES: Frequency[] = ['weekly', 'monthly', 'yearly']
 
@@ -15,7 +15,7 @@ export function RecurrenceScheduleFields({ form }: { form: UseFormReturn<Recurre
   const frequency = useWatch({ control: form.control, name: 'frequency' })
   const interval = useWatch({ control: form.control, name: 'interval' })
 
-  const intervalHint = `A cada ${interval || '1'} ${INTERVAL_UNIT_LABELS[frequency]}.`
+  const intervalHint = describeInterval(frequency, Number(interval) || 1)
 
   return (
     <>

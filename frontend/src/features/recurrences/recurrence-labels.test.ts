@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Recurrence } from '@/api/types'
-import { frequencyLabel } from './recurrence-labels'
+import { frequencyLabel, intervalHint } from './recurrence-labels'
 
 function recurrence(overrides: Partial<Recurrence>): Recurrence {
   return {
@@ -49,5 +49,14 @@ describe('frequencyLabel', () => {
     expect(
       frequencyLabel(recurrence({ frequency: 'yearly', interval: 3, day_of_month: null, starts_on: '2026-03-15' })),
     ).toBe('A cada 3 anos em 15/03')
+  })
+})
+
+describe('intervalHint', () => {
+  it('usa singular para 1 e plural acima', () => {
+    expect(intervalHint('monthly', 1)).toBe('A cada 1 mês.')
+    expect(intervalHint('monthly', 3)).toBe('A cada 3 meses.')
+    expect(intervalHint('weekly', 1)).toBe('A cada 1 semana.')
+    expect(intervalHint('yearly', 2)).toBe('A cada 2 anos.')
   })
 })
