@@ -23,6 +23,9 @@ export function OverdueOccurrencesDialog({ open, onOpenChange }: OverdueOccurren
   const { data, isPending } = useOverdueOccurrences()
   const skip = useSkipOccurrence()
   const [confirming, setConfirming] = useState<Transaction | null>(null)
+  // `skip` é um único hook de mutação compartilhado por todas as linhas: sem isto, `skip.isPending`
+  // desabilitaria os botões de toda a lista enquanto qualquer uma pula, não só a linha em voo.
+  const skippingId = skip.isPending ? skip.variables : undefined
 
   async function handleSkip(transaction: Transaction) {
     try {
@@ -49,33 +52,43 @@ export function OverdueOccurrencesDialog({ open, onOpenChange }: OverdueOccurren
             ) : occurrences.length === 0 ? (
               <EmptyState icon={Hourglass} title="Nenhum lançamento previsto pendente." />
             ) : (
-              occurrences.map((transaction) => (
-                <div key={transaction.id} className="space-y-2 rounded-xl border p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="truncate font-medium">{transaction.description}</p>
-                    <MoneyText cents={transaction.amount} direction={transaction.direction} className="font-semibold" />
+              occurrences.map((transaction) => {
+                const pending = skippingId === transaction.id
+                return (
+                  <div key={transaction.id} className="space-y-2 rounded-xl border p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="truncate font-medium">{transaction.description}</p>
+                      <MoneyText cents={transaction.amount} direction={transaction.direction} className="font-semibold" />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {transaction.account?.name} · Previsto para {formatDate(transaction.date)}
+                    </p>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={pending}
+                        aria-label={`Não aconteceu: ${transaction.description}`}
+                        onClick={() => handleSkip(transaction)}
+                      >
+                        <X className="h-4 w-4" />
+                        Não aconteceu
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={pending}
+                        aria-label={`Aconteceu: ${transaction.description}`}
+                        onClick={() => setConfirming(transaction)}
+                      >
+                        <Check className="h-4 w-4" />
+                        Aconteceu
+                      </Button>
+                    </div>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {transaction.account?.name} · Previsto para {formatDate(transaction.date)}
-                  </p>
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={skip.isPending}
-                      onClick={() => handleSkip(transaction)}
-                    >
-                      <X className="h-4 w-4" />
-                      Não aconteceu
-                    </Button>
-                    <Button type="button" size="sm" onClick={() => setConfirming(transaction)}>
-                      <Check className="h-4 w-4" />
-                      Aconteceu
-                    </Button>
-                  </div>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
         </DialogContent>

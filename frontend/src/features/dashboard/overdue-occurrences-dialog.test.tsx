@@ -6,10 +6,11 @@ import { OverdueOccurrencesDialog } from './overdue-occurrences-dialog'
 
 const skipMutateAsync = vi.fn()
 let overdueData: Transaction[] | undefined
+let skipState: { isPending: boolean; variables?: number } = { isPending: false }
 
 vi.mock('@/api/queries/recurrences', () => ({
   useOverdueOccurrences: () => ({ data: overdueData, isPending: overdueData === undefined }),
-  useSkipOccurrence: () => ({ mutateAsync: skipMutateAsync, isPending: false }),
+  useSkipOccurrence: () => ({ mutateAsync: skipMutateAsync, ...skipState }),
   useConfirmOccurrence: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
@@ -47,6 +48,7 @@ function transaction(overrides: Partial<Transaction> = {}): Transaction {
 
 beforeEach(() => {
   overdueData = undefined
+  skipState = { isPending: false }
   skipMutateAsync.mockReset().mockResolvedValue(undefined)
   vi.mocked(toast.success).mockReset()
 })
@@ -99,5 +101,28 @@ describe('OverdueOccurrencesDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: /Aconteceu/ }))
 
     expect(screen.getByText('Confirmar Aluguel')).toBeInTheDocument()
+  })
+
+  it('os botões incluem a descrição no aria-label, para distinguir linhas iguais na leitura de tela', () => {
+    overdueData = [transaction({ id: 10, description: 'Aluguel' }), transaction({ id: 11, description: 'Internet' })]
+
+    renderDialog()
+
+    expect(screen.getByRole('button', { name: 'Aconteceu: Aluguel' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Não aconteceu: Aluguel' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Aconteceu: Internet' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Não aconteceu: Internet' })).toBeInTheDocument()
+  })
+
+  it('pular uma linha desabilita só os botões dela, não os das outras', () => {
+    overdueData = [transaction({ id: 10, description: 'Aluguel' }), transaction({ id: 11, description: 'Internet' })]
+    skipState = { isPending: true, variables: 10 }
+
+    renderDialog()
+
+    expect(screen.getByRole('button', { name: 'Não aconteceu: Aluguel' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Aconteceu: Aluguel' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Não aconteceu: Internet' })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Aconteceu: Internet' })).not.toBeDisabled()
   })
 })

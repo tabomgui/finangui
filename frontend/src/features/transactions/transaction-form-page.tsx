@@ -13,6 +13,7 @@ import { headerIconButton } from '@/components/layout/theme-toggle'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { FullPageSpinner } from '@/components/shared/full-page-spinner'
 import { today } from '@/lib/date'
+import { notifyError } from '@/lib/form-errors'
 import { EntryForm } from './entry-form'
 import { editKind } from './edit-kind'
 import { entryDefaults, toTransactionBody, toTransferBody, transferDefaults } from './form-values'
@@ -82,9 +83,17 @@ function NewTransactionPage() {
             autoFocusAmount
             onSubmit={async (values) => {
               const transaction = await createTransaction.mutateAsync(toTransactionBody(values))
-              if (values.repeat) {
-                await createRecurrence.mutateAsync({ transaction_id: transaction.id, frequency: values.repeat_frequency })
-                toast.success('Recorrência criada.')
+              // Já tem recorrência (casou com uma prevista): criar outra a partir dela não faz
+              // sentido e o backend rejeitaria (recurrence_transaction_ineligible).
+              if (values.repeat && !transaction.recurrence) {
+                try {
+                  await createRecurrence.mutateAsync({ transaction_id: transaction.id, frequency: values.repeat_frequency })
+                  toast.success('Recorrência criada.')
+                } catch (error) {
+                  // O lançamento já foi salvo: um erro aqui não pode travar a navegação nem
+                  // dar a impressão de que nada foi salvo.
+                  notifyError(error, 'Lançamento salvo, mas não foi possível criar a recorrência.')
+                }
               }
               done(transaction.recurrence && `Lançamento previsto de ${transaction.recurrence.description} confirmado.`)
             }}

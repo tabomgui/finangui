@@ -14,12 +14,15 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { isDateOnly, parseDateOnly, today } from '@/lib/date'
+import { isDateOnly, today } from '@/lib/date'
 import { applyFieldErrors, notifyError } from '@/lib/form-errors'
 import { RecurrenceScheduleFields } from './recurrence-schedule-fields'
 
 const INTERVAL_PATTERN = /^\d{1,2}$/
 const DAY_PATTERN = /^\d{1,2}$/
+// \p{L} exige ao menos uma letra — mesma regra do backend (StoreRecurrenceRequest::$match_pattern):
+// um padrão só com dígitos ou pontuação normaliza para vazio e casaria qualquer descrição.
+const HAS_LETTER = /\p{L}/u
 
 const schema = z
   .object({
@@ -30,6 +33,7 @@ const schema = z
     category_id: z.number().nullable(),
     frequency: z.enum(['weekly', 'monthly', 'yearly']),
     interval: z.string(),
+    // Vazio: a recorrência usa o dia de `starts_on` (padrão do backend). Só mensal; ver schedule fields.
     day_of_month: z.string(),
     starts_on: z.string().refine(isDateOnly, 'Informe a data de início.'),
     ends_on: z.string(),
@@ -41,7 +45,7 @@ const schema = z
       ctx.addIssue({ code: 'custom', message: 'Informe um intervalo entre 1 e 12.', path: ['interval'] })
     }
 
-    if (values.frequency === 'monthly') {
+    if (values.frequency === 'monthly' && values.day_of_month !== '') {
       const day = Number(values.day_of_month)
       if (!DAY_PATTERN.test(values.day_of_month) || day < 1 || day > 31) {
         ctx.addIssue({ code: 'custom', message: 'Informe um dia entre 1 e 31.', path: ['day_of_month'] })
@@ -50,6 +54,10 @@ const schema = z
 
     if (values.ends_on !== '' && isDateOnly(values.ends_on) && values.ends_on < values.starts_on) {
       ctx.addIssue({ code: 'custom', message: 'O fim não pode ser antes do início.', path: ['ends_on'] })
+    }
+
+    if (values.match_pattern !== '' && !HAS_LETTER.test(values.match_pattern)) {
+      ctx.addIssue({ code: 'custom', message: 'Inclua ao menos uma letra.', path: ['match_pattern'] })
     }
   })
 
@@ -79,7 +87,6 @@ function defaultsFor(recurrence: Recurrence | undefined): RecurrenceFormValues {
     }
   }
 
-  const startsOn = today()
   return {
     description: '',
     direction: 'out',
@@ -88,8 +95,8 @@ function defaultsFor(recurrence: Recurrence | undefined): RecurrenceFormValues {
     category_id: null,
     frequency: 'monthly',
     interval: '1',
-    day_of_month: String(parseDateOnly(startsOn).getDate()),
-    starts_on: startsOn,
+    day_of_month: '',
+    starts_on: today(),
     ends_on: '',
     match_pattern: '',
   }
@@ -119,7 +126,7 @@ export function RecurrenceFormDialog({ open, onOpenChange, recurrence }: Recurre
       amount: values.amount as number,
       frequency: values.frequency,
       interval: Number(values.interval),
-      day_of_month: values.frequency === 'monthly' ? Number(values.day_of_month) : null,
+      day_of_month: values.frequency === 'monthly' && values.day_of_month !== '' ? Number(values.day_of_month) : null,
       starts_on: values.starts_on,
       ends_on: values.ends_on === '' ? null : values.ends_on,
       match_pattern: values.match_pattern.trim() === '' ? null : values.match_pattern.trim(),
@@ -159,7 +166,7 @@ export function RecurrenceFormDialog({ open, onOpenChange, recurrence }: Recurre
 
   return (
     <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
-      <DialogContent>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{recurrence ? 'Editar recorrência' : 'Nova recorrência'}</DialogTitle>
           <DialogDescription>Lançamentos previstos são gerados até o fim do próximo mês.</DialogDescription>
@@ -169,13 +176,22 @@ export function RecurrenceFormDialog({ open, onOpenChange, recurrence }: Recurre
             <Input id="recurrence-description" autoComplete="off" {...form.register('description')} />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Tipo" htmlFor="recurrence-direction">
+            <Field label="Tipo" htmlFor="recurrence-direction" error={errors.direction?.message}>
               {(control) => (
                 <Controller
                   control={form.control}
                   name="direction"
                   render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange} disabled={recurrence !== undefined}>
+                    <Select
+                      value={field.value}
+                      onValueChange={(next) => {
+                        field.onChange(next)
+                        // Categoria é filtrada por tipo: a escolhida para despesa não existe (ou não
+                        // é compatível) do lado de receita, e vice-versa.
+                        form.setValue('category_id', null)
+                      }}
+                      disabled={recurrence !== undefined}
+                    >
                       <SelectTrigger {...control} className="w-full">
                         <SelectValue />
                       </SelectTrigger>

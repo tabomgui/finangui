@@ -15,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { formatDate } from '@/lib/date'
+import { formatDayMonth } from '@/lib/date'
 import { notifyError } from '@/lib/form-errors'
 import { frequencyLabel } from './recurrence-labels'
 
@@ -44,15 +44,21 @@ export function RecurrenceRow({ recurrence, onEdit }: RecurrenceRowProps) {
     <div className="flex items-center gap-3 px-3 py-3">
       <CategoryIcon icon={recurrence.category?.icon} color={recurrence.category?.color} />
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-2 truncate font-medium">
-          {recurrence.description}
-          {!recurrence.is_active && <Badge variant="secondary">Pausada</Badge>}
+        <p className="flex items-center gap-2 font-medium">
+          <span className="truncate">{recurrence.description}</span>
+          {!recurrence.is_active && (
+            <Badge variant="secondary" className="shrink-0">
+              Pausada
+            </Badge>
+          )}
         </p>
         <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
       </div>
       <div className="text-right">
         <MoneyText cents={recurrence.amount} direction={recurrence.direction} className="font-semibold" />
-        {recurrence.next_date && <p className="text-xs text-muted-foreground">{formatDate(recurrence.next_date)}</p>}
+        {recurrence.next_date && (
+          <p className="text-xs text-muted-foreground">Próxima: {formatDayMonth(recurrence.next_date)}</p>
+        )}
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

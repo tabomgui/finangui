@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '@/api/errors'
 import type { Transaction } from '@/api/types'
 import { ConfirmOccurrenceDialog } from './confirm-occurrence-dialog'
 
@@ -90,5 +91,18 @@ describe('ConfirmOccurrenceDialog', () => {
 
     await waitFor(() => expect(screen.getByText('A data não pode ser no futuro.')).toBeInTheDocument())
     expect(confirmMutateAsync).not.toHaveBeenCalled()
+  })
+
+  it('422 do servidor em date aparece no campo', async () => {
+    confirmMutateAsync.mockRejectedValueOnce(
+      new ApiError(422, 'Dados inválidos.', null, { date: ['A ocorrência já foi confirmada nesta data.'] }),
+    )
+    renderDialog()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('A ocorrência já foi confirmada nesta data.')).toBeInTheDocument(),
+    )
   })
 })

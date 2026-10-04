@@ -1,16 +1,17 @@
-import { format } from 'date-fns'
-import type { Recurrence } from '@/api/types'
-import { parseDateOnly } from '@/lib/date'
+import type { Frequency, Recurrence } from '@/api/types'
+import { formatDayMonth, parseDateOnly } from '@/lib/date'
 
-export const FREQUENCY_LABELS: Record<Recurrence['frequency'], string> = {
+export const FREQUENCY_LABELS: Record<Frequency, string> = {
   weekly: 'Toda semana',
   monthly: 'Todo mês',
   yearly: 'Todo ano',
 }
 
-/** Dia/mês ("15/03") de uma data "YYYY-MM-DD", sem o ano — usado na frequência anual. */
-function dayMonth(value: string): string {
-  return format(parseDateOnly(value), 'dd/MM')
+/** Unidade do intervalo por frequência ("semanas"/"meses"/"anos") — ver `recurrence-schedule-fields.tsx`. */
+export const INTERVAL_UNIT_LABELS: Record<Frequency, string> = {
+  weekly: 'semanas',
+  monthly: 'meses',
+  yearly: 'anos',
 }
 
 /** Resumo em uma linha da frequência de uma recorrência, usado na lista e no formulário. */
@@ -26,6 +27,6 @@ export function frequencyLabel(recurrence: Recurrence): string {
     return interval === 1 ? 'Toda semana' : `A cada ${interval} semanas`
   }
 
-  const date = dayMonth(recurrence.starts_on)
+  const date = formatDayMonth(recurrence.starts_on)
   return interval === 1 ? `Todo ano em ${date}` : `A cada ${interval} anos em ${date}`
 }

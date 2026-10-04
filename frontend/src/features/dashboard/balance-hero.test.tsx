@@ -40,4 +40,20 @@ describe('BalanceHero', () => {
 
     expect(screen.getByText('Previsto para o fim de novembro:')).toBeInTheDocument()
   })
+
+  it('isPlaceholderData: esconde o saldo previsto (ainda é do mês anterior)', () => {
+    render(
+      <BalanceHero
+        totalBalance={100000}
+        currency="BRL"
+        balanceDate="2026-10-04"
+        projectedBalance={80000}
+        month="2026-11"
+        currentMonth="2026-10"
+        isPlaceholderData
+      />,
+    )
+
+    expect(screen.queryByText(/Previsto/)).not.toBeInTheDocument()
+  })
 })

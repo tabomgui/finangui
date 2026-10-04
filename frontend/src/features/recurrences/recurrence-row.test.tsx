@@ -66,7 +66,7 @@ describe('RecurrenceRow', () => {
     expect(screen.getByText(/Nubank/)).toBeInTheDocument()
     expect(screen.getByText(/Moradia/)).toBeInTheDocument()
     expect(screen.getByText(/1\.500,00/)).toBeInTheDocument()
-    expect(screen.getByText(/10\/11\/2026/)).toBeInTheDocument()
+    expect(screen.getByText('Próxima: 10/11')).toBeInTheDocument()
   })
 
   it('mostra badge "Pausada" quando is_active é falso', () => {

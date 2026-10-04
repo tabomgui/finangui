@@ -14,12 +14,8 @@ vi.mock('@/api/queries/transfer-suggestions', () => ({
 
 vi.mock('@/api/queries/recurrences', () => ({
   useOverdueOccurrences: () => useOverdueOccurrences(),
-  useSkipOccurrence: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useConfirmOccurrence: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
-/** `OverdueOccurrencesDialog` lê o `date`/`account`/`direction` da mesma lista mesmo fechado (JSX
- * dos itens é avaliado antes do `Dialog` decidir se monta): o fixture precisa do formato completo. */
 function overdueOccurrence(id: number): Transaction {
   return {
     id,
@@ -51,12 +47,12 @@ beforeEach(() => {
   useOverdueOccurrences.mockReturnValue({ data: [] })
 })
 
-function renderCard() {
+function renderCard(onOpenOverdue: () => void = vi.fn()) {
   const client = new QueryClient()
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <PendingCard />
+        <PendingCard onOpenOverdue={onOpenOverdue} />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -90,14 +86,27 @@ describe('PendingCard', () => {
     expect(screen.getByText('1 lançamento previsto não confirmado')).toBeInTheDocument()
   })
 
-  it('clicar na contagem abre o diálogo de previstas atrasadas', () => {
-    useTransferSuggestions.mockReturnValue({ data: { pages: [{ data: [], meta: { next_cursor: null } }] } })
+  it('com as duas fontes de pendência (sugestões e previstas atrasadas), mostra as duas', () => {
+    useTransferSuggestions.mockReturnValue({
+      data: { pages: [{ data: [{ id: 1 }, { id: 2 }], meta: { next_cursor: null } }] },
+    })
     useOverdueOccurrences.mockReturnValue({ data: [overdueOccurrence(1)] })
 
     renderCard()
+
+    expect(screen.getByText('2 sugestões de transferência')).toBeInTheDocument()
+    expect(screen.getByText('1 lançamento previsto não confirmado')).toBeInTheDocument()
+  })
+
+  it('clicar na contagem de previstas atrasadas chama onOpenOverdue', () => {
+    useTransferSuggestions.mockReturnValue({ data: { pages: [{ data: [], meta: { next_cursor: null } }] } })
+    useOverdueOccurrences.mockReturnValue({ data: [overdueOccurrence(1)] })
+    const onOpenOverdue = vi.fn()
+
+    renderCard(onOpenOverdue)
     fireEvent.click(screen.getByText('1 lançamento previsto não confirmado'))
 
-    expect(screen.getByText('Lançamentos previstos não confirmados')).toBeInTheDocument()
+    expect(onOpenOverdue).toHaveBeenCalled()
   })
 
   it('uma sugestão: singular, sem "+"', () => {

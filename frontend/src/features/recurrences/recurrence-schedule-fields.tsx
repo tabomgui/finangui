@@ -5,7 +5,7 @@ import { DateInput } from '@/components/shared/date-input'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { RecurrenceFormValues } from './recurrence-form-dialog'
-import { FREQUENCY_LABELS } from './recurrence-labels'
+import { FREQUENCY_LABELS, INTERVAL_UNIT_LABELS } from './recurrence-labels'
 
 const FREQUENCIES: Frequency[] = ['weekly', 'monthly', 'yearly']
 
@@ -13,11 +13,14 @@ const FREQUENCIES: Frequency[] = ['weekly', 'monthly', 'yearly']
 export function RecurrenceScheduleFields({ form }: { form: UseFormReturn<RecurrenceFormValues> }) {
   const { errors } = form.formState
   const frequency = useWatch({ control: form.control, name: 'frequency' })
+  const interval = useWatch({ control: form.control, name: 'interval' })
+
+  const intervalHint = `A cada ${interval || '1'} ${INTERVAL_UNIT_LABELS[frequency]}.`
 
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Frequência" htmlFor="recurrence-frequency">
+        <Field label="Frequência" htmlFor="recurrence-frequency" error={errors.frequency?.message}>
           {(control) => (
             <Controller
               control={form.control}
@@ -39,12 +42,17 @@ export function RecurrenceScheduleFields({ form }: { form: UseFormReturn<Recurre
             />
           )}
         </Field>
-        <Field label="Intervalo" htmlFor="recurrence-interval" error={errors.interval?.message}>
+        <Field label="Intervalo" htmlFor="recurrence-interval" error={errors.interval?.message} hint={intervalHint}>
           <Input id="recurrence-interval" inputMode="numeric" maxLength={2} autoComplete="off" {...form.register('interval')} />
         </Field>
       </div>
       {frequency === 'monthly' && (
-        <Field label="Dia do mês" htmlFor="recurrence-day-of-month" error={errors.day_of_month?.message}>
+        <Field
+          label="Dia do mês"
+          htmlFor="recurrence-day-of-month"
+          error={errors.day_of_month?.message}
+          hint="Padrão: dia do início."
+        >
           <Input
             id="recurrence-day-of-month"
             inputMode="numeric"

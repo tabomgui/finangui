@@ -367,4 +367,37 @@ describe('TransactionFormPage', () => {
     expect(toast.success).toHaveBeenCalledWith('Lançamento previsto de Aluguel confirmado.')
     expect(toast.success).not.toHaveBeenCalledWith('Lançamento salvo.')
   })
+
+  it('"Repetir" ligado, mas a transação já casou com uma prevista: não cria outra recorrência', async () => {
+    mockAccounts = [account({ id: 1, name: 'Inter' })]
+    createTransactionMutateAsync.mockResolvedValue(transaction({ id: 9, recurrence: { id: 2, description: 'Aluguel' } }))
+
+    renderPage(['/transacoes/nova'])
+
+    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '1.500,00' } })
+    fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Aluguel' } })
+    fireEvent.click(screen.getByLabelText('Repetir'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))
+
+    await waitFor(() => expect(createTransactionMutateAsync).toHaveBeenCalled())
+    expect(createRecurrenceMutateAsync).not.toHaveBeenCalled()
+    expect(toast.success).toHaveBeenCalledWith('Lançamento previsto de Aluguel confirmado.')
+  })
+
+  it('falha ao criar a recorrência: ainda assim salva e navega, sem recriar a transação', async () => {
+    mockAccounts = [account({ id: 1, name: 'Inter' })]
+    createRecurrenceMutateAsync.mockRejectedValue(new Error('falhou'))
+
+    renderPage(['/transacoes/nova'])
+
+    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '50,00' } })
+    fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Streaming' } })
+    fireEvent.click(screen.getByLabelText('Repetir'))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))
+
+    await waitFor(() => expect(screen.getByText('Lista')).toBeInTheDocument())
+    expect(createTransactionMutateAsync).toHaveBeenCalledTimes(1)
+    expect(toast.error).toHaveBeenCalledWith('Lançamento salvo, mas não foi possível criar a recorrência.')
+    expect(toast.success).toHaveBeenCalledWith('Lançamento salvo.')
+  })
 })
