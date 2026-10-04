@@ -18,6 +18,7 @@ function seed(client: QueryClient) {
     queryKeys.tags(),
     queryKeys.transactions({}),
     queryKeys.transfer('abc'),
+    queryKeys.transferSuggestions(),
     queryKeys.dashboard('2026-10'),
     queryKeys.cards(false),
     queryKeys.card(1),
@@ -48,7 +49,7 @@ describe('query keys', () => {
     expect(queryKeys.transactions({ search: '', account_id: undefined })).toEqual(['transactions', 'list', {}])
   })
 
-  it('invalidateLedger invalida transações, transferências, contas, dashboard, cartões e a prévia de regra', async () => {
+  it('invalidateLedger invalida transações, transferências, sugestões de transferência, contas, dashboard, cartões e a prévia de regra', async () => {
     const client = new QueryClient()
     seed(client)
     await invalidateLedger(client)
@@ -61,6 +62,7 @@ describe('query keys', () => {
       'installment-plans',
       'rule-preview',
       'transactions',
+      'transfer-suggestions',
       'transfers',
     ])
   })

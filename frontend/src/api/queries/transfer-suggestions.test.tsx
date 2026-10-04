@@ -46,7 +46,7 @@ describe('useTransferSuggestions', () => {
 })
 
 describe('useDetectTransfers', () => {
-  it('chama o detect e invalida sugestões e o razão', async () => {
+  it('chama o detect e invalida o razão (que já cobre transfer-suggestions)', async () => {
     POST.mockResolvedValue({ data: { data: { linked: 1, suggested: 2 } }, error: undefined, response: { ok: true } })
     const client = new QueryClient()
     client.setQueryData(queryKeys.transferSuggestions(), 'x')
@@ -66,7 +66,7 @@ describe('useDetectTransfers', () => {
 })
 
 describe('useAcceptSuggestion', () => {
-  it('ao ligar, invalida o razão; em qualquer caso, invalida sugestões (o backend já excluiu a desatualizada em 409)', async () => {
+  it('ao ligar, invalida o razão (que já cobre transfer-suggestions)', async () => {
     POST.mockResolvedValue({ data: { data: {} }, error: undefined, response: { ok: true } })
     const client = new QueryClient()
     client.setQueryData(queryKeys.transferSuggestions(), 'x')
@@ -80,6 +80,26 @@ describe('useAcceptSuggestion', () => {
     expect(POST).toHaveBeenCalledWith('/transfer-suggestions/{suggestion}/accept', { params: { path: { suggestion: 9 } } })
     expect(client.getQueryState(queryKeys.transferSuggestions())?.isInvalidated).toBe(true)
     expect(client.getQueryState(['transactions'])?.isInvalidated).toBe(true)
+  })
+
+  it('em erro (409: o backend já excluiu a sugestão desatualizada), ainda assim invalida as sugestões', async () => {
+    POST.mockResolvedValue({
+      data: undefined,
+      error: { code: 'transfer_link_invalid', message: 'Essas transações não formam uma transferência.' },
+      response: { ok: false, status: 409 },
+    })
+    const client = new QueryClient()
+    client.setQueryData(queryKeys.transferSuggestions(), 'x')
+    client.setQueryData(['transactions'], 'x')
+
+    const { result } = renderHook(() => useAcceptSuggestion(), { wrapper: wrapper(client) })
+    await act(async () => {
+      await result.current.mutateAsync(9).catch(() => undefined)
+    })
+
+    expect(client.getQueryState(queryKeys.transferSuggestions())?.isInvalidated).toBe(true)
+    // Diferente do sucesso: erro não passa por invalidateLedger, então o razão não é tocado.
+    expect(client.getQueryState(['transactions'])?.isInvalidated).toBe(false)
   })
 })
 
@@ -99,10 +119,27 @@ describe('useDismissSuggestion', () => {
     expect(client.getQueryState(queryKeys.transferSuggestions())?.isInvalidated).toBe(true)
     expect(client.getQueryState(['transactions'])?.isInvalidated).toBe(false)
   })
+
+  it('mesmo em erro (409: outra aba já resolveu a sugestão), invalida as sugestões (onSettled)', async () => {
+    POST.mockResolvedValue({
+      data: undefined,
+      error: { code: 'transfer_suggestion_not_pending', message: 'Esta sugestão não está mais pendente.' },
+      response: { ok: false, status: 409 },
+    })
+    const client = new QueryClient()
+    client.setQueryData(queryKeys.transferSuggestions(), 'x')
+
+    const { result } = renderHook(() => useDismissSuggestion(), { wrapper: wrapper(client) })
+    await act(async () => {
+      await result.current.mutateAsync(9).catch(() => undefined)
+    })
+
+    expect(client.getQueryState(queryKeys.transferSuggestions())?.isInvalidated).toBe(true)
+  })
 })
 
 describe('useLinkTransfer', () => {
-  it('liga e invalida sugestões e o razão', async () => {
+  it('liga e invalida o razão (que já cobre transfer-suggestions)', async () => {
     POST.mockResolvedValue({ data: { data: {} }, error: undefined, response: { ok: true } })
     const client = new QueryClient()
     client.setQueryData(queryKeys.transferSuggestions(), 'x')
@@ -120,10 +157,10 @@ describe('useLinkTransfer', () => {
 })
 
 describe('useUnlinkTransfer', () => {
-  it('desfaz e invalida sugestões e o razão', async () => {
+  it('remove a transferência do cache (a rota passa a devolver 404) e invalida o razão', async () => {
     POST.mockResolvedValue({ data: undefined, error: undefined, response: { ok: true } })
     const client = new QueryClient()
-    client.setQueryData(queryKeys.transferSuggestions(), 'x')
+    client.setQueryData(queryKeys.transfer('uuid-1'), { transfer_id: 'uuid-1' })
     client.setQueryData(['transactions'], 'x')
 
     const { result } = renderHook(() => useUnlinkTransfer(), { wrapper: wrapper(client) })
@@ -132,7 +169,35 @@ describe('useUnlinkTransfer', () => {
     })
 
     expect(POST).toHaveBeenCalledWith('/transfers/{transfer}/unlink', { params: { path: { transfer: 'uuid-1' } } })
-    expect(client.getQueryState(queryKeys.transferSuggestions())?.isInvalidated).toBe(true)
+    // Sem cache: um remount da tela de edição buscaria de novo, e a API já responde 404
+    // (TransferController::show() não acha mais as duas pernas com este transfer_id).
+    expect(client.getQueryCache().find({ queryKey: queryKeys.transfer('uuid-1') })).toBeUndefined()
     expect(client.getQueryState(['transactions'])?.isInvalidated).toBe(true)
+  })
+
+  it('não espera as invalidações do razão: resolve mesmo com uma query ativa presa num refetch', async () => {
+    POST.mockResolvedValue({ data: undefined, error: undefined, response: { ok: true } })
+    GET.mockResolvedValue({ data: { data: [], meta: { next_cursor: null } }, error: undefined, response: { ok: true } })
+    const client = new QueryClient()
+
+    // Mantém `transfer-suggestions` ativa (montada) para a invalidação do razão disparar um
+    // refetch de verdade, não só marcar como invalidada.
+    const { result: suggestions } = renderHook(() => useTransferSuggestions(), { wrapper: wrapper(client) })
+    await act(async () => {
+      await vi.waitFor(() => expect(suggestions.current.data).toBeDefined())
+    })
+
+    // A partir daqui, qualquer novo GET nunca resolve — simula um refetch lento.
+    GET.mockImplementation(() => new Promise(() => {}))
+
+    // Se a implementação esperasse `invalidateLedger` (que dispara um refetch da query ativa
+    // acima, nunca resolvido), este `await` ficaria pendente para sempre e o teste expiraria
+    // pelo timeout padrão do Vitest — chegar até aqui já comprova que não está esperando.
+    const { result } = renderHook(() => useUnlinkTransfer(), { wrapper: wrapper(client) })
+    await act(async () => {
+      await result.current.mutateAsync('uuid-2')
+    })
+
+    expect(POST).toHaveBeenCalledWith('/transfers/{transfer}/unlink', { params: { path: { transfer: 'uuid-2' } } })
   })
 })

@@ -1,4 +1,4 @@
-import { keepPreviousData, useInfiniteQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { api, expectOk, unwrap } from '@/api/client'
 import { invalidateLedger, queryKeys } from '@/api/query-keys'
 import type { components } from '@/api/schema'
@@ -12,16 +12,13 @@ export function useTransferSuggestions() {
   return useInfiniteQuery({
     queryKey: queryKeys.transferSuggestions(),
     initialPageParam: null as string | null,
-    queryFn: async ({ pageParam }) => {
-      // Variável separada (não um literal direto na chamada) porque `cursor` não está tipado
-      // nos parâmetros de query deste endpoint (TransferSuggestionController::index() lê a
-      // página pelo CursorPaginator padrão do Laravel, sem FormRequest); isso evita o erro de
-      // "excess property" do TypeScript sem precisar editar o schema gerado.
-      const query = { per_page: PAGE_SIZE, ...(pageParam ? { cursor: pageParam } : {}) }
-      return unwrap(api.GET('/transfer-suggestions', { params: { query } }))
-    },
+    queryFn: async ({ pageParam }) =>
+      unwrap(
+        api.GET('/transfer-suggestions', {
+          params: { query: { per_page: PAGE_SIZE, ...(pageParam ? { cursor: pageParam } : {}) } },
+        }),
+      ),
     getNextPageParam: (lastPage) => lastPage.meta.next_cursor,
-    placeholderData: keepPreviousData,
   })
 }
 
@@ -29,11 +26,12 @@ function invalidateSuggestions(queryClient: QueryClient) {
   return queryClient.invalidateQueries({ queryKey: queryKeys.transferSuggestions() })
 }
 
+/** `invalidateLedger` já inclui `transfer-suggestions` (ver query-keys.ts): basta chamar ela. */
 export function useDetectTransfers() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async () => (await unwrap(api.POST('/transfer-suggestions/detect'))).data,
-    onSuccess: () => Promise.all([invalidateSuggestions(queryClient), invalidateLedger(queryClient)]),
+    onSuccess: () => invalidateLedger(queryClient),
   })
 }
 
@@ -43,9 +41,10 @@ export function useAcceptSuggestion() {
     mutationFn: async (id: number) =>
       (await unwrap(api.POST('/transfer-suggestions/{suggestion}/accept', { params: { path: { suggestion: id } } }))).data,
     onSuccess: () => invalidateLedger(queryClient),
-    // Mesmo em erro (409 transfer_link_invalid): o backend já excluiu a sugestão desatualizada
-    // antes de recusar (ver AcceptTransferSuggestion::handle()) — a lista precisa refletir isso.
-    onSettled: () => invalidateSuggestions(queryClient),
+    // Só em erro: o 409 (transfer_link_invalid) já é o backend excluindo a sugestão
+    // desatualizada antes de recusar (ver AcceptTransferSuggestion::handle()) — a lista precisa
+    // refletir isso, mas em sucesso invalidateLedger acima já cobre `transfer-suggestions`.
+    onError: () => invalidateSuggestions(queryClient),
   })
 }
 
@@ -55,7 +54,9 @@ export function useDismissSuggestion() {
     mutationFn: async (id: number) => {
       await expectOk(api.POST('/transfer-suggestions/{suggestion}/dismiss', { params: { path: { suggestion: id } } }))
     },
-    onSuccess: () => invalidateSuggestions(queryClient),
+    // onSettled, não onSuccess: um 409 (transfer_suggestion_not_pending, ex.: outra aba já
+    // aceitou) também significa que a lista local está desatualizada.
+    onSettled: () => invalidateSuggestions(queryClient),
   })
 }
 
@@ -64,7 +65,7 @@ export function useLinkTransfer() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (body: LinkTransferRequest) => (await unwrap(api.POST('/transfers/link', { body }))).data,
-    onSuccess: () => Promise.all([invalidateSuggestions(queryClient), invalidateLedger(queryClient)]),
+    onSuccess: () => invalidateLedger(queryClient),
   })
 }
 
@@ -74,6 +75,14 @@ export function useUnlinkTransfer() {
     mutationFn: async (transferId: string) => {
       await expectOk(api.POST('/transfers/{transfer}/unlink', { params: { path: { transfer: transferId } } }))
     },
-    onSuccess: () => Promise.all([invalidateSuggestions(queryClient), invalidateLedger(queryClient)]),
+    onSuccess: (_data, transferId) => {
+      // Some imediatamente do cache (a rota agora devolve 404 para este transfer_id): remover
+      // em vez de só invalidar evita servir o dado velho se algo remontar a tela antes do
+      // refetch. Dispara as invalidações do razão sem esperar (sem `return`/`await`) — quem
+      // chama (ex.: a edição, que navega de volta ao confirmar) não deve ficar bloqueado pelo
+      // refetch delas.
+      queryClient.removeQueries({ queryKey: queryKeys.transfer(transferId) })
+      void invalidateLedger(queryClient)
+    },
   })
 }

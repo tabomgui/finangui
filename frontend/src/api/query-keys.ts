@@ -54,11 +54,15 @@ function invalidate(queryClient: QueryClient, roots: string[]) {
  * (e a sugestão de vínculo de cada um) dependem do estado das contas manuais: editar, arquivar
  * ou excluir uma conta pelo `AccountRow` (usado tanto na lista de contas manuais quanto dentro
  * do `ConnectionCard`, ver `features/banking/connection-card.tsx`) precisa refletir ali também.
+ * `transfer-suggestions` entra porque importar, sincronizar, ligar/desligar/aceitar/descartar
+ * uma transferência podem criar ou resolver sugestões: toda mutação que já chama isto cobre a
+ * lista e a contagem de pendências sem precisar invalidar as duas chaves à parte.
  */
 export function invalidateLedger(queryClient: QueryClient) {
   return invalidate(queryClient, [
     'transactions',
     'transfers',
+    'transfer-suggestions',
     'accounts',
     'dashboard',
     'cards',
