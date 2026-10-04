@@ -72,7 +72,7 @@ describe('summaryText', () => {
 
   it('inclui transferências ligadas e sugeridas pela detecção automática do lote', () => {
     expect(summaryText(summary({ transfers_linked: 2, transfer_suggestions: 1 }))).toBe(
-      '2 transferências ligadas · 1 sugestão',
+      '2 transferências ligadas · 1 sugestão de transferência',
     )
   })
 })

@@ -36,7 +36,7 @@ export function TransferSuggestionsPage() {
     <>
       <PageHeader
         title="Transferências encontradas"
-        back="/transacoes"
+        back
         actions={
           <Button className={headerButton} disabled={detect.isPending} onClick={handleDetect}>
             {detect.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}

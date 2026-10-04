@@ -77,7 +77,7 @@ describe('SuggestionRow', () => {
   it('"Juntar" aceita a sugestão e mostra o toast', async () => {
     render(<SuggestionRow suggestion={suggestion({ id: 9 })} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Juntar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Juntar: Transferência enviada e Transferência recebida' }))
 
     await vi.waitFor(() => expect(acceptMutateAsync).toHaveBeenCalledWith(9))
     expect(toast.success).toHaveBeenCalledWith('Transferência ligada.')
@@ -86,8 +86,23 @@ describe('SuggestionRow', () => {
   it('"Não é transferência" descarta a sugestão', async () => {
     render(<SuggestionRow suggestion={suggestion({ id: 9 })} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Não é transferência' }))
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Não é transferência: Transferência enviada e Transferência recebida' }),
+    )
 
     await vi.waitFor(() => expect(dismissMutateAsync).toHaveBeenCalledWith(9))
+  })
+
+  it('os botões referenciam as duas pernas via aria-describedby, para o leitor de tela anunciar o par', () => {
+    render(<SuggestionRow suggestion={suggestion({ id: 9 })} />)
+
+    const accept = screen.getByRole('button', { name: /^Juntar:/ })
+    const dismiss = screen.getByRole('button', { name: /^Não é transferência:/ })
+    const [outId, inId] = accept.getAttribute('aria-describedby')?.split(' ') ?? []
+
+    expect(outId).toBeTruthy()
+    expect(document.getElementById(outId as string)).toHaveTextContent('Transferência enviada')
+    expect(document.getElementById(inId as string)).toHaveTextContent('Transferência recebida')
+    expect(dismiss.getAttribute('aria-describedby')).toBe(accept.getAttribute('aria-describedby'))
   })
 })

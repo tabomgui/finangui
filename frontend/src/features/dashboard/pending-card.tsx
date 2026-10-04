@@ -2,22 +2,16 @@ import { ArrowLeftRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useTransferSuggestions } from '@/api/queries/transfer-suggestions'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { firstPageSuggestionsCount, suggestionsCountLabel } from '../transfers/suggestions-count'
 
 /**
  * "Pendências" no Início: por ora, só a contagem de sugestões de transferência (recorrências não
  * confirmadas e conexões a reconectar entram aqui depois; reconexão já aparece no `ReauthBanner`).
- * Sem endpoint de contagem: usa a primeira página de `/transfer-suggestions` (mesma, PAGE_SIZE já
- * pequeno o bastante para um card do Início) e mostra "N+" quando há mais que essa página.
  */
 export function PendingCard() {
   const { data } = useTransferSuggestions()
-  const firstPage = data?.pages[0]
-  const count = firstPage?.data.length ?? 0
+  const { count, hasMore } = firstPageSuggestionsCount(data?.pages[0])
   if (count === 0) return null
-
-  const hasMore = firstPage?.meta.next_cursor != null
-  const label =
-    count === 1 && !hasMore ? '1 sugestão de transferência' : `${count}${hasMore ? '+' : ''} sugestões de transferência`
 
   return (
     <Card className="rounded-2xl shadow-card">
@@ -31,7 +25,7 @@ export function PendingCard() {
           <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
             <ArrowLeftRight className="h-5 w-5" />
           </span>
-          <span className="flex-1 text-sm font-medium">{label}</span>
+          <span className="flex-1 text-sm font-medium">{suggestionsCountLabel({ count, hasMore })}</span>
         </Link>
       </CardContent>
     </Card>

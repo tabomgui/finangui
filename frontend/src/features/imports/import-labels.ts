@@ -49,10 +49,10 @@ const SUMMARY_ORDER: SummaryKey[] = [
   'transfer_suggestions',
 ]
 
-// `transfers_linked`/`transfer_suggestions` não seguem o padrão "N <adjetivo> transações" dos
-// outros (são uma contagem de transferências ligadas/sugeridas pelo lote, não de linhas do
-// extrato): a palavra já inclui o substantivo, por isso o `summaryText()` abaixo as monta sem o
-// "lançamentos"/"transações" implícito dos demais itens.
+// `transfers_linked`/`transfer_suggestions` contam transferências do lote (ligadas/sugeridas
+// pela detecção automática ao final da importação), não linhas do extrato: por isso a palavra
+// já inclui o próprio substantivo ("transferências ligadas", "sugestões de transferência"), em
+// vez do padrão "N <adjetivo>" (implicitamente "transações") dos demais itens.
 const SUMMARY_WORDS: Record<SummaryKey, [string, string]> = {
   new: ['nova', 'novas'],
   duplicate: ['já importada', 'já importadas'],
@@ -62,7 +62,7 @@ const SUMMARY_WORDS: Record<SummaryKey, [string, string]> = {
   swap_pending: ['pendente confirmada', 'pendentes confirmadas'],
   failed: ['inválida', 'inválidas'],
   transfers_linked: ['transferência ligada', 'transferências ligadas'],
-  transfer_suggestions: ['sugestão', 'sugestões'],
+  transfer_suggestions: ['sugestão de transferência', 'sugestões de transferência'],
 }
 
 /** Texto curto do resultado de um lote: só os totais diferentes de zero, concatenados por " · ". */

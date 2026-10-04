@@ -19,6 +19,7 @@ import { activeFilterCount, effectiveTransactionFilters, filtersFromParams, para
 import { groupByDay } from './group-by-day'
 import { TransactionFilters } from './transaction-filters'
 import { TransactionRow } from './transaction-row'
+import { firstPageSuggestionsCount, suggestionsCountLabel } from '../transfers/suggestions-count'
 
 export function TransactionsPage() {
   const [params, setParams] = useSearchParams()
@@ -28,15 +29,7 @@ export function TransactionsPage() {
   const transactions = query.data?.pages.flatMap((page) => page.data) ?? []
   const filtered = activeFilterCount(filters) > 0 || filters.search !== undefined
 
-  // Sem endpoint de contagem: só a primeira página de sugestões (mesma lógica do `PendingCard`
-  // do Início) — "N+" quando há mais que essa página, nunca busca as demais aqui.
-  const suggestionsFirstPage = useTransferSuggestions().data?.pages[0]
-  const pendingSuggestions = suggestionsFirstPage?.data.length ?? 0
-  const hasMoreSuggestions = suggestionsFirstPage?.meta.next_cursor != null
-  const suggestionsLabel =
-    pendingSuggestions === 1 && !hasMoreSuggestions
-      ? '1 sugestão de transferência'
-      : `${pendingSuggestions}${hasMoreSuggestions ? '+' : ''} sugestões de transferência`
+  const pendingSuggestions = firstPageSuggestionsCount(useTransferSuggestions().data?.pages[0])
 
   const [selecting, setSelecting] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -74,12 +67,15 @@ export function TransactionsPage() {
         }
       />
       <PageBody>
-        {pendingSuggestions > 0 && (
+        {pendingSuggestions.count > 0 && (
           <Link
             to="/transferencias/sugestoes"
-            className="flex items-center justify-between gap-2 rounded-xl bg-muted px-4 py-2 text-sm font-medium hover:bg-muted/70"
+            // bg-muted/hover:bg-accent, nunca uma variação com opacidade (/NN): esta superfície
+            // fica no topo do PageBody, sobre a faixa esmeralda do PageHeader — translúcida no
+            // hover deixaria a faixa aparecer atrás (ver CLAUDE.md).
+            className="flex items-center justify-between gap-2 rounded-xl bg-muted px-4 py-2 text-sm font-medium hover:bg-accent"
           >
-            <span>{suggestionsLabel}</span>
+            <span>{suggestionsCountLabel(pendingSuggestions)}</span>
             <ArrowRight className="h-4 w-4" />
           </Link>
         )}

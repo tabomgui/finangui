@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { canLinkAsTransfer, mergeTagIds, orderForLink, selectionKind } from './bulk'
 
-function leg(overrides: { id: number; direction: 'in' | 'out'; amount?: number; account_id?: number; transfer_id?: string | null }) {
-  return { amount: 1000, account_id: 1, transfer_id: null, ...overrides }
+function leg(overrides: {
+  id: number
+  direction: 'in' | 'out'
+  amount?: number
+  account_id?: number
+  transfer_id?: string | null
+  currency?: string
+  installment?: { plan_id: number; number: number; total: number } | null
+  status?: 'posted' | 'projected' | 'pending'
+  is_ignored?: boolean
+}) {
+  return { amount: 1000, account_id: 1, transfer_id: null, currency: 'BRL', installment: null, status: 'posted' as const, is_ignored: false, ...overrides }
 }
 
 describe('mergeTagIds', () => {
@@ -55,6 +65,27 @@ describe('canLinkAsTransfer', () => {
         leg({ id: 1, direction: 'out', transfer_id: 'uuid-1' }),
         leg({ id: 2, direction: 'in', account_id: 2 }),
       ]),
+    ).toBe(false)
+  })
+
+  it('false com moedas diferentes', () => {
+    expect(
+      canLinkAsTransfer([leg({ id: 1, direction: 'out', currency: 'USD' }), leg({ id: 2, direction: 'in', account_id: 2 })]),
+    ).toBe(false)
+  })
+
+  it('false com parcela, projetada ou ignorada em qualquer das duas', () => {
+    expect(
+      canLinkAsTransfer([
+        leg({ id: 1, direction: 'out', installment: { plan_id: 1, number: 1, total: 3 } }),
+        leg({ id: 2, direction: 'in', account_id: 2 }),
+      ]),
+    ).toBe(false)
+    expect(
+      canLinkAsTransfer([leg({ id: 1, direction: 'out', status: 'projected' }), leg({ id: 2, direction: 'in', account_id: 2 })]),
+    ).toBe(false)
+    expect(
+      canLinkAsTransfer([leg({ id: 1, direction: 'out' }), leg({ id: 2, direction: 'in', account_id: 2, is_ignored: true })]),
     ).toBe(false)
   })
 })

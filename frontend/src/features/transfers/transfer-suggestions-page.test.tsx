@@ -100,7 +100,7 @@ describe('TransferSuggestionsPage', () => {
 
     renderPage()
 
-    expect(screen.getAllByRole('button', { name: 'Juntar' })).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: /^Juntar:/ })).toHaveLength(2)
   })
 
   it('erro mostra opção de tentar de novo', () => {
