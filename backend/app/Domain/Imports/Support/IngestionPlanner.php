@@ -7,6 +7,7 @@ use App\Domain\Imports\Data\ParsedRow;
 use App\Domain\Imports\Data\RowDecision;
 use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Enums\RowOutcome;
+use App\Domain\Recurrences\Support\RecurrenceMatcher;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Enums\TransactionStatus;
@@ -32,6 +33,7 @@ final class IngestionPlanner
 {
     public function __construct(
         private readonly DedupMatchers $matchers = new DedupMatchers,
+        private readonly RecurrenceMatcher $recurrenceMatcher = new RecurrenceMatcher,
     ) {}
 
     /**
@@ -52,6 +54,7 @@ final class IngestionPlanner
         $byExternalId = $candidates->whereNotNull('external_id')->keyBy('external_id');
         $installmentPool = $candidates->whereNull('external_id')->whereNotNull('installment_plan_id')->values();
         $adoptionPool = $this->adoptionPool($candidates, $format);
+        $recurrencePool = $this->recurrencePool($candidates);
         $swapPool = $candidates->filter(
             fn (Transaction $t) => $t->external_id !== null && $this->isStillOpen($t)
         )->values();
@@ -104,6 +107,15 @@ final class IngestionPlanner
 
                     continue;
                 }
+            }
+
+            $recurrenceMatch = $this->recurrenceMatcher->bestMatch($recurrencePool, $usedIds, $row->amount, $row->direction, $row->date, $row->description);
+
+            if ($recurrenceMatch !== null) {
+                $usedIds[$recurrenceMatch->id] = true;
+                $decisions[$index] = new RowDecision($row, RowOutcome::Adopt, $recurrenceMatch->id, $recurrenceMatch);
+
+                continue;
             }
 
             $adopted = $this->matchers->matchAdoption($adoptionPool, $usedIds, $row);
@@ -175,6 +187,22 @@ final class IngestionPlanner
     }
 
     /**
+     * Previstas de recorrência ainda não confirmadas (status projected,
+     * recurrence_id preenchido): candidatas ao casamento de
+     * RecurrenceMatcher::bestMatch(), tentado antes da adoção de manuais
+     * comuns (ver matchAdoption() acima).
+     *
+     * @param  Collection<int, Transaction>  $candidates
+     * @return Collection<int, Transaction>
+     */
+    private function recurrencePool(Collection $candidates): Collection
+    {
+        return $candidates->filter(
+            fn (Transaction $t) => $t->status === TransactionStatus::Projected && $t->recurrence_id !== null
+        )->values();
+    }
+
+    /**
      * Ainda pode virar `posted` de verdade: pendente (de qualquer fonte) ou
      * projetada por data futura que não é parcela (`installment_plan_id`
      * nulo) — uma parcela projetada tem seu próprio casamento
@@ -233,7 +261,7 @@ final class IngestionPlanner
             ->get();
 
         $candidates = $windowed->concat($installmentCandidates)->unique('id')->values();
-        $candidates->load(['installmentPlan', 'tags']);
+        $candidates->load(['installmentPlan', 'tags', 'recurrence']);
 
         return $candidates;
     }

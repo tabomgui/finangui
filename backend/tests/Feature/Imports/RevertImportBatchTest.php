@@ -11,6 +11,7 @@ use App\Domain\Imports\Enums\ImportBatchStatus;
 use App\Domain\Imports\Enums\ImportFormat;
 use App\Domain\Imports\Errors\ImportBatchNotRevertible;
 use App\Domain\Imports\Models\ImportBatch;
+use App\Domain\Recurrences\Models\Recurrence;
 use App\Domain\Rules\Models\Rule;
 use App\Domain\Tags\Models\Tag;
 use App\Domain\Transactions\Enums\Direction;
@@ -120,6 +121,43 @@ it('reverter uma substituída volta a ser projetada, sem mexer na fatura (nunca 
         ->and($projected->statement_id)->toBe($statement->id)
         ->and(InstallmentPlan::count())->toBe(1)
         ->and(Transaction::where('installment_plan_id', $plan->id)->count())->toBe(1);
+});
+
+it('reverter uma prevista de recorrência adotada devolve data, valor e status previstos', function () {
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $this->account->id, 'user_id' => $this->user->id,
+        'description' => 'Aluguel', 'amount' => 150000, 'direction' => Direction::Out,
+    ]);
+    $prevista = Transaction::factory()->create([
+        'account_id' => $this->account->id, 'user_id' => $this->user->id,
+        'status' => 'projected', 'source' => 'recurrence', 'recurrence_id' => $recurrence->id,
+        'recurrence_date' => '2026-03-05', 'date' => '2026-03-05',
+        'description' => 'Aluguel', 'original_description' => 'Aluguel',
+        'amount' => 150000, 'direction' => Direction::Out,
+    ]);
+
+    $batch = $this->ingest->handle(
+        ImportBatch::factory()->create(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Nubank]),
+        [revertRow(['description' => 'Aluguel', 'amount' => 157500, 'date' => '2026-03-07', 'externalId' => 'rec-ext-1'])],
+    );
+
+    $prevista->refresh();
+    expect($prevista->status->value)->toBe('posted')
+        ->and($prevista->amount->cents)->toBe(157500)
+        ->and($prevista->date->toDateString())->toBe('2026-03-07')
+        ->and($prevista->external_id)->toBe('rec-ext-1')
+        ->and($prevista->recurrence_id)->toBe($recurrence->id);
+
+    $this->revert->handle($batch);
+
+    $prevista->refresh();
+    expect($prevista->status->value)->toBe('projected')
+        ->and($prevista->amount->cents)->toBe(150000)
+        ->and($prevista->date->toDateString())->toBe('2026-03-05')
+        ->and($prevista->external_id)->toBeNull()
+        ->and($prevista->recurrence_id)->toBe($recurrence->id)
+        ->and($prevista->recurrence_date->toDateString())->toBe('2026-03-05')
+        ->and(Transaction::count())->toBe(1);
 });
 
 it('revert recalcula a fatura via AssignStatement quando a fatura salva no undo foi excluída (ex.: prune)', function () {

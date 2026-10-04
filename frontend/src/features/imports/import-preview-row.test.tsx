@@ -40,7 +40,7 @@ describe('ImportPreviewRow', () => {
   it('mostra com o que a linha casou quando há match', () => {
     render(
       <ImportPreviewRow
-        row={row({ outcome: 'adopt', match: { id: 9, date: '2026-09-28', description: 'Mercado' } })}
+        row={row({ outcome: 'adopt', match: { id: 9, date: '2026-09-28', description: 'Mercado', kind: 'manual' } })}
         selected
         selectable
         onToggle={vi.fn()}

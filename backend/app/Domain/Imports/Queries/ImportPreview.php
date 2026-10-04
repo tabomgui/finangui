@@ -16,6 +16,7 @@ use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Models\Rule;
 use App\Domain\Rules\Support\HistoryCategorizer;
 use App\Domain\Rules\Support\TextNormalizer;
+use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 
 /**
@@ -120,10 +121,12 @@ final class ImportPreview
      * Dados (id, data, descrição) das transações que decisões diferentes de
      * "new" apontam: o IngestionPlanner já carregou o model de cada uma
      * junto da decisão (ver RowDecision::$transaction), então não precisa
-     * de outra consulta aqui.
+     * de outra consulta aqui. `kind` distingue, para a prévia, uma prevista
+     * de recorrência casada por RecurrenceMatcher ("Casa com lançamento
+     * previsto") de um lançamento manual comum.
      *
      * @param  list<RowDecision>  $decisions
-     * @return array<int, array{id: int, date: string, description: string}>
+     * @return array<int, array{id: int, date: string, description: string, kind: 'manual'|'recurrence'}>
      */
     private function matches(array $decisions): array
     {
@@ -134,10 +137,14 @@ final class ImportPreview
                 continue;
             }
 
-            $matches[$decision->transaction->id] = [
-                'id' => $decision->transaction->id,
-                'date' => $decision->transaction->date->toDateString(),
-                'description' => $decision->transaction->description,
+            $transaction = $decision->transaction;
+            $isRecurrenceOccurrence = $transaction->status === TransactionStatus::Projected && $transaction->recurrence_id !== null;
+
+            $matches[$transaction->id] = [
+                'id' => $transaction->id,
+                'date' => $transaction->date->toDateString(),
+                'description' => $transaction->description,
+                'kind' => $isRecurrenceOccurrence ? 'recurrence' : 'manual',
             ];
         }
 
