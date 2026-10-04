@@ -2,34 +2,28 @@
 
 namespace App\Domain\Transfers\Actions;
 
-use App\Domain\Accounts\Models\Account;
-use App\Domain\Categories\Models\Category;
-use App\Domain\Rules\Support\TextNormalizer;
-use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
-use App\Domain\Transfers\Data\TransferCandidate;
 use App\Domain\Transfers\Data\TransferPair;
 use App\Domain\Transfers\Enums\TransferSuggestionStatus;
 use App\Domain\Transfers\Errors\TransferLinkInvalid;
 use App\Domain\Transfers\Models\TransferSuggestion;
+use App\Domain\Transfers\Queries\TransferCandidates;
 use App\Domain\Transfers\Support\TransferMatcher;
 use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Auth;
 
 /**
- * Candidatas do banco → App\Domain\Transfers\Support\TransferMatcher (puro)
- * → liga cada match mútuo com LinkTransfer e grava uma sugestão pendente
- * para cada par acima do limiar que não foi ligado de verdade. Chamada ao
- * fim de IngestTransactions (só para as transações inseridas pelo lote) e
- * sob demanda (POST /transfer-suggestions/detect).
+ * Candidatas do banco (App\Domain\Transfers\Queries\TransferCandidates) →
+ * App\Domain\Transfers\Support\TransferMatcher (puro) → liga cada match
+ * mútuo com LinkTransfer e grava uma sugestão pendente para cada par acima
+ * do limiar que não foi ligado de verdade. Chamada ao fim de
+ * IngestTransactions (só para as transações inseridas pelo lote) e sob
+ * demanda (POST /transfer-suggestions/detect).
  */
 final class DetectTransfers
 {
-    private const MAX_DAYS = 2;
-
     private const DEFAULT_DAYS = 90;
 
     public function __construct(private readonly LinkTransfer $linkTransfer) {}
@@ -40,16 +34,16 @@ final class DetectTransfers
      */
     public function handle(?array $transactionIds = null, int $days = self::DEFAULT_DAYS): array
     {
-        $transactions = $this->candidatesQuery($transactionIds, $days)->get();
+        $transactions = TransferCandidates::query($transactionIds, $days)->get();
 
         if ($transactions->count() < 2) {
             return ['linked' => 0, 'suggested' => 0, 'undo' => []];
         }
 
-        $candidates = $this->toCandidates($transactions);
-        $dismissed = $this->dismissedPairs($transactions->pluck('id')->all());
+        $candidates = TransferCandidates::toCandidates($transactions);
+        $dismissed = TransferCandidates::dismissedPairs($transactions->pluck('id')->all());
 
-        $result = TransferMatcher::match($candidates, $dismissed, self::MAX_DAYS);
+        $result = TransferMatcher::match($candidates, $dismissed, TransferCandidates::MAX_DAYS);
 
         $links = $result['links'];
         $suggestions = $result['suggestions'];
@@ -80,161 +74,6 @@ final class DetectTransfers
             'suggested' => $this->storeSuggestions($remainingSuggestions),
             'undo' => $undo,
         ];
-    }
-
-    /**
-     * @param  list<int>|null  $transactionIds
-     * @return Builder<Transaction>
-     */
-    private function candidatesQuery(?array $transactionIds, int $days): Builder
-    {
-        $base = $this->baseCandidateQuery();
-
-        if ($transactionIds === null) {
-            return $base->where('date', '>=', CarbonImmutable::now()->subDays($days)->toDateString());
-        }
-
-        // Janela agregada (uma consulta, não uma por linha): min/max das
-        // datas dos ids informados, sem filtrar pelas regras de candidata —
-        // mesmo um id que não seja candidata (ex.: já ligado) ainda pode
-        // ancorar a janela sem prejuízo, já que o matcher a ignora de
-        // qualquer forma.
-        // min()/max() sem GROUP BY sempre devolvem exatamente uma linha,
-        // mesmo sem nenhum id encontrado (as colunas vêm nulas nesse caso,
-        // nunca zero linhas) — first() aqui nunca é null.
-        /** @var object{min_date: ?string, max_date: ?string} $range */
-        $range = Transaction::query()
-            ->whereIntegerInRaw('id', $transactionIds)
-            ->selectRaw('min(date) as min_date, max(date) as max_date')
-            ->first();
-
-        if ($range->min_date === null) {
-            return $base->whereIntegerInRaw('id', $transactionIds);
-        }
-
-        $from = CarbonImmutable::parse($range->min_date)->subDays(self::MAX_DAYS)->toDateString();
-        $to = CarbonImmutable::parse($range->max_date)->addDays(self::MAX_DAYS)->toDateString();
-
-        return $base->where(fn (Builder $query) => $query
-            ->whereIntegerInRaw('id', $transactionIds)
-            ->orWhereBetween('date', [$from, $to]));
-    }
-
-    /**
-     * @return Builder<Transaction>
-     */
-    private function baseCandidateQuery(): Builder
-    {
-        return Transaction::query()
-            ->whereNull('transfer_id')
-            ->where('is_ignored', false)
-            ->whereIn('status', [TransactionStatus::Posted->value, TransactionStatus::Pending->value])
-            ->whereNull('installment_plan_id')
-            ->where('amount', '>', 0);
-    }
-
-    /**
-     * @param  Collection<int, Transaction>  $transactions
-     * @return list<TransferCandidate>
-     */
-    private function toCandidates(Collection $transactions): array
-    {
-        $accountsById = Account::query()
-            ->whereIntegerInRaw('id', $transactions->pluck('account_id')->unique()->all())
-            ->get()
-            ->keyBy('id');
-
-        $manualNonTransferFlags = $this->manualNonTransferCategoryFlags($transactions);
-
-        return $transactions->map(function (Transaction $transaction) use ($accountsById, $manualNonTransferFlags) {
-            /** @var Account $account */
-            $account = $accountsById[$transaction->account_id];
-
-            return new TransferCandidate(
-                id: $transaction->id,
-                accountId: $transaction->account_id,
-                accountName: TextNormalizer::normalize($account->name),
-                creditCard: $account->isCreditCard(),
-                currency: $transaction->currency,
-                direction: $transaction->direction,
-                amount: $transaction->amount->cents,
-                date: $transaction->date->toDateString(),
-                description: TextNormalizer::normalize($transaction->description),
-                pending: $transaction->status === TransactionStatus::Pending,
-                manualNonTransferCategory: $manualNonTransferFlags[$transaction->id] ?? false,
-            );
-        })->values()->all();
-    }
-
-    /**
-     * Uma consulta para todas as categorias manuais do lote inteiro (não
-     * uma por transação): categoria (ou o pai dela) marcada como
-     * transferência não impede a ligação automática — o usuário já teria
-     * marcado a categoria como tal; qualquer outra categoria manual
-     * impede (ver TransferMatcher::canAutoLink()). Categoria não
-     * encontrada (ex.: excluída) conta como "não é de transferência" —
-     * falha fechado, impede a ligação sozinha em vez de arriscar.
-     *
-     * @param  Collection<int, Transaction>  $transactions
-     * @return array<int, bool> id da transação => tem categoria manual não-transferência
-     */
-    private function manualNonTransferCategoryFlags(Collection $transactions): array
-    {
-        $categoryIds = $transactions
-            ->filter(fn (Transaction $t) => $t->categorized_by === 'manual' && $t->category_id !== null)
-            ->pluck('category_id')
-            ->unique()
-            ->values();
-
-        if ($categoryIds->isEmpty()) {
-            return [];
-        }
-
-        $categories = Category::query()
-            ->whereIntegerInRaw('id', $categoryIds->all())
-            ->with('parent:id,is_transfer')
-            ->get()
-            ->keyBy('id');
-
-        $flags = [];
-        foreach ($transactions as $transaction) {
-            if ($transaction->categorized_by !== 'manual' || $transaction->category_id === null) {
-                continue;
-            }
-
-            $category = $categories->get($transaction->category_id);
-            $isTransferCategory = $category !== null && $category->is_transfer;
-
-            if (! $isTransferCategory && $category !== null) {
-                // @phpstan-ignore nullsafe.neverNull (falso positivo: Larastan não enxerga que parent_id/parent são nullable; em runtime uma categoria raiz não tem parent)
-                $isTransferCategory = $category->parent?->is_transfer ?? false;
-            }
-
-            $flags[$transaction->id] = ! $isTransferCategory;
-        }
-
-        return $flags;
-    }
-
-    /**
-     * @param  list<int>  $candidateIds
-     * @return array<string, true>
-     */
-    private function dismissedPairs(array $candidateIds): array
-    {
-        $rows = TransferSuggestion::query()
-            ->where('status', TransferSuggestionStatus::Dismissed)
-            ->where(fn (Builder $query) => $query
-                ->whereIntegerInRaw('out_transaction_id', $candidateIds)
-                ->orWhereIntegerInRaw('in_transaction_id', $candidateIds))
-            ->get(['out_transaction_id', 'in_transaction_id']);
-
-        $dismissed = [];
-        foreach ($rows as $row) {
-            $dismissed["{$row->out_transaction_id}:{$row->in_transaction_id}"] = true;
-        }
-
-        return $dismissed;
     }
 
     /**
@@ -271,7 +110,7 @@ final class DetectTransfers
             $externalLeg = $this->externalLeg($out, $in, $idSet);
 
             try {
-                $this->linkTransfer->handle($out, $in, self::MAX_DAYS);
+                $this->linkTransfer->handle($out, $in, TransferCandidates::MAX_DAYS);
             } catch (ModelNotFoundException|TransferLinkInvalid) {
                 continue;
             }

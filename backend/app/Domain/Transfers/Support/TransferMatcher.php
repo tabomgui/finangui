@@ -15,13 +15,6 @@ use Carbon\CarbonImmutable;
  */
 final class TransferMatcher
 {
-    /** TRANSF casa como prefixo (TRANSFERENCIA, TRANSFERIDO); as demais exigem a palavra exata. */
-    private const EVIDENCE_KEYWORDS = ['TRANSF', 'PIX', 'TED', 'DOC', 'PAGAMENTO', 'FATURA', 'APLICACAO', 'RESGATE'];
-
-    private const PAYMENT_KEYWORDS = ['PAGAMENTO', 'FATURA'];
-
-    private const MIN_ACCOUNT_NAME_LENGTH = 3;
-
     private const SUGGESTION_THRESHOLD = 0.45;
 
     private const MAX_SUGGESTIONS_PER_TRANSACTION = 2;
@@ -107,7 +100,7 @@ final class TransferMatcher
             default => 0.0,
         };
 
-        if (self::hasClue($out, $in)) {
+        if (TransferClues::hasClue($out, $in)) {
             $score += 0.2;
         }
 
@@ -143,83 +136,21 @@ final class TransferMatcher
             return false;
         }
 
-        if (! self::hasClue($out, $in)) {
+        if (! TransferClues::hasClue($out, $in)) {
             return false;
         }
 
         if ($in->creditCard) {
-            if (! self::hasPaymentClue($out, $in)) {
+            if (! TransferClues::hasPaymentClue($out, $in)) {
                 return false;
             }
 
-            if (self::hasEstornoClue($out, $in)) {
+            if (TransferClues::hasEstornoClue($out, $in)) {
                 return false;
             }
         }
 
         return true;
-    }
-
-    private static function hasClue(TransferCandidate $out, TransferCandidate $in): bool
-    {
-        return self::hasKeywordClue($out->description)
-            || self::hasKeywordClue($in->description)
-            || self::hasAccountNameClue($out, $in);
-    }
-
-    private static function hasKeywordClue(string $description): bool
-    {
-        foreach (self::EVIDENCE_KEYWORDS as $keyword) {
-            if (self::matchesKeyword($description, $keyword)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static function hasPaymentClue(TransferCandidate $out, TransferCandidate $in): bool
-    {
-        foreach (self::PAYMENT_KEYWORDS as $keyword) {
-            if (self::matchesKeyword($out->description, $keyword) || self::matchesKeyword($in->description, $keyword)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static function hasEstornoClue(TransferCandidate $out, TransferCandidate $in): bool
-    {
-        return self::matchesKeyword($out->description, 'ESTORNO') || self::matchesKeyword($in->description, 'ESTORNO');
-    }
-
-    private static function hasAccountNameClue(TransferCandidate $out, TransferCandidate $in): bool
-    {
-        if (mb_strlen($in->accountName) >= self::MIN_ACCOUNT_NAME_LENGTH && self::matchesKeyword($out->description, $in->accountName)) {
-            return true;
-        }
-
-        if (mb_strlen($out->accountName) >= self::MIN_ACCOUNT_NAME_LENGTH && self::matchesKeyword($in->description, $out->accountName)) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Palavra inteira, não substring: "UNITED" não casa `TED`, "DOCERIA"
-     * não casa `DOC`, conta "Inter" não casa "INTERNET" na descrição.
-     * `TRANSF` é o único prefixo (casa TRANSFERENCIA, TRANSFERIDO etc.);
-     * preg_quote escapa qualquer caractere especial de um nome de conta
-     * usado como pista.
-     */
-    private static function matchesKeyword(string $haystack, string $keyword): bool
-    {
-        $suffix = $keyword === 'TRANSF' ? '[A-Z0-9]*' : '';
-        $pattern = '/\b'.preg_quote($keyword, '/').$suffix.'\b/';
-
-        return preg_match($pattern, $haystack) === 1;
     }
 
     /**
