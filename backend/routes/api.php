@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\Auth\AuthStatusController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\SessionController;
 use App\Http\Controllers\Api\V1\BankConnectionController;
+use App\Http\Controllers\Api\V1\BudgetController;
 use App\Http\Controllers\Api\V1\CardController;
 use App\Http\Controllers\Api\V1\CardStatementController;
 use App\Http\Controllers\Api\V1\CategoryController;
@@ -33,6 +34,10 @@ Route::prefix('v1')->group(function () {
         Route::get('me', [MeController::class, 'show']);
         Route::patch('me', [MeController::class, 'update']);
         Route::get('dashboard', DashboardController::class);
+
+        Route::get('budgets', [BudgetController::class, 'index']);
+        Route::put('budgets', [BudgetController::class, 'save']);
+        Route::delete('budgets', [BudgetController::class, 'destroy']);
 
         // Updates são parciais (PATCH): apiResource()->except('update') tira o
         // PUT/PATCH padrão (que registraria os dois verbos) e o Route::patch
