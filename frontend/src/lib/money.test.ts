@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { centsToInputString, formatMoney, formatSignedMoney, parseMoneyInput } from './money'
+import { centsToInputString, formatCompactMoney, formatMoney, formatSignedMoney, parseMoneyInput } from './money'
 
 const nbsp = ' '
 
@@ -53,6 +53,18 @@ describe('parseMoneyInput', () => {
   it('normaliza zero negativo para zero', () => {
     expect(Object.is(parseMoneyInput('-0'), 0)).toBe(true)
     expect(Object.is(parseMoneyInput('-0,00'), 0)).toBe(true)
+  })
+})
+
+describe('formatCompactMoney', () => {
+  it('abrevia milhares e milhões', () => {
+    expect(formatCompactMoney(0)).toBe(`R$${nbsp}0`)
+    expect(formatCompactMoney(150000)).toBe(`R$${nbsp}1,5${nbsp}mil`)
+    expect(formatCompactMoney(150000000)).toBe(`R$${nbsp}1,5${nbsp}mi`)
+  })
+
+  it('mantém o sinal de negativo', () => {
+    expect(formatCompactMoney(-250000)).toBe(`-R$${nbsp}2,5${nbsp}mil`)
   })
 })
 

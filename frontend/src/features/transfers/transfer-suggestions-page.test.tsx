@@ -18,6 +18,12 @@ vi.mock('@/api/queries/transfer-suggestions', () => ({
   useAcceptSuggestion: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDismissSuggestion: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
+vi.mock('@/api/queries/notifications', () => ({
+  useUnreadCount: () => ({ data: 0 }),
+  useNotifications: () => ({ data: undefined, fetchNextPage: vi.fn(), hasNextPage: false, isFetchingNextPage: false, isPending: true }),
+  useMarkRead: () => ({ mutate: vi.fn() }),
+  useMarkAllRead: () => ({ mutate: vi.fn(), isPending: false }),
+}))
 
 function leg(overrides: Partial<Transaction>): Transaction {
   return {

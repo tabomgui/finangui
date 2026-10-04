@@ -15,6 +15,30 @@ function currencyFormatter(currency: string): Intl.NumberFormat {
 
 const decimalFormatter = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+const compactCurrencyFormatters = new Map<string, Intl.NumberFormat>()
+
+function compactCurrencyFormatter(currency: string): Intl.NumberFormat {
+  let formatter = compactCurrencyFormatters.get(currency)
+  if (!formatter) {
+    formatter = new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency,
+      notation: 'compact',
+      compactDisplay: 'short',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 1,
+    })
+    compactCurrencyFormatters.set(currency, formatter)
+  }
+  return formatter
+}
+
+/** Versão abreviada ("R$ 1,5 mil", "R$ 1,2 mi") para espaços estreitos, como eixos de gráfico. */
+export function formatCompactMoney(cents: number, currency = 'BRL'): string {
+  const normalized = cents === 0 ? 0 : cents
+  return compactCurrencyFormatter(currency).format(normalized / 100)
+}
+
 export function formatMoney(cents: number, currency = 'BRL'): string {
   const normalized = cents === 0 ? 0 : cents
   return currencyFormatter(currency).format(normalized / 100)

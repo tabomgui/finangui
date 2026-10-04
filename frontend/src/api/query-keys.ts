@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query'
-import type { Direction } from '@/api/types'
+import type { Direction, ReportBasis } from '@/api/types'
 
 export type TransactionFilters = {
   account_id?: number
@@ -44,6 +44,14 @@ export const queryKeys = {
   recurrences: () => ['recurrences'] as const,
   recurrence: (id: number) => ['recurrences', 'detail', id] as const,
   overdueOccurrences: () => ['recurrences', 'overdue'] as const,
+  budgets: (month: string) => ['budgets', month] as const,
+  goals: () => ['goals'] as const,
+  goalContributions: (goalId: number) => ['goals', goalId, 'contributions'] as const,
+  reportMonthly: (from: string, to: string, basis: ReportBasis) => ['reports', 'monthly', { from, to, basis }] as const,
+  reportCategories: (aFrom: string, aTo: string, bFrom: string, bTo: string, basis: ReportBasis) =>
+    ['reports', 'categories', { aFrom, aTo, bFrom, bTo, basis }] as const,
+  notifications: () => ['notifications', 'list'] as const,
+  notificationsUnreadCount: () => ['notifications', 'unread-count'] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {
@@ -62,6 +70,8 @@ function invalidate(queryClient: QueryClient, roots: string[]) {
  * lista e a contagem de pendências sem precisar invalidar as duas chaves à parte.
  * `recurrences` entra porque criar/editar/excluir uma recorrência e confirmar/pular uma ocorrência
  * mudam as previstas, que aparecem nas transações, no saldo previsto e nas pendências do Início.
+ * `budgets`, `goals` e `reports` entram porque gasto, progresso de meta e os relatórios dependem
+ * de lançamentos: qualquer mutação que já chame isto mantém essas telas em dia também.
  */
 export function invalidateLedger(queryClient: QueryClient) {
   return invalidate(queryClient, [
@@ -76,6 +86,9 @@ export function invalidateLedger(queryClient: QueryClient) {
     'rule-preview',
     'bank-connections',
     'recurrences',
+    'budgets',
+    'goals',
+    'reports',
   ])
 }
 
@@ -116,4 +129,27 @@ export function invalidateImportBatchesList(queryClient: QueryClient) {
 
 export function invalidateBankConnections(queryClient: QueryClient) {
   return invalidate(queryClient, ['bank-connections'])
+}
+
+/**
+ * Orçar/editar/remover uma categoria não muda transação, conta, cartão nem nada mais do razão —
+ * só a própria tela de orçamento. `invalidateLedger` inclui `budgets` pelo motivo contrário
+ * (transações mudam o gasto); mutações do orçamento em si usam esta, bem mais estreita.
+ */
+export function invalidateBudgets(queryClient: QueryClient) {
+  return invalidate(queryClient, ['budgets'])
+}
+
+/** Mesma lógica de `invalidateBudgets`: criar/editar/remover meta ou aporte só afeta metas. */
+export function invalidateGoals(queryClient: QueryClient) {
+  return invalidate(queryClient, ['goals'])
+}
+
+/**
+ * Notificações não entram em `invalidateLedger`: ler ou marcar como lida não muda saldo, lista
+ * ou resumo nenhum — só o sino (lista e `unread_count`), que esta chave cobre sozinha, prefixo
+ * comum de `notifications()` e `notificationsUnreadCount()`.
+ */
+export function invalidateNotifications(queryClient: QueryClient) {
+  return invalidate(queryClient, ['notifications'])
 }

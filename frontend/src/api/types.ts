@@ -66,7 +66,22 @@ export type RuleBody = {
 export type Recurrence = Schemas['RecurrenceResource']
 export type Frequency = Schemas['Frequency']
 
+export type MonthBudget = Schemas['MonthBudgetResource']
+export type BudgetItem = MonthBudget['items'][number]
+export type BudgetSource = BudgetItem['source']
+
+export type Goal = Schemas['GoalResource']
+export type GoalContribution = Schemas['GoalContributionResource']
+
+export type ReportBasis = Schemas['ReportBasis']
+export type MonthlyEvolution = Schemas['MonthlyEvolutionResource']
+export type MonthlyEvolutionMonth = MonthlyEvolution['months'][number]
+export type CategoryComparison = Schemas['CategoryComparisonResource']
+export type CategoryComparisonItem = CategoryComparison['items'][number]
+
 export type BankConnection = Schemas['BankConnectionResource']
+
+export type Notification = Schemas['NotificationResource']
 export type ConnectionStatus = Schemas['ConnectionStatus']
 export type BankProviderName = Schemas['BankProviderName']
 export type ConnectionAccount = BankConnection['accounts'][number]

@@ -5,14 +5,19 @@ use App\Http\Controllers\Api\V1\Auth\AuthStatusController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\SessionController;
 use App\Http\Controllers\Api\V1\BankConnectionController;
+use App\Http\Controllers\Api\V1\BudgetController;
 use App\Http\Controllers\Api\V1\CardController;
 use App\Http\Controllers\Api\V1\CardStatementController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\GoalContributionController;
+use App\Http\Controllers\Api\V1\GoalController;
 use App\Http\Controllers\Api\V1\ImportBatchController;
 use App\Http\Controllers\Api\V1\InstallmentPlanController;
 use App\Http\Controllers\Api\V1\MeController;
+use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\RecurrenceController;
+use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\RuleController;
 use App\Http\Controllers\Api\V1\TagController;
 use App\Http\Controllers\Api\V1\TransactionController;
@@ -33,6 +38,28 @@ Route::prefix('v1')->group(function () {
         Route::get('me', [MeController::class, 'show']);
         Route::patch('me', [MeController::class, 'update']);
         Route::get('dashboard', DashboardController::class);
+
+        Route::get('notifications', [NotificationController::class, 'index']);
+        // read-all antes de {notification}, por clareza (mesma convenção de
+        // rules/order e import-batches/{batch}/revert): "read-all" não é um
+        // uuid, então whereUuid já evitaria a colisão, mas o agrupamento
+        // deixa a leitura mais direta.
+        Route::post('notifications/read-all', [NotificationController::class, 'readAll']);
+        Route::post('notifications/{notification}/read', [NotificationController::class, 'read'])->whereUuid('notification');
+
+        Route::get('budgets', [BudgetController::class, 'index']);
+        Route::put('budgets', [BudgetController::class, 'save']);
+        Route::delete('budgets', [BudgetController::class, 'destroy']);
+
+        Route::apiResource('goals', GoalController::class)->except('update')->where(['goal' => '[0-9]+']);
+        Route::patch('goals/{goal}', [GoalController::class, 'update'])->whereNumber('goal');
+        Route::get('goals/{goal}/contributions', [GoalContributionController::class, 'index'])->whereNumber('goal');
+        Route::post('goals/{goal}/contributions', [GoalContributionController::class, 'store'])->whereNumber('goal');
+        Route::delete('goals/{goal}/contributions/{contribution}', [GoalContributionController::class, 'destroy'])
+            ->whereNumber('goal')->whereNumber('contribution');
+
+        Route::get('reports/monthly', [ReportController::class, 'monthly']);
+        Route::get('reports/categories', [ReportController::class, 'categories']);
 
         // Updates são parciais (PATCH): apiResource()->except('update') tira o
         // PUT/PATCH padrão (que registraria os dois verbos) e o Route::patch

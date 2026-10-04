@@ -202,6 +202,36 @@ it('item em WAITING_USER_INPUT também vira needs_reauth', function () {
         ->and($connection->last_error)->toBe('O banco pediu para reconectar.');
 });
 
+it('notifica o usuário quando a conexão passa a pedir reconexão', function () {
+    $connection = BankConnection::factory()->active()->create([
+        'user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now(),
+        'institution_name' => 'Banco Fictício',
+    ]);
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId, 'status' => 'LOGIN_ERROR', 'errorMessage' => 'Senha incorreta.']);
+
+    runConnectionSync($connection->id);
+
+    $notification = $this->user->notifications()->first();
+    expect($notification)->not->toBeNull()
+        ->and($notification->data)->toMatchArray([
+            'type' => 'needs_reauth',
+            'key' => "needs_reauth:{$connection->id}:".CarbonImmutable::today()->toDateString(),
+            'body' => 'O Banco Fictício pediu para reconectar.',
+            'url' => '/contas',
+        ]);
+});
+
+it('não notifica quando a conexão já estava needs_reauth (o próprio gate inicial já bloqueia o sync)', function () {
+    $connection = BankConnection::factory()->needsReauth()->create([
+        'user_id' => $this->user->id, 'external_id' => $this->itemId, 'institution_name' => 'Banco Fictício',
+    ]);
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId, 'status' => 'LOGIN_ERROR', 'errorMessage' => 'Senha incorreta.']);
+
+    runConnectionSync($connection->id);
+
+    expect($this->user->notifications()->count())->toBe(0);
+});
+
 it('item OUTDATED segue com o que o banco já tem', function () {
     $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
     $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId, 'status' => 'OUTDATED']);
