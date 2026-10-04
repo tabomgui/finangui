@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query'
-import type { Direction } from '@/api/types'
+import type { Direction, ReportBasis } from '@/api/types'
 
 export type TransactionFilters = {
   account_id?: number
@@ -47,6 +47,9 @@ export const queryKeys = {
   budgets: (month: string) => ['budgets', month] as const,
   goals: () => ['goals'] as const,
   goalContributions: (goalId: number) => ['goals', goalId, 'contributions'] as const,
+  reportMonthly: (from: string, to: string, basis: ReportBasis) => ['reports', 'monthly', { from, to, basis }] as const,
+  reportCategories: (aFrom: string, aTo: string, bFrom: string, bTo: string, basis: ReportBasis) =>
+    ['reports', 'categories', { aFrom, aTo, bFrom, bTo, basis }] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {

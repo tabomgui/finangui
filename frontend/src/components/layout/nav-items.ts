@@ -1,5 +1,6 @@
 import {
   ArrowLeftRight,
+  ChartColumn,
   CreditCard,
   FileUp,
   House,
@@ -32,6 +33,7 @@ export const moreNav: NavItem[] = [
   { to: '/importar', label: 'Importar extrato', icon: FileUp },
   { to: '/orcamento', label: 'Orçamento', icon: PiggyBank },
   { to: '/metas', label: 'Metas', icon: Target },
+  { to: '/relatorios', label: 'Relatórios', icon: ChartColumn },
   { to: '/categorias', label: 'Categorias', icon: Shapes },
   { to: '/tags', label: 'Tags', icon: Tags },
   { to: '/regras', label: 'Regras', icon: Wand2 },
