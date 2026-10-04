@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\V1\GoalController;
 use App\Http\Controllers\Api\V1\ImportBatchController;
 use App\Http\Controllers\Api\V1\InstallmentPlanController;
 use App\Http\Controllers\Api\V1\MeController;
+use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\RecurrenceController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\RuleController;
@@ -37,6 +38,14 @@ Route::prefix('v1')->group(function () {
         Route::get('me', [MeController::class, 'show']);
         Route::patch('me', [MeController::class, 'update']);
         Route::get('dashboard', DashboardController::class);
+
+        Route::get('notifications', [NotificationController::class, 'index']);
+        // read-all antes de {notification}, por clareza (mesma convenção de
+        // rules/order e import-batches/{batch}/revert): "read-all" não é um
+        // uuid, então whereUuid já evitaria a colisão, mas o agrupamento
+        // deixa a leitura mais direta.
+        Route::post('notifications/read-all', [NotificationController::class, 'readAll']);
+        Route::post('notifications/{notification}/read', [NotificationController::class, 'read'])->whereUuid('notification');
 
         Route::get('budgets', [BudgetController::class, 'index']);
         Route::put('budgets', [BudgetController::class, 'save']);

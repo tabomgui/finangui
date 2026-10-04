@@ -16,12 +16,15 @@ use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Support\AccountMapper;
 use App\Domain\Banking\Support\ItemRefresher;
+use App\Domain\Notifications\Notifications\ConnectionNeedsReauthNotification;
+use App\Domain\Notifications\Support\NotificationDeduper;
 use App\Models\User;
 use App\Support\UserContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -384,8 +387,36 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
                 $attributes['last_synced_at'] = $syncedAt;
             }
 
+            $wasNeedsReauth = $locked->status === ConnectionStatus::NeedsReauth;
+
             $locked->update($attributes);
+
+            if ($status === ConnectionStatus::NeedsReauth && ! $wasNeedsReauth) {
+                $this->notifyNeedsReauth($locked);
+            }
         });
+    }
+
+    /**
+     * Roda sempre dentro de UserContext::run() (handle()/failed() já
+     * cuidam disso antes de chamar sync()/writeStatus()): Auth::user() é o
+     * dono da conexão. NotificationDeduper evita duplicar caso writeStatus()
+     * seja chamado de novo com o mesmo resultado antes do estado em memória
+     * refletir a mudança.
+     */
+    private function notifyNeedsReauth(BankConnection $connection): void
+    {
+        $user = Auth::user();
+
+        if (! $user instanceof User) {
+            return;
+        }
+
+        app(NotificationDeduper::class)->send($user, new ConnectionNeedsReauthNotification(
+            $connection->id,
+            $connection->institution_name,
+            CarbonImmutable::today()->toDateString(),
+        ));
     }
 
     /**
