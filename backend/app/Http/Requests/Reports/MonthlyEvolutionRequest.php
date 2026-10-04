@@ -4,13 +4,14 @@ namespace App\Http\Requests\Reports;
 
 use App\Domain\Reports\Enums\ReportBasis;
 use App\Http\Requests\ApiRequest;
+use App\Http\Requests\Reports\Concerns\ValidatesMonthRange;
 use Carbon\CarbonImmutable;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 final class MonthlyEvolutionRequest extends ApiRequest
 {
-    private const MAX_MONTHS = 24;
+    use ValidatesMonthRange;
 
     /**
      * @return array<string, mixed>
@@ -34,18 +35,7 @@ final class MonthlyEvolutionRequest extends ApiRequest
                 return;
             }
 
-            $from = $this->from();
-            $to = $this->to();
-
-            if ($to->lessThan($from)) {
-                $validator->errors()->add('to', 'O fim precisa ser igual ou depois do início.');
-
-                return;
-            }
-
-            if ($from->diffInMonths($to) >= self::MAX_MONTHS) {
-                $validator->errors()->add('to', 'O período não pode passar de '.self::MAX_MONTHS.' meses.');
-            }
+            $this->validateMonthRange($validator, $this->from(), $this->to(), 'to');
         }];
     }
 

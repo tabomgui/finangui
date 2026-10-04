@@ -49,6 +49,42 @@ it('move a compra do cartão para o mês do vencimento da fatura em basis=statem
         ->and($statement->json('data.months.1.expense'))->toBe(40000);
 });
 
+it('em basis=statement, um período que começa depois do mês da compra ainda traz a fatura', function () {
+    $card = Account::factory()->creditCard(closingDay: 3, dueDay: 10)->create();
+
+    // Compra em janeiro, fatura vence em fevereiro: um período que só
+    // pede fevereiro (sem incluir janeiro) precisa trazer essa compra —
+    // filtrar pela data da fatura, nunca pela data da compra em si.
+    $this->postJson('/api/v1/transactions', [
+        'account_id' => $card->id, 'date' => '2026-01-15', 'amount' => 40000, 'direction' => 'out', 'description' => 'Compra',
+    ])->assertCreated();
+
+    $statement = $this->getJson('/api/v1/reports/monthly?from=2026-02&to=2026-02&basis=statement')->assertOk();
+
+    expect($statement->json('data.months'))->toBe([
+        ['month' => '2026-02', 'income' => 0, 'expense' => 40000, 'net' => -40000],
+    ]);
+});
+
+it('exclui transferências, ignoradas, pendentes, projetadas e de outra moeda', function () {
+    $other = Account::factory()->create();
+    $usd = Account::factory()->create(['currency' => 'USD']);
+
+    Transaction::factory()->for($this->account)->create(['date' => '2026-01-05', 'amount' => 1000, 'is_ignored' => true]);
+    Transaction::factory()->for($this->account)->create(['date' => '2026-01-06', 'amount' => 2000, 'status' => 'pending']);
+    Transaction::factory()->for($this->account)->create(['date' => '2026-01-07', 'amount' => 3000, 'status' => 'projected']);
+    Transaction::factory()->for($usd)->create(['date' => '2026-01-08', 'amount' => 4000, 'currency' => 'USD']);
+    $this->postJson('/api/v1/transfers', [
+        'from_account_id' => $this->account->id, 'to_account_id' => $other->id,
+        'date' => '2026-01-09', 'amount' => 5000, 'description' => 'Reserva',
+    ])->assertCreated();
+
+    Transaction::factory()->for($this->account)->create(['date' => '2026-01-10', 'amount' => 6000]);
+
+    $this->getJson('/api/v1/reports/monthly?from=2026-01&to=2026-01')
+        ->assertJsonPath('data.months.0.expense', 6000);
+});
+
 it('não muda contas que não são de cartão em basis=statement', function () {
     Transaction::factory()->for($this->account)->create(['date' => '2026-01-15', 'amount' => 40000]);
 

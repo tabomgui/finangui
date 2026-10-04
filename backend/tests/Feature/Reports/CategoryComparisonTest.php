@@ -75,12 +75,57 @@ it('move a compra do cartão para o período do vencimento da fatura em basis=st
     expect(collect($statement->json('data.items'))->firstWhere('category_id', $category->id)['b'])->toBe(40000);
 });
 
+it('em basis=statement, um período que começa depois do mês da compra ainda traz a fatura', function () {
+    $card = Account::factory()->creditCard(closingDay: 3, dueDay: 10)->create();
+    $category = Category::factory()->create();
+
+    $this->postJson('/api/v1/transactions', [
+        'account_id' => $card->id, 'date' => '2026-01-15', 'amount' => 40000, 'direction' => 'out',
+        'description' => 'Compra', 'category_id' => $category->id,
+    ])->assertCreated();
+
+    $response = $this->getJson('/api/v1/reports/categories?a_from=2026-02&a_to=2026-02&b_from=2026-02&b_to=2026-02&basis=statement')->assertOk();
+
+    expect(collect($response->json('data.items'))->firstWhere('category_id', $category->id)['a'])->toBe(40000);
+});
+
+it('exclui transferências, ignoradas, pendentes, projetadas e de outra moeda', function () {
+    $category = Category::factory()->create();
+    $other = Account::factory()->create();
+    $usd = Account::factory()->create(['currency' => 'USD']);
+
+    Transaction::factory()->for($this->account)->create(['date' => '2026-01-05', 'amount' => 1000, 'category_id' => $category->id, 'is_ignored' => true]);
+    Transaction::factory()->for($this->account)->create(['date' => '2026-01-06', 'amount' => 2000, 'category_id' => $category->id, 'status' => 'pending']);
+    Transaction::factory()->for($this->account)->create(['date' => '2026-01-07', 'amount' => 3000, 'category_id' => $category->id, 'status' => 'projected']);
+    Transaction::factory()->for($usd)->create(['date' => '2026-01-08', 'amount' => 4000, 'currency' => 'USD', 'category_id' => $category->id]);
+    $this->postJson('/api/v1/transfers', [
+        'from_account_id' => $this->account->id, 'to_account_id' => $other->id,
+        'date' => '2026-01-09', 'amount' => 5000, 'description' => 'Reserva',
+    ])->assertCreated();
+
+    Transaction::factory()->for($this->account)->create(['date' => '2026-01-10', 'amount' => 6000, 'category_id' => $category->id]);
+
+    $response = $this->getJson('/api/v1/reports/categories?a_from=2026-01&a_to=2026-01&b_from=2026-01&b_to=2026-01')->assertOk();
+
+    expect(collect($response->json('data.items'))->firstWhere('category_id', $category->id)['a'])->toBe(6000);
+});
+
 it('exige from <= to em cada período', function () {
     $this->getJson('/api/v1/reports/categories?a_from=2026-02&a_to=2026-01&b_from=2026-01&b_to=2026-02')
         ->assertStatus(422)->assertJsonValidationErrors('a_to');
 
     $this->getJson('/api/v1/reports/categories?a_from=2026-01&a_to=2026-01&b_from=2026-02&b_to=2026-01')
         ->assertStatus(422)->assertJsonValidationErrors('b_to');
+});
+
+it('limita cada período a 24 meses', function () {
+    $this->getJson('/api/v1/reports/categories?a_from=2024-01&a_to=2026-02&b_from=2026-01&b_to=2026-01')
+        ->assertStatus(422)->assertJsonValidationErrors('a_to');
+
+    $this->getJson('/api/v1/reports/categories?a_from=2026-01&a_to=2026-01&b_from=2024-01&b_to=2026-02')
+        ->assertStatus(422)->assertJsonValidationErrors('b_to');
+
+    $this->getJson('/api/v1/reports/categories?a_from=2024-01&a_to=2025-12&b_from=2026-01&b_to=2026-01')->assertOk();
 });
 
 it('isola a comparação por categoria por usuário', function () {

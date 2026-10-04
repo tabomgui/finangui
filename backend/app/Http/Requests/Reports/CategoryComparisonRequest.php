@@ -4,12 +4,15 @@ namespace App\Http\Requests\Reports;
 
 use App\Domain\Reports\Enums\ReportBasis;
 use App\Http\Requests\ApiRequest;
+use App\Http\Requests\Reports\Concerns\ValidatesMonthRange;
 use Carbon\CarbonImmutable;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 final class CategoryComparisonRequest extends ApiRequest
 {
+    use ValidatesMonthRange;
+
     /**
      * @return array<string, mixed>
      */
@@ -34,13 +37,8 @@ final class CategoryComparisonRequest extends ApiRequest
                 return;
             }
 
-            if ($this->aTo()->lessThan($this->aFrom())) {
-                $validator->errors()->add('a_to', 'O fim precisa ser igual ou depois do início.');
-            }
-
-            if ($this->bTo()->lessThan($this->bFrom())) {
-                $validator->errors()->add('b_to', 'O fim precisa ser igual ou depois do início.');
-            }
+            $this->validateMonthRange($validator, $this->aFrom(), $this->aTo(), 'a_to');
+            $this->validateMonthRange($validator, $this->bFrom(), $this->bTo(), 'b_to');
         }];
     }
 
