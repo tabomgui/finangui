@@ -3,7 +3,6 @@
 use App\Domain\Accounts\Enums\AccountType;
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Banking\Actions\LinkAccounts;
-use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Data\ProviderItem;
 use App\Domain\Banking\Enums\ConnectionStatus;
@@ -11,7 +10,6 @@ use App\Domain\Banking\Errors\AccountNoLongerLinkable;
 use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Banking\Jobs\SyncConnection;
 use App\Domain\Banking\Models\BankConnection;
-use App\Domain\Banking\Providers\FakeBankProvider;
 use App\Domain\Banking\Support\PendingProviderAccounts;
 use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Models\Transaction;
@@ -51,8 +49,7 @@ function providerAccount(array $overrides = []): ProviderAccount
 }
 
 beforeEach(function () {
-    $this->fake = new FakeBankProvider;
-    app()->instance(BankProvider::class, $this->fake);
+    $this->fake = fakeBankProvider();
     $this->user = actingAsUser();
 });
 

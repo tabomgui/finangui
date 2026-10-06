@@ -2,7 +2,7 @@
 
 namespace App\Domain\Banking\Actions;
 
-use App\Domain\Banking\Contracts\BankProvider;
+use App\Domain\Banking\Contracts\BankProviderFactory;
 use App\Domain\Banking\Data\ProviderAccountSuggestion;
 use App\Domain\Banking\Enums\BankProviderName;
 use App\Domain\Banking\Enums\ConnectionStatus;
@@ -27,14 +27,16 @@ use Illuminate\Database\UniqueConstraintViolationException;
  */
 final class CreateConnection
 {
-    public function __construct(private readonly BankProvider $provider) {}
+    public function __construct(private readonly BankProviderFactory $providerFactory) {}
 
     /**
      * @return array{connection: BankConnection, providerAccounts: list<ProviderAccountSuggestion>}
      */
     public function handle(User $user, string $itemId): array
     {
-        $item = $this->provider->item($itemId);
+        $provider = $this->providerFactory->for($user);
+
+        $item = $provider->item($itemId);
 
         if ($item->clientUserId !== self::clientUserId($user)) {
             throw new ConnectionItemMismatch;
@@ -50,7 +52,7 @@ final class CreateConnection
             throw new ConnectionItemMismatch;
         }
 
-        $accounts = $this->provider->accounts($itemId);
+        $accounts = $provider->accounts($itemId);
 
         if ($accounts === []) {
             throw new ConnectionWithoutAccounts;

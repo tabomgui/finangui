@@ -26,19 +26,36 @@ use Throwable;
 /**
  * Cliente da API da Pluggy (https://docs.pluggy.ai). Único lugar do app que
  * fala HTTP com o provedor; o resto do domínio Banking conhece só o
- * contrato {@see BankProvider}.
+ * contrato {@see BankProvider}. Uma instância é sempre de um usuário
+ * específico, com as credenciais dele (client_id/client_secret, cadastradas
+ * em App\Domain\Banking\Models\BankCredential) — montada por
+ * App\Domain\Banking\Providers\Pluggy\PluggyProviderFactory, nunca
+ * diretamente.
  */
 final class PluggyProvider implements BankProvider
 {
-    private const API_KEY_CACHE_KEY = 'pluggy.api_key';
+    private const API_KEY_CACHE_PREFIX = 'pluggy.api_key';
 
     private const CATEGORIES_CACHE_KEY = 'pluggy.categories';
 
     private const MAX_TRANSACTION_PAGES = 200;
 
-    public function enabled(): bool
+    public function __construct(
+        private readonly string $clientId,
+        private readonly string $clientSecret,
+        private readonly string $baseUrl,
+        private readonly int $userId,
+    ) {}
+
+    /**
+     * Chave de cache da API key deste usuário — mistura user_id e um hash do
+     * client_id, para duas credenciais diferentes (ou dois usuários) nunca
+     * compartilharem a mesma entrada, mesmo com uma trocando de conta Pluggy
+     * (client_id novo) e a key antiga ainda não vencida.
+     */
+    public static function apiKeyCacheKeyFor(int $userId, string $clientId): string
     {
-        return filled(config('services.pluggy.client_id')) && filled(config('services.pluggy.client_secret'));
+        return self::API_KEY_CACHE_PREFIX.'.'.$userId.'.'.sha1($clientId);
     }
 
     public function connectToken(string $clientUserId, ?string $itemId = null): string
@@ -298,7 +315,7 @@ final class PluggyProvider implements BankProvider
             // A key cacheada localmente por ~1h50 pode já ter sido revogada
             // do lado da Pluggy antes disso (TTL real é 2h): esquece e tenta
             // de novo uma única vez com uma key nova.
-            Cache::forget(self::API_KEY_CACHE_KEY);
+            Cache::forget($this->apiKeyCacheKey());
             $response = $this->send($method, $uri, $options);
 
             if ($response->status() === 401) {
@@ -373,14 +390,16 @@ final class PluggyProvider implements BankProvider
 
     private function client(): PendingRequest
     {
-        /** @var string $baseUrl */
-        $baseUrl = config('services.pluggy.base_url');
-
-        return Http::baseUrl($baseUrl)
+        return Http::baseUrl($this->baseUrl)
             ->withHeaders(['X-API-KEY' => $this->apiKey()])
             ->acceptJson()
             ->timeout(20)
             ->connectTimeout(5);
+    }
+
+    private function apiKeyCacheKey(): string
+    {
+        return self::apiKeyCacheKeyFor($this->userId, $this->clientId);
     }
 
     /**
@@ -391,21 +410,18 @@ final class PluggyProvider implements BankProvider
     private function apiKey(): string
     {
         /** @var string $encrypted */
-        $encrypted = Cache::remember(self::API_KEY_CACHE_KEY, now()->addMinutes(110), function (): string {
-            /** @var string $baseUrl */
-            $baseUrl = config('services.pluggy.base_url');
-
+        $encrypted = Cache::remember($this->apiKeyCacheKey(), now()->addMinutes(110), function (): string {
             try {
                 // POST /auth — troca client_id/client_secret por uma API key
                 // válida por 2h; cacheamos por ~1h50 pra sempre renovar antes
                 // do vencimento real.
-                $response = Http::baseUrl($baseUrl)
+                $response = Http::baseUrl($this->baseUrl)
                     ->acceptJson()
                     ->timeout(20)
                     ->connectTimeout(5)
                     ->post('/auth', [
-                        'clientId' => config('services.pluggy.client_id'),
-                        'clientSecret' => config('services.pluggy.client_secret'),
+                        'clientId' => $this->clientId,
+                        'clientSecret' => $this->clientSecret,
                     ]);
             } catch (ConnectionException $e) {
                 throw new ProviderUnavailable('Falha de rede ao autenticar na Pluggy.', previous: $e);
@@ -440,7 +456,7 @@ final class PluggyProvider implements BankProvider
         } catch (DecryptException) {
             // Cache de antes desta mudança (texto puro) ou corrompido: força
             // reautenticar, em vez de devolver lixo como se fosse a key.
-            Cache::forget(self::API_KEY_CACHE_KEY);
+            Cache::forget($this->apiKeyCacheKey());
 
             return $this->apiKey();
         }

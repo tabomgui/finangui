@@ -3,7 +3,7 @@
 namespace App\Domain\Banking\Actions;
 
 use App\Domain\Accounts\Models\Account;
-use App\Domain\Banking\Contracts\BankProvider;
+use App\Domain\Banking\Contracts\BankProviderFactory;
 use App\Domain\Banking\Data\ProviderCategory;
 use App\Domain\Banking\Data\ProviderTransaction;
 use App\Domain\Banking\Support\TransactionMapper;
@@ -58,7 +58,7 @@ final class SyncTransactions
     private const STALE_PENDING_DAYS = 10;
 
     public function __construct(
-        private readonly BankProvider $provider,
+        private readonly BankProviderFactory $providerFactory,
         private readonly IngestTransactions $ingest,
         private readonly UnlinkTransfer $unlinkTransfer,
         private readonly DetectTransfers $detectTransfers,
@@ -125,7 +125,10 @@ final class SyncTransactions
         }
 
         try {
-            $fullListing = $this->provider->transactions(
+            // Mesmo dono da conta (não Auth::user()): esta limpeza pode rodar bem
+            // depois de SyncConnection trocar de usuário dentro do mesmo processo,
+            // em teoria — o dono da conexão é sempre a fonte certa aqui.
+            $fullListing = $this->providerFactory->for($account->user)->transactions(
                 $account->external_id,
                 $creditCard,
                 CarbonImmutable::parse($oldestStaleDate),

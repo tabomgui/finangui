@@ -42,8 +42,8 @@ return [
     ],
 
     'pluggy' => [
-        'client_id' => env('PLUGGY_CLIENT_ID'),
-        'client_secret' => env('PLUGGY_CLIENT_SECRET'),
+        // client_id/client_secret são por usuário (App\Domain\Banking\Models\BankCredential),
+        // não configuração da instância — nunca vêm do .env.
         // `?:`, não o segundo argumento de env(): o .env.example traz
         // PLUGGY_BASE_URL="" (string vazia, não ausente) — com o segundo
         // argumento de env(), o default nunca entraria em jogo.

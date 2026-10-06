@@ -2,11 +2,9 @@
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Banking\Actions\SyncTransactions;
-use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Data\ProviderCategory;
 use App\Domain\Banking\Data\ProviderTransaction;
 use App\Domain\Banking\Errors\ProviderUnavailable;
-use App\Domain\Banking\Providers\FakeBankProvider;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Models\InstallmentPlan;
 use App\Domain\Categories\Models\Category;
@@ -37,8 +35,7 @@ function syncProviderTransaction(array $overrides = []): ProviderTransaction
 
 beforeEach(function () {
     $this->user = actingAsUser();
-    $this->fake = new FakeBankProvider;
-    app()->instance(BankProvider::class, $this->fake);
+    $this->fake = fakeBankProvider();
     $this->action = app(SyncTransactions::class);
     $this->now = CarbonImmutable::parse('2026-10-03');
 });

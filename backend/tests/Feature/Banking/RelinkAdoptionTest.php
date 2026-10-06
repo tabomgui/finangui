@@ -5,12 +5,10 @@ use App\Domain\Banking\Actions\CreateConnection;
 use App\Domain\Banking\Actions\DisconnectConnection;
 use App\Domain\Banking\Actions\LinkAccounts;
 use App\Domain\Banking\Actions\SyncTransactions;
-use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Data\ProviderItem;
 use App\Domain\Banking\Data\ProviderTransaction;
 use App\Domain\Banking\Models\BankConnection;
-use App\Domain\Banking\Providers\FakeBankProvider;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Enums\TransactionSource;
@@ -43,8 +41,7 @@ function relinkProviderAccount(string $id, string $kind = 'checking'): ProviderA
 
 beforeEach(function () {
     $this->user = actingAsUser();
-    $this->fake = new FakeBankProvider;
-    app()->instance(BankProvider::class, $this->fake);
+    $this->fake = fakeBankProvider();
 });
 
 it('vincular uma conta com histórico importado por OFX adota, em vez de duplicar, quando o banco relata o mesmo lançamento', function () {

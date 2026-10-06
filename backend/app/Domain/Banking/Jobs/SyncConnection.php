@@ -7,9 +7,11 @@ use App\Domain\Banking\Actions\SyncAccounts;
 use App\Domain\Banking\Actions\SyncBills;
 use App\Domain\Banking\Actions\SyncTransactions;
 use App\Domain\Banking\Contracts\BankProvider;
+use App\Domain\Banking\Contracts\BankProviderFactory;
 use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Data\ProviderCategory;
 use App\Domain\Banking\Enums\ConnectionStatus;
+use App\Domain\Banking\Errors\BankingDisabled;
 use App\Domain\Banking\Errors\ProviderAuthFailed;
 use App\Domain\Banking\Errors\ProviderRequestFailed;
 use App\Domain\Banking\Errors\ProviderUnavailable;
@@ -85,7 +87,7 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
     }
 
     public function handle(
-        BankProvider $provider,
+        BankProviderFactory $providerFactory,
         AccountMapper $accountMapper,
         ItemRefresher $itemRefresher,
         SyncAccounts $syncAccounts,
@@ -106,11 +108,12 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        UserContext::run($user, fn () => $this->sync($provider, $accountMapper, $itemRefresher, $syncAccounts, $syncBills, $syncTransactions));
+        UserContext::run($user, fn () => $this->sync($providerFactory, $user, $accountMapper, $itemRefresher, $syncAccounts, $syncBills, $syncTransactions));
     }
 
     private function sync(
-        BankProvider $provider,
+        BankProviderFactory $providerFactory,
+        User $user,
         AccountMapper $accountMapper,
         ItemRefresher $itemRefresher,
         SyncAccounts $syncAccounts,
@@ -127,6 +130,13 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
         $syncStartedAt = CarbonImmutable::now();
 
         try {
+            // Credenciais do dono da conexão (não um provedor global) — resolvidas
+            // dentro do try: sem credenciais válidas (não deveria acontecer, já que
+            // remover/trocar credenciais exige zero conexões — ver
+            // App\Domain\Banking\Models\BankCredential) cai no catch(BankingDisabled)
+            // abaixo em vez de derrubar o job.
+            $provider = $providerFactory->for($user);
+
             $item = $provider->item($connection->external_id);
             $item = $itemRefresher->refreshAndWait($provider, $connection, $item, $syncStartedAt);
 
@@ -161,12 +171,20 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
                     $categoriesById,
                 );
             }
+        } catch (BankingDisabled) {
+            // Não deveria acontecer (remover ou trocar as credenciais exige zero
+            // conexões — ver App\Domain\Banking\Models\BankCredential), mas se a
+            // conexão ficar sem credenciais do dono por qualquer outro motivo, é
+            // uma falha permanente: não insiste.
+            $this->writeStatus(ConnectionStatus::Error, 'Integração bancária não configurada.');
+
+            return;
         } catch (ProviderAuthFailed) {
-            // Falha permanente (credenciais do servidor recusadas): não
+            // Falha permanente (credenciais recusadas pela Pluggy): não
             // insiste — nenhuma tentativa seguinte mudaria o resultado.
             // Sem rethrow: o job termina "com sucesso" para a fila (sem
             // retry), o estado de erro é que carrega a notícia.
-            $this->writeStatus(ConnectionStatus::Error, 'Credenciais do servidor recusadas pela Pluggy.');
+            $this->writeStatus(ConnectionStatus::Error, 'A Pluggy recusou suas credenciais. Atualize em Configurações.');
 
             return;
         } catch (ProviderRequestFailed $e) {

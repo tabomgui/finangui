@@ -13,23 +13,10 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 beforeEach(function () {
-    config([
-        'services.pluggy.client_id' => 'test-client-id',
-        'services.pluggy.client_secret' => 'test-client-secret',
-        'services.pluggy.base_url' => 'https://api.pluggy.ai',
-    ]);
+    $this->clientId = 'test-client-id';
+    $this->userId = 1;
 
-    $this->provider = new PluggyProvider;
-});
-
-it('está desligado sem client_id/client_secret', function () {
-    config(['services.pluggy.client_id' => null]);
-
-    expect($this->provider->enabled())->toBeFalse();
-
-    config(['services.pluggy.client_id' => 'test-client-id']);
-
-    expect($this->provider->enabled())->toBeTrue();
+    $this->provider = new PluggyProvider($this->clientId, 'test-client-secret', 'https://api.pluggy.ai', $this->userId);
 });
 
 it('autentica uma única vez e reaproveita a key entre chamadas', function () {
@@ -731,14 +718,15 @@ it('a key fica cacheada criptografada, nunca em texto puro', function () {
 
     $this->provider->item('00000000-0000-0000-0000-000000000001');
 
-    $cached = Cache::get('pluggy.api_key');
+    $cacheKey = PluggyProvider::apiKeyCacheKeyFor($this->userId, $this->clientId);
+    $cached = Cache::get($cacheKey);
     expect($cached)->not->toBeNull()
         ->and($cached)->not->toBe('super-secret-key')
         ->and(Crypt::decryptString($cached))->toBe('super-secret-key');
 });
 
 it('cache antigo em texto puro (de antes da criptografia) é descartado e reautentica', function () {
-    Cache::put('pluggy.api_key', 'plaintext-key-from-before', now()->addMinutes(110));
+    Cache::put(PluggyProvider::apiKeyCacheKeyFor($this->userId, $this->clientId), 'plaintext-key-from-before', now()->addMinutes(110));
 
     Http::fake([
         'api.pluggy.ai/auth' => Http::response(['apiKey' => 'fresh-key']),
@@ -756,5 +744,5 @@ it('/auth respondendo 2xx sem apiKey vira ProviderUnavailable, sem cachear uma k
     ]);
 
     expect(fn () => $this->provider->item('item-1'))->toThrow(ProviderUnavailable::class);
-    expect(Cache::get('pluggy.api_key'))->toBeNull();
+    expect(Cache::get(PluggyProvider::apiKeyCacheKeyFor($this->userId, $this->clientId)))->toBeNull();
 });

@@ -97,8 +97,7 @@ function providerFailingOn(FakeBankProvider $delegate, string $failingMethod, Th
 }
 
 beforeEach(function () {
-    $this->fake = new FakeBankProvider;
-    app()->instance(BankProvider::class, $this->fake);
+    $this->fake = fakeBankProvider();
     $this->user = actingAsUser();
     $this->itemId = '00000000-0000-0000-0000-0000000000f1';
 });
@@ -256,7 +255,7 @@ it('ProviderAuthFailed marca a conexão como erro sem relançar (sem retry)', fu
     runConnectionSync($connection->id);
 
     expect($connection->refresh()->status)->toBe(ConnectionStatus::Error)
-        ->and($connection->last_error)->toBe('Credenciais do servidor recusadas pela Pluggy.');
+        ->and($connection->last_error)->toBe('A Pluggy recusou suas credenciais. Atualize em Configurações.');
 });
 
 it('failed() grava um erro genérico depois de esgotadas as tentativas', function () {
@@ -418,7 +417,7 @@ it('não sobrescreve uma reconexão concorrente (active) com um needs_reauth cal
             return $this->delegate->categories();
         }
     };
-    app()->instance(BankProvider::class, $provider);
+    fakeBankProvider($provider);
 
     runConnectionSync($connection->id);
 
@@ -428,7 +427,7 @@ it('não sobrescreve uma reconexão concorrente (active) com um needs_reauth cal
 
 it('ProviderRequestFailed 404 (item sumiu no banco) grava uma mensagem específica, sem relançar', function () {
     $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId]);
-    app()->instance(BankProvider::class, providerFailingOn(new FakeBankProvider, 'item', new ProviderRequestFailed(404)));
+    fakeBankProvider(providerFailingOn(new FakeBankProvider, 'item', new ProviderRequestFailed(404)));
 
     runConnectionSync($connection->id);
 
@@ -438,7 +437,7 @@ it('ProviderRequestFailed 404 (item sumiu no banco) grava uma mensagem específi
 
 it('ProviderRequestFailed fora de 404 grava uma mensagem genérica de recusa, sem relançar', function () {
     $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId]);
-    app()->instance(BankProvider::class, providerFailingOn(new FakeBankProvider, 'item', new ProviderRequestFailed(422)));
+    fakeBankProvider(providerFailingOn(new FakeBankProvider, 'item', new ProviderRequestFailed(422)));
 
     runConnectionSync($connection->id);
 
@@ -451,7 +450,7 @@ it('refreshItem indisponível (ex.: 429) não derruba o sync: loga e segue com o
     $delegate = new FakeBankProvider;
     $delegate->items[$this->itemId] = providerItem(['id' => $this->itemId, 'status' => 'UPDATED', 'lastUpdatedAt' => CarbonImmutable::now()->subHours(21)]);
 
-    app()->instance(BankProvider::class, providerFailingOn($delegate, 'refreshItem', new ProviderUnavailable('429', retryAfter: 30)));
+    fakeBankProvider(providerFailingOn($delegate, 'refreshItem', new ProviderUnavailable('429', retryAfter: 30)));
 
     runConnectionSync($connection->id);
 
@@ -461,7 +460,7 @@ it('refreshItem indisponível (ex.: 429) não derruba o sync: loga e segue com o
 
 it('ProviderUnavailable com retryAfter solta o job de volta na fila com essa espera, em vez do backoff padrão', function () {
     $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId]);
-    app()->instance(BankProvider::class, providerFailingOn(new FakeBankProvider, 'item', new ProviderUnavailable('429', retryAfter: 45)));
+    fakeBankProvider(providerFailingOn(new FakeBankProvider, 'item', new ProviderUnavailable('429', retryAfter: 45)));
 
     $job = (new SyncConnection($connection->id))->withFakeQueueInteractions();
     app()->call([$job, 'handle']);
@@ -523,7 +522,7 @@ it('nunca ajusta o saldo de abertura de um cartão (fica sempre zero)', function
 describe('última tentativa e proteção de failed() contra regressão', function () {
     it('ProviderUnavailable na última tentativa grava erro direto, sem liberar de novo nem relançar', function () {
         $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId]);
-        app()->instance(BankProvider::class, providerFailingOn(new FakeBankProvider, 'item', new ProviderUnavailable('fora do ar')));
+        fakeBankProvider(providerFailingOn(new FakeBankProvider, 'item', new ProviderUnavailable('fora do ar')));
 
         $job = (new SyncConnection($connection->id))->withFakeQueueInteractions();
         $job->job->attempts = 3;
@@ -537,7 +536,7 @@ describe('última tentativa e proteção de failed() contra regressão', functio
 
     it('clampa retryAfter em 900s no máximo antes de liberar de volta na fila', function () {
         $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId]);
-        app()->instance(BankProvider::class, providerFailingOn(new FakeBankProvider, 'item', new ProviderUnavailable('429', retryAfter: 3600)));
+        fakeBankProvider(providerFailingOn(new FakeBankProvider, 'item', new ProviderUnavailable('429', retryAfter: 3600)));
 
         $job = (new SyncConnection($connection->id))->withFakeQueueInteractions();
         app()->call([$job, 'handle']);
@@ -563,7 +562,7 @@ describe('última tentativa e proteção de failed() contra regressão', functio
 
     it('failed() não sobrescreve uma reconexão concorrente (active) ocorrida depois que esta tentativa começou', function () {
         $connection = BankConnection::factory()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'status' => 'error', 'last_error' => 'erro antigo']);
-        app()->instance(BankProvider::class, providerFailingOn(new FakeBankProvider, 'item', new ProviderUnavailable('fora do ar')));
+        fakeBankProvider(providerFailingOn(new FakeBankProvider, 'item', new ProviderUnavailable('fora do ar')));
 
         // handle(): lockedConnection() grava settings.sync_meta (start_status
         // = error) antes de falar com o provedor; a falha propaga (não é a
@@ -585,7 +584,7 @@ describe('última tentativa e proteção de failed() contra regressão', functio
 
     it('failed() grava o erro quando a conexão continua active e sem sync mais novo depois do início desta tentativa', function () {
         $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()->subHours(1)]);
-        app()->instance(BankProvider::class, providerFailingOn(new FakeBankProvider, 'item', new ProviderUnavailable('fora do ar')));
+        fakeBankProvider(providerFailingOn(new FakeBankProvider, 'item', new ProviderUnavailable('fora do ar')));
 
         try {
             app()->call([new SyncConnection($connection->id), 'handle']);
