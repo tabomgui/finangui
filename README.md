@@ -80,9 +80,19 @@ A integração usa a [Pluggy](https://pluggy.ai) para conectar contas e cartões
 1. Crie uma conta em https://dashboard.pluggy.ai e pegue as credenciais do sandbox (ou de produção, depois).
 2. Cole `client_id` e `client_secret` no card de Configurações; salvar já testa as credenciais na Pluggy antes de gravar. Se precisar apontar para outro ambiente, `PLUGGY_BASE_URL` no `backend/.env` é opcional (vazio cai para `https://api.pluggy.ai`) — não existe mais `PLUGGY_CLIENT_ID`/`PLUGGY_CLIENT_SECRET` de instância.
 
-Sem credenciais verificadas cadastradas, a integração fica desligada para aquele usuário: o botão "Conectar banco" leva direto ao card de Configurações e os endpoints de conexão respondem 409 (`banking_disabled`). Trocar de `client_id` (outra conta Pluggy) ou remover a credencial é bloqueado enquanto houver conexões bancárias — desconecte os bancos primeiro; só o `client_secret` pode ser trocado livremente. Trocar o `APP_KEY` da instância torna as credenciais já salvas ilegíveis (tratadas como se não existissem) — o usuário precisa recadastrá-las.
+Sem credenciais verificadas cadastradas, a integração fica desligada para aquele usuário: o botão "Conectar banco" leva direto ao card de Configurações e os endpoints de conexão respondem 409 (`banking_disabled`). Trocar de `client_id` (outra conta Pluggy) ou remover a credencial só é bloqueado enquanto houver uma conexão bancária que já sincronizou com sucesso sob a conta atual — desconecte-a primeiro; uma conexão ainda não "adotada" por nenhuma conta (ver upgrade abaixo) ou de uma terceira conta nunca bloqueia, e o `client_secret` pode ser trocado livremente. Trocar o `APP_KEY` da instância torna as credenciais já salvas ilegíveis (tratadas como se não existissem) — o usuário precisa recadastrá-las.
 
 No sandbox da Pluggy, use o conector "Pluggy Bank" com usuário `user-ok`, senha `password-ok` e, se pedir MFA, o código `123456`.
+
+### Fazendo upgrade de uma instância com a conta Pluggy antiga (`PLUGGY_CLIENT_*`)
+
+Versões anteriores configuravam uma única conta Pluggy para toda a instância, por variável de ambiente. Depois do upgrade para credenciais por usuário:
+
+- Cada usuário que já tinha bancos conectados deve cadastrar, em Configurações, o mesmo `client_id`/`client_secret` que estava em `PLUGGY_CLIENT_ID`/`PLUGGY_CLIENT_SECRET` — assim as conexões existentes continuam falando com a mesma conta Pluggy que as criou. Salvar já dispara uma sincronização dessas conexões; a primeira que terminar com sucesso "adota" a conexão para a credencial (fica amarrada a ela), sem precisar reconectar nada no banco.
+- Qualquer outro usuário na mesma instância (multiusuário) precisa criar/registrar a própria aplicação na Pluggy e reconectar os bancos dele por ali — a conta antiga não é compartilhada automaticamente com outros usuários.
+- Depois de trocar de conta Pluggy, um item que ficou de fora (desconectado no app, ou nunca chegou a adotar a credencial nova) pode continuar existindo na conta antiga; delete-o direto no [painel da Pluggy](https://dashboard.pluggy.ai) se não for mais usar.
+
+Trocar o `APP_KEY` da instância (rotação de chave) também afeta as credenciais da Pluggy, criptografadas com ela: liste a chave antiga em `APP_PREVIOUS_KEYS` (suportado nativamente pelo Laravel) para elas continuarem legíveis durante a transição. Sem isso, toda credencial cadastrada antes da troca fica ilegível (tratada como não configurada) e precisa ser recadastrada.
 
 Depois de conectar, cada conexão sincroniza automaticamente a cada 6 horas (contas, saldo, faturas e transações) e também pode ser sincronizada na hora pelo botão "Sincronizar agora". Essa sincronização roda em fila (job) e depende do **worker e do scheduler estarem no ar** — ambos já sobem com `make up` em desenvolvimento. `DB_QUEUE_RETRY_AFTER=660` e o `--timeout=600` do worker (já configurados em `docker-compose.yml`/`docker-compose.prod.yml`) cobrem o pior caso desse job; não reduza um sem o outro.
 
