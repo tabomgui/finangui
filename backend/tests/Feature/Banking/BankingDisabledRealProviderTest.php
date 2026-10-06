@@ -4,8 +4,8 @@ use App\Domain\Banking\Models\BankConnection;
 
 /**
  * BankConnectionApiTest cobre banking_disabled com a fábrica fake
- * (FakeBankProvider::setEnabled(false), ver tests/Pest.php); este arquivo
- * prova a mesma regra com a fábrica real (App\Domain\Banking\Providers\Pluggy\PluggyProviderFactory),
+ * (disableBankProvider(), ver tests/Pest.php); este arquivo prova a mesma
+ * regra com a fábrica real (App\Domain\Banking\Providers\Pluggy\PluggyProviderFactory),
  * sem nenhum App\Domain\Banking\Models\BankCredential cadastrado para o usuário.
  */
 it('sem credenciais da Pluggy cadastradas, todas as rotas que falam com o provedor respondem 409 banking_disabled', function () {

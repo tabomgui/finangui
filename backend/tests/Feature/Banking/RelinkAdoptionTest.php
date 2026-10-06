@@ -67,7 +67,7 @@ it('vincular uma conta com histórico importado por OFX adota, em vez de duplica
         purchaseDate: null, billId: null,
     );
 
-    app(SyncTransactions::class)->handle($linked, [$bankRow], CarbonImmutable::now(), []);
+    app(SyncTransactions::class)->handle($this->fake, $linked, [$bankRow], CarbonImmutable::now(), []);
 
     expect(Transaction::query()->where('account_id', $account->id)->count())->toBe(1);
 
@@ -105,7 +105,7 @@ it('desconectar e vincular de novo a mesma conta não duplica o que o banco já 
         id: 'pluggy-old', date: $today, amountCents: 5000, direction: Direction::Out,
         description: 'Compra', pending: false, categoryId: null, installment: null, purchaseDate: null, billId: null,
     );
-    app(SyncTransactions::class)->handle($linked, [$firstSync], CarbonImmutable::now(), []);
+    app(SyncTransactions::class)->handle($this->fake, $linked, [$firstSync], CarbonImmutable::now(), []);
 
     expect(Transaction::query()->where('account_id', $account->id)->count())->toBe(1);
 
@@ -135,7 +135,7 @@ it('desconectar e vincular de novo a mesma conta não duplica o que o banco já 
         id: 'pluggy-new', date: $today, amountCents: 5000, direction: Direction::Out,
         description: 'Compra', pending: false, categoryId: null, installment: null, purchaseDate: null, billId: null,
     );
-    app(SyncTransactions::class)->handle($relinked, [$secondSync], CarbonImmutable::now(), []);
+    app(SyncTransactions::class)->handle($this->fake, $relinked, [$secondSync], CarbonImmutable::now(), []);
 
     expect(Transaction::query()->where('account_id', $account->id)->count())->toBe(1);
 

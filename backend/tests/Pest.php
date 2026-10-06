@@ -2,8 +2,9 @@
 
 use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Contracts\BankProviderFactory;
-use App\Domain\Banking\Errors\BankingDisabled;
+use App\Domain\Banking\Models\BankCredential;
 use App\Domain\Banking\Providers\FakeBankProvider;
+use App\Domain\Banking\Providers\FakeBankProviderFactory;
 use App\Domain\Imports\Support\Content;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -40,31 +41,47 @@ function pluggyFixture(string $name): array
 }
 
 /**
- * Substitui App\Domain\Banking\Contracts\BankProviderFactory por uma fábrica
- * fake que devolve $provider (um FakeBankProvider novo, por padrão) para
- * qualquer usuário — nenhum teste de domínio/HTTP precisa de credenciais
- * reais da Pluggy cadastradas para exercitar o Banking. Espelha
- * $provider->enabled() em BankingDisabled, para os testes que simulam
- * "usuário sem credenciais" com FakeBankProvider::setEnabled(false)
- * continuarem funcionando do jeito que funcionavam com o provedor global.
+ * Substitui App\Domain\Banking\Contracts\BankProviderFactory por uma
+ * App\Domain\Banking\Providers\FakeBankProviderFactory que devolve $provider
+ * (um FakeBankProvider novo, por padrão) para qualquer usuário — nenhum
+ * teste de domínio/HTTP precisa de credenciais reais da Pluggy cadastradas
+ * para exercitar o resto do Banking (mapeamento, sync, etc.). As rotas atrás
+ * de App\Http\Middleware\EnsureBankingEnabled, porém, continuam exigindo um
+ * App\Domain\Banking\Models\BankCredential de verdade no banco — ver
+ * verifiedBankCredential() — porque esse gate lê dali direto, não desta
+ * fábrica fake. Para simular "usuário sem credenciais" nos pontos que ainda
+ * falam com esta fábrica (ex.: App\Domain\Banking\Actions\DisconnectConnection),
+ * chame disableBankProvider() depois.
  */
 function fakeBankProvider(?BankProvider $provider = null): FakeBankProvider|BankProvider
 {
     $provider ??= new FakeBankProvider;
 
-    app()->instance(BankProviderFactory::class, new class($provider) implements BankProviderFactory
-    {
-        public function __construct(private readonly BankProvider $provider) {}
-
-        public function for(User $user): BankProvider
-        {
-            if (! $this->provider->enabled()) {
-                throw new BankingDisabled;
-            }
-
-            return $this->provider;
-        }
-    });
+    app()->instance(BankProviderFactory::class, new FakeBankProviderFactory($provider));
 
     return $provider;
+}
+
+/**
+ * Faz a fábrica fake (bindada por fakeBankProvider(), que precisa já ter
+ * rodado) lançar BankingDisabled para qualquer usuário.
+ */
+function disableBankProvider(): void
+{
+    /** @var FakeBankProviderFactory $factory */
+    $factory = app(BankProviderFactory::class);
+
+    $factory->disable();
+}
+
+/**
+ * Cadastra uma credencial da Pluggy verificada para $user — o bastante para
+ * App\Http\Middleware\EnsureBankingEnabled (e banking_enabled em
+ * App\Http\Resources\UserResource) considerarem a integração "ligada". As
+ * rotas de bank-connections que falam com o provedor de verdade usam
+ * fakeBankProvider() para isso (não a credencial em si).
+ */
+function verifiedBankCredential(User $user): BankCredential
+{
+    return BankCredential::factory()->create(['user_id' => $user->id]);
 }

@@ -10,6 +10,7 @@ use App\Domain\Banking\Errors\AccountNoLongerLinkable;
 use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Banking\Jobs\SyncConnection;
 use App\Domain\Banking\Models\BankConnection;
+use App\Domain\Banking\Models\BankCredential;
 use App\Domain\Banking\Support\PendingProviderAccounts;
 use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Models\Transaction;
@@ -51,6 +52,7 @@ function providerAccount(array $overrides = []): ProviderAccount
 beforeEach(function () {
     $this->fake = fakeBankProvider();
     $this->user = actingAsUser();
+    verifiedBankCredential($this->user);
 });
 
 describe('connect-token', function () {
@@ -724,7 +726,14 @@ describe('desconectar', function () {
 
 describe('banking_disabled', function () {
     beforeEach(function () {
-        $this->fake->setEnabled(false);
+        // EnsureBankingEnabled (connect-token/store/link-accounts/reconnected/sync)
+        // lê direto do banco (BankCredential::isVerifiedFor()), não da fábrica fake —
+        // some com a credencial criada no beforeEach de fora para simular isso.
+        BankCredential::query()->delete();
+        // destroy fica fora daquele middleware; quem checa credenciais ali é
+        // DisconnectConnection, direto na fábrica — esta ainda precisa saber
+        // que está "desligada".
+        disableBankProvider();
     });
 
     it('bloqueia as rotas que falam com o provedor', function () {

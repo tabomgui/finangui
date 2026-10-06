@@ -2,7 +2,6 @@
 
 namespace App\Http\Resources;
 
-use App\Domain\Banking\Enums\BankProviderName;
 use App\Domain\Banking\Models\BankCredential;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -30,12 +29,7 @@ final class UserResource extends JsonResource
             'primary_currency' => (string) config('finangui.primary_currency'),
             // Sem credenciais da Pluggy verificadas cadastradas por este usuário, o
             // frontend esconde o fluxo de conexão bancária inteiro.
-            'banking_enabled' => BankCredential::query()
-                ->withoutGlobalScopes()
-                ->where('user_id', $this->id)
-                ->where('provider', BankProviderName::Pluggy)
-                ->whereNotNull('verified_at')
-                ->exists(),
+            'banking_enabled' => BankCredential::isVerifiedFor($this->resource),
         ];
     }
 }

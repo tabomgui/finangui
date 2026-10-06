@@ -171,12 +171,16 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
                     $categoriesById,
                 );
             }
-        } catch (BankingDisabled) {
-            // Não deveria acontecer (remover ou trocar as credenciais exige zero
-            // conexões — ver App\Domain\Banking\Models\BankCredential), mas se a
-            // conexão ficar sem credenciais do dono por qualquer outro motivo, é
-            // uma falha permanente: não insiste.
-            $this->writeStatus(ConnectionStatus::Error, 'Integração bancária não configurada.');
+        } catch (BankingDisabled $e) {
+            // Normalmente não deveria acontecer (remover ou trocar as credenciais
+            // exige zero conexões — ver App\Domain\Banking\Models\BankCredential),
+            // mas acontece logo depois do deploy desta mudança para conexões
+            // criadas sob as credenciais globais antigas (variável de ambiente),
+            // até o usuário cadastrar as próprias em Configurações; também cobre
+            // uma credencial que não descriptografa mais (ver PluggyProviderFactory).
+            // Falha permanente: não insiste. $e->getMessage() já é a mensagem
+            // voltada ao usuário de BankingDisabled.
+            $this->writeStatus(ConnectionStatus::Error, $e->getMessage());
 
             return;
         } catch (ProviderAuthFailed) {
@@ -283,7 +287,7 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             : ($connection->last_synced_at ?? $fresh->provider_history_synced_at ?? CarbonImmutable::now())->subDays(14);
 
         $transactions = $provider->transactions($fresh->external_id, $fresh->isCreditCard(), $dateFrom, $createdAtFrom);
-        $syncTransactions->handle($fresh, $transactions, $syncStartedAt, $categoriesById);
+        $syncTransactions->handle($provider, $fresh, $transactions, $syncStartedAt, $categoriesById);
 
         if ($usesFullHistory) {
             $accountMapper->markHistorySynced($fresh);

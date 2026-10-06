@@ -26,7 +26,7 @@ class BankCredentialFactory extends Factory
             'provider' => BankProviderName::Pluggy,
             'client_id' => $clientId,
             'client_secret' => Str::random(40),
-            'client_id_hint' => '••••'.mb_substr($clientId, -4),
+            'client_id_hint' => mb_substr($clientId, -4),
             'verified_at' => now(),
         ];
     }

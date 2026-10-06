@@ -133,14 +133,14 @@ Route::prefix('v1')->group(function () {
 
         // index e destroy ficam fora do EnsureBankingEnabled: listar
         // conexões já existentes e desconectar (que só limpa o lado local,
-        // ver DisconnectConnection) continuam funcionando mesmo sem o
-        // provedor configurado.
+        // ver DisconnectConnection) continuam funcionando mesmo sem
+        // credenciais da Pluggy cadastradas por este usuário.
         Route::get('bank-connections', [BankConnectionController::class, 'index']);
         Route::delete('bank-connections/{connection}', [BankConnectionController::class, 'destroy'])->whereNumber('connection');
 
-        // EnsureBankingEnabled antes de qualquer FormRequest: sem provedor
-        // configurado, a rota responde 409 banking_disabled mesmo que o
-        // corpo não passasse a validação de campos.
+        // EnsureBankingEnabled antes de qualquer FormRequest: sem credenciais
+        // verificadas cadastradas por este usuário, a rota responde 409
+        // banking_disabled mesmo que o corpo não passasse a validação de campos.
         Route::middleware(EnsureBankingEnabled::class)->group(function () {
             // connect-token antes de {connection}, por clareza (não há
             // colisão de verbo/profundidade entre os dois, mas mantém o

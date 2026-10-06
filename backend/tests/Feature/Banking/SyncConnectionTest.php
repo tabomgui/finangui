@@ -41,11 +41,6 @@ function providerFailingOn(FakeBankProvider $delegate, string $failingMethod, Th
             private Throwable $exception,
         ) {}
 
-        public function enabled(): bool
-        {
-            return $this->delegate->enabled();
-        }
-
         public function connectToken(string $clientUserId, ?string $itemId = null): string
         {
             return $this->delegate->connectToken($clientUserId, $itemId);
@@ -362,11 +357,6 @@ it('não sobrescreve uma reconexão concorrente (active) com um needs_reauth cal
     $provider = new class($delegate, $connection->id) implements BankProvider
     {
         public function __construct(private FakeBankProvider $delegate, private int $reconnectDuring) {}
-
-        public function enabled(): bool
-        {
-            return $this->delegate->enabled();
-        }
 
         public function connectToken(string $clientUserId, ?string $itemId = null): string
         {

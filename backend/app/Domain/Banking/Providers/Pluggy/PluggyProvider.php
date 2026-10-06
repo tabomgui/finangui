@@ -41,8 +41,8 @@ final class PluggyProvider implements BankProvider
     private const MAX_TRANSACTION_PAGES = 200;
 
     public function __construct(
-        private readonly string $clientId,
-        private readonly string $clientSecret,
+        #[\SensitiveParameter] private readonly string $clientId,
+        #[\SensitiveParameter] private readonly string $clientSecret,
         private readonly string $baseUrl,
         private readonly int $userId,
     ) {}

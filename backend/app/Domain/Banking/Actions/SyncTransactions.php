@@ -3,7 +3,7 @@
 namespace App\Domain\Banking\Actions;
 
 use App\Domain\Accounts\Models\Account;
-use App\Domain\Banking\Contracts\BankProviderFactory;
+use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Data\ProviderCategory;
 use App\Domain\Banking\Data\ProviderTransaction;
 use App\Domain\Banking\Support\TransactionMapper;
@@ -58,17 +58,21 @@ final class SyncTransactions
     private const STALE_PENDING_DAYS = 10;
 
     public function __construct(
-        private readonly BankProviderFactory $providerFactory,
         private readonly IngestTransactions $ingest,
         private readonly UnlinkTransfer $unlinkTransfer,
         private readonly DetectTransfers $detectTransfers,
     ) {}
 
     /**
+     * $provider já é o do dono da conexão (resolvido uma vez por
+     * App\Domain\Banking\Jobs\SyncConnection, como
+     * App\Domain\Banking\Support\ItemRefresher recebe) — esta classe nunca
+     * monta o seu próprio.
+     *
      * @param  iterable<ProviderTransaction>  $transactions
      * @param  array<string, ProviderCategory>  $categoriesById  categorias do provedor (ver App\Domain\Banking\Jobs\SyncConnection, que busca uma vez por job e repassa para cada conta)
      */
-    public function handle(Account $account, iterable $transactions, CarbonImmutable $syncStartedAt, array $categoriesById): void
+    public function handle(BankProvider $provider, Account $account, iterable $transactions, CarbonImmutable $syncStartedAt, array $categoriesById): void
     {
         $creditCard = $account->isCreditCard();
         $minDate = $account->provider_sync_from?->toDateString();
@@ -79,7 +83,7 @@ final class SyncTransactions
             $this->ingestRows($account, $rows, $syncStartedAt);
         }
 
-        $this->cleanupStalePending($account, $creditCard, $minDate, $categoriesById, $syncStartedAt);
+        $this->cleanupStalePending($provider, $account, $creditCard, $minDate, $categoriesById, $syncStartedAt);
     }
 
     /**
@@ -114,7 +118,7 @@ final class SyncTransactions
      *
      * @param  array<string, ProviderCategory>  $categoriesById
      */
-    private function cleanupStalePending(Account $account, bool $creditCard, ?string $minDate, array $categoriesById, CarbonImmutable $syncStartedAt): void
+    private function cleanupStalePending(BankProvider $provider, Account $account, bool $creditCard, ?string $minDate, array $categoriesById, CarbonImmutable $syncStartedAt): void
     {
         $threshold = $syncStartedAt->subDays(self::STALE_PENDING_DAYS)->toDateString();
 
@@ -125,10 +129,7 @@ final class SyncTransactions
         }
 
         try {
-            // Mesmo dono da conta (não Auth::user()): esta limpeza pode rodar bem
-            // depois de SyncConnection trocar de usuário dentro do mesmo processo,
-            // em teoria — o dono da conexão é sempre a fonte certa aqui.
-            $fullListing = $this->providerFactory->for($account->user)->transactions(
+            $fullListing = $provider->transactions(
                 $account->external_id,
                 $creditCard,
                 CarbonImmutable::parse($oldestStaleDate),
