@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardSummary } from '@/api/types'
 import { DashboardPage } from './dashboard-page'
 
@@ -44,8 +44,14 @@ vi.mock('./balance-day-picker', () => ({
     onBackToToday: () => void
   }) => (
     <div data-testid="day-picker">
-      <button type="button" onClick={() => onSelect('2026-10-15')}>
-        escolher-15
+      <button type="button" onClick={() => onSelect('2026-10-02')}>
+        escolher-02-out
+      </button>
+      <button type="button" onClick={() => onSelect('2026-09-30')}>
+        escolher-30-set
+      </button>
+      <button type="button" onClick={() => onSelect('2026-10-06')}>
+        escolher-hoje
       </button>
       <button type="button" onClick={onBackToToday}>
         Voltar para hoje
@@ -92,13 +98,25 @@ function mockDashboard(data: DashboardSummary) {
   useDashboard.mockReturnValue({ data, isPending: false, isError: false, isPlaceholderData: false, refetch: vi.fn() })
 }
 
+beforeEach(() => {
+  useDashboard.mockClear()
+})
+
 describe('DashboardPage: seletor de dia do saldo', () => {
-  it('sem ?dia na URL, pede o dashboard só com o mês', () => {
+  it('sem ?dia na URL, o dia do saldo é hoje', () => {
     mockDashboard(dashboardData())
 
     renderPage('/?mes=2026-10')
 
-    expect(useDashboard).toHaveBeenCalledWith('2026-10', undefined)
+    expect(useDashboard).toHaveBeenCalledWith('2026-10', '2026-10-06')
+  })
+
+  it('sem ?dia na URL, o dia do saldo é hoje mesmo num mês passado (mês e dia são independentes)', () => {
+    mockDashboard(dashboardData({ balance_date: '2026-10-06' }))
+
+    renderPage('/?mes=2026-09')
+
+    expect(useDashboard).toHaveBeenCalledWith('2026-09', '2026-10-06')
   })
 
   it('com ?dia na URL, passa o dia pro hook', () => {
@@ -109,6 +127,14 @@ describe('DashboardPage: seletor de dia do saldo', () => {
     expect(useDashboard).toHaveBeenCalledWith('2026-10', '2026-09-15')
   })
 
+  it.each(['2099-01-01', '2026-02-30'])('?dia=%s é inválido: cai no padrão (hoje)', (invalidDay) => {
+    mockDashboard(dashboardData())
+
+    renderPage(`/?mes=2026-10&dia=${invalidDay}`)
+
+    expect(useDashboard).toHaveBeenCalledWith('2026-10', '2026-10-06')
+  })
+
   it('escolher um dia no calendário grava ?dia na URL e refaz a query com o novo dia', async () => {
     mockDashboard(dashboardData())
 
@@ -116,10 +142,23 @@ describe('DashboardPage: seletor de dia do saldo', () => {
 
     fireEvent.click(screen.getByText('Saldo em 06/10/2026'))
     await screen.findByTestId('day-picker')
-    fireEvent.click(screen.getByText('escolher-15'))
+    fireEvent.click(screen.getByText('escolher-02-out'))
 
-    expect(screen.getByTestId('location')).toHaveTextContent('?mes=2026-10&dia=2026-10-15')
-    expect(useDashboard).toHaveBeenLastCalledWith('2026-10', '2026-10-15')
+    expect(screen.getByTestId('location')).toHaveTextContent('?mes=2026-10&dia=2026-10-02')
+    expect(useDashboard).toHaveBeenLastCalledWith('2026-10', '2026-10-02')
+  })
+
+  it('escolher hoje no calendário (não o atalho "Voltar para hoje") também tira ?dia da URL', async () => {
+    mockDashboard(dashboardData({ balance_date: '2026-09-15' }))
+
+    renderPage('/?mes=2026-10&dia=2026-09-15')
+
+    fireEvent.click(screen.getByText('Saldo em 15/09/2026'))
+    await screen.findByTestId('day-picker')
+    fireEvent.click(screen.getByText('escolher-hoje'))
+
+    expect(screen.getByTestId('location')).toHaveTextContent('?mes=2026-10')
+    expect(screen.getByTestId('location')).not.toHaveTextContent('dia=')
   })
 
   it('trocar o mês pela seta mantém o ?dia escolhido na URL', () => {
@@ -133,19 +172,36 @@ describe('DashboardPage: seletor de dia do saldo', () => {
     expect(useDashboard).toHaveBeenLastCalledWith('2026-11', '2026-09-15')
   })
 
-  it('"Voltar para hoje" num mês passado grava o dia de hoje explicitamente na URL', async () => {
-    mockDashboard(dashboardData({ balance_date: '2026-09-30' }))
+  it('escolher 30/09 e depois trocar de mês mantém 30/09 (dia e mês são independentes)', async () => {
+    mockDashboard(dashboardData({ balance_date: '2026-10-06' }))
 
     renderPage('/?mes=2026-09')
+
+    fireEvent.click(screen.getByText('Saldo em 06/10/2026'))
+    await screen.findByTestId('day-picker')
+    fireEvent.click(screen.getByText('escolher-30-set'))
+
+    expect(screen.getByTestId('location')).toHaveTextContent('?mes=2026-09&dia=2026-09-30')
+
+    fireEvent.click(screen.getByLabelText('Próximo mês'))
+
+    expect(screen.getByTestId('location')).toHaveTextContent('?mes=2026-10&dia=2026-09-30')
+  })
+
+  it('"Voltar para hoje" tira ?dia da URL mesmo partindo de um mês passado', async () => {
+    mockDashboard(dashboardData({ balance_date: '2026-09-30' }))
+
+    renderPage('/?mes=2026-09&dia=2026-09-30')
 
     fireEvent.click(screen.getByText('Saldo em 30/09/2026'))
     await screen.findByTestId('day-picker')
     fireEvent.click(screen.getByText('Voltar para hoje'))
 
-    expect(screen.getByTestId('location')).toHaveTextContent('?mes=2026-09&dia=2026-10-06')
+    expect(screen.getByTestId('location')).toHaveTextContent('?mes=2026-09')
+    expect(screen.getByTestId('location')).not.toHaveTextContent('dia=')
   })
 
-  it('"Voltar para hoje" no mês corrente tira o ?dia da URL (já é o padrão)', async () => {
+  it('"Voltar para hoje" tira ?dia da URL no mês corrente', async () => {
     mockDashboard(dashboardData({ balance_date: '2026-09-15' }))
 
     renderPage('/?mes=2026-10&dia=2026-09-15')

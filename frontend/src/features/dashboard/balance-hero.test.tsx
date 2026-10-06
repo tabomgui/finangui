@@ -96,4 +96,23 @@ describe('BalanceHero', () => {
     expect(onBackToToday).toHaveBeenCalled()
     expect(screen.queryByTestId('day-picker')).not.toBeInTheDocument()
   })
+
+  it('o botão de data tem um rótulo acessível e um contorno de foco', () => {
+    renderHero({ balanceDate: '2026-10-04' })
+
+    const trigger = screen.getByRole('button', { name: 'Saldo em 04/10/2026. Escolher outro dia' })
+    expect(trigger).toHaveClass('focus-visible:ring-2', 'focus-visible:ring-white/70')
+  })
+
+  it('isPlaceholderData marca o card como ocupado (aria-busy)', () => {
+    const { container } = renderHero({ isPlaceholderData: true })
+
+    expect(container.firstChild).toHaveAttribute('aria-busy', 'true')
+  })
+
+  it('sem isPlaceholderData, o card não fica marcado como ocupado', () => {
+    const { container } = renderHero()
+
+    expect(container.firstChild).toHaveAttribute('aria-busy', 'false')
+  })
 })

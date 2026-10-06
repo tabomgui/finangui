@@ -35,11 +35,19 @@ export function today(): string {
 
 /**
  * "Hoje" no fuso do app (America/Sao_Paulo), não no fuso do navegador: usado para o seletor de
- * dia do saldo (desabilitar dias futuros, "Voltar para hoje"), onde o dia certo depende do
- * backend, não de onde o usuário está. `en-CA` devolve a data já em "YYYY-MM-DD".
+ * dia do saldo (dia padrão, desabilitar dias futuros, "Voltar para hoje"), onde o dia certo
+ * depende do backend, não de onde o usuário está. `formatToParts` (em vez do formato já pronto de
+ * um locale como `en-CA`) deixa explícito que só os três campos numéricos importam aqui.
  */
 export function appToday(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const get = (type: string) => parts.find((part) => part.type === type)?.value
+  return `${get('year')}-${get('month')}-${get('day')}`
 }
 
 export function formatDate(value: string): string {

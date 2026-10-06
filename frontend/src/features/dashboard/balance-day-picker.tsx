@@ -1,4 +1,4 @@
-import { ptBR } from 'date-fns/locale'
+import { ptBR } from 'react-day-picker/locale'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { appToday, parseDateOnly, toDateOnly } from '@/lib/date'
@@ -24,10 +24,12 @@ export function BalanceDayPicker({ selected, onSelect, onBackToToday }: BalanceD
       <Calendar
         mode="single"
         locale={ptBR}
+        autoFocus
         selected={selectedDate}
         defaultMonth={selectedDate}
+        today={todayDate}
+        endMonth={todayDate}
         disabled={(day) => day > todayDate}
-        labels={{ labelPrevious: () => 'Mês anterior', labelNext: () => 'Próximo mês' }}
         onSelect={(day) => {
           if (day) onSelect(toDateOnly(day))
         }}

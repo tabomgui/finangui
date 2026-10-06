@@ -10,7 +10,7 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { appToday, monthKey } from '@/lib/date'
+import { appToday } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import { ReauthBanner } from '../banking/reauth-banner'
 import { useReconnectFlow } from '../banking/use-reconnect-flow'
@@ -20,17 +20,20 @@ import { MonthNav } from './month-nav'
 import { OverdueOccurrencesDialog } from './overdue-occurrences-dialog'
 import { PendingCard } from './pending-card'
 import { RecentTransactionsCard } from './recent-transactions-card'
-import { dayFromParam, defaultBalanceDay, monthFromParam } from './shares'
+import { dayFromParam, monthFromParam } from './shares'
 import { StatementsCard } from './statements-card'
 import { SummaryCards } from './summary-cards'
 import { TopCategoriesCard } from './top-categories-card'
 
 export function DashboardPage() {
   const [params, setParams] = useSearchParams()
-  // `new Date()` só na montagem: evita recalcular "hoje" a cada render.
-  const [currentMonth] = useState(() => monthKey(new Date()))
+  // `appToday()` só na montagem: evita recalcular a cada render. Fuso do app (America/Sao_Paulo),
+  // não do navegador — ver `dayFromParam`/`appToday` em `shares.ts`/`lib/date.ts`.
+  const [currentMonth] = useState(() => appToday().slice(0, 7))
   const month = monthFromParam(params.get('mes'), currentMonth)
-  const day = dayFromParam(params.get('dia'))
+  // Mês e dia são independentes (a seta de mês nunca muda o dia): o dia do saldo é sempre
+  // explícito, `?dia` se válido, senão hoje — nunca um "padrão" que dependa do mês exibido.
+  const day = dayFromParam(params.get('dia')) ?? appToday()
   const { data, isPending, isError, isPlaceholderData, refetch } = useDashboard(month, day)
   const { data: connections } = useBankConnections()
   const { data: me } = useMe()
@@ -39,19 +42,17 @@ export function DashboardPage() {
   // pode desmontar (ex.: sem sugestão também) — o diálogo aberto não pode ir junto nesse momento.
   const [overdueOpen, setOverdueOpen] = useState(false)
 
-  // A seta de mês não muda o dia escolhido (mês e dia são independentes): só atualiza `mes`,
-  // preservando `dia` se já estiver na URL.
+  // A seta de mês não muda o dia escolhido: só atualiza `mes`, preservando `dia` se já estiver na URL.
   const setMonth = (next: string) => {
     const nextParams = new URLSearchParams(params)
     nextParams.set('mes', next)
     setParams(nextParams, { replace: true })
   }
 
-  // Tira `?dia` quando o valor escolhido já é o padrão que o backend usaria sem ele (mantém a URL
-  // limpa); senão grava o dia escolhido.
+  // Escolher hoje tira `?dia` da URL (mantém ela limpa); qualquer outro dia grava `?dia` explicitamente.
   const setDay = (next: string) => {
     const nextParams = new URLSearchParams(params)
-    if (next === defaultBalanceDay(month, appToday())) {
+    if (next === appToday()) {
       nextParams.delete('dia')
     } else {
       nextParams.set('dia', next)
@@ -59,6 +60,7 @@ export function DashboardPage() {
     setParams(nextParams, { replace: true })
   }
 
+  // "Voltar para hoje" é só escolher hoje: sempre tira `?dia`, mesmo vindo de um mês passado.
   const backToToday = () => setDay(appToday())
 
   return (
@@ -74,6 +76,7 @@ export function DashboardPage() {
                 balanceDate={data.balance_date}
                 onSelectDay={setDay}
                 onBackToToday={backToToday}
+                isPlaceholderData={isPlaceholderData}
               />
             </div>
           ) : isError ? (

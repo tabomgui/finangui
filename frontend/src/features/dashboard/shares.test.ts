@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoryShares, dayFromParam, defaultBalanceDay, monthFromParam } from './shares'
+import { categoryShares, dayFromParam, monthFromParam } from './shares'
 
 describe('categoryShares', () => {
   it('calcula a fatia de cada categoria em relação à maior e ao total de despesas', () => {
@@ -31,21 +31,23 @@ describe('monthFromParam', () => {
 })
 
 describe('dayFromParam', () => {
-  it('aceita YYYY-MM-DD e ignora qualquer outra coisa', () => {
-    expect(dayFromParam('2026-10-04')).toBe('2026-10-04')
+  it('aceita YYYY-MM-DD de uma data de calendário real, não futura', () => {
+    // Bem no passado, pra não depender do relógio real da máquina que roda o teste.
+    expect(dayFromParam('2000-01-01')).toBe('2000-01-01')
+  })
+
+  it('ignora qualquer coisa fora do formato "YYYY-MM-DD"', () => {
     expect(dayFromParam('2026-10')).toBeUndefined()
     expect(dayFromParam('não é data')).toBeUndefined()
     expect(dayFromParam(null)).toBeUndefined()
   })
-})
 
-describe('defaultBalanceDay', () => {
-  it('mês corrente ou futuro usa hoje', () => {
-    expect(defaultBalanceDay('2026-10', '2026-10-06')).toBe('2026-10-06')
-    expect(defaultBalanceDay('2026-11', '2026-10-06')).toBe('2026-10-06')
+  it('rejeita data de calendário inválida', () => {
+    expect(dayFromParam('2026-02-30')).toBeUndefined()
   })
 
-  it('mês passado usa o fim do mês', () => {
-    expect(defaultBalanceDay('2026-09', '2026-10-06')).toBe('2026-09-30')
+  it('rejeita data futura', () => {
+    // Bem no futuro, pra não depender do relógio real da máquina que roda o teste.
+    expect(dayFromParam('2099-01-01')).toBeUndefined()
   })
 })

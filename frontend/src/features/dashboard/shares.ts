@@ -1,6 +1,5 @@
-import { endOfMonth } from 'date-fns'
 import type { TopCategory } from '@/api/types'
-import { isDateOnly, parseDateOnly, toDateOnly } from '@/lib/date'
+import { appToday, isDateOnly, parseDateOnly } from '@/lib/date'
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 
@@ -20,18 +19,18 @@ export function monthFromParam(value: string | null, fallback: string): string {
   return value && MONTH.test(value) ? value : fallback
 }
 
-/** `?dia=` só entra se já estiver no formato "YYYY-MM-DD"; sem isso, o backend decide o padrão. */
-export function dayFromParam(value: string | null): string | undefined {
-  return value && isDateOnly(value) ? value : undefined
-}
-
 /**
- * Mesma regra do backend pra decidir o dia do saldo quando a URL não tem `?dia` (mês corrente ou
- * futuro usa hoje, mês passado usa o fim do mês) — só pra saber quando dá pra tirar `?dia` da URL
- * sem mudar o dia efetivo. O saldo mostrado em si sempre vem do backend (`balance_date`).
+ * `?dia=` só entra se for uma data de calendário real (rejeita "2026-02-30", por exemplo) e não
+ * futura (o backend recusaria com 422); fora isso, quem chama cai no padrão (hoje). O dia do
+ * saldo é sempre explícito e independente do mês (ver `dashboard-page.tsx`), então não há "dia
+ * padrão" para um mês específico aqui.
  */
-export function defaultBalanceDay(month: string, todayValue: string): string {
-  const currentMonth = todayValue.slice(0, 7)
-  if (month < currentMonth) return toDateOnly(endOfMonth(parseDateOnly(`${month}-01`)))
-  return todayValue
+export function dayFromParam(value: string | null): string | undefined {
+  if (!value || !isDateOnly(value)) return undefined
+  try {
+    parseDateOnly(value)
+  } catch {
+    return undefined
+  }
+  return value <= appToday() ? value : undefined
 }

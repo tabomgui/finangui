@@ -23,18 +23,30 @@ type BalanceHeroProps = {
   balanceDate: string
   onSelectDay: (day: string) => void
   onBackToToday: () => void
+  isPlaceholderData?: boolean
 }
 
-export function BalanceHero({ totalBalance, currency, balanceDate, onSelectDay, onBackToToday }: BalanceHeroProps) {
+export function BalanceHero({
+  totalBalance,
+  currency,
+  balanceDate,
+  onSelectDay,
+  onBackToToday,
+  isPlaceholderData = false,
+}: BalanceHeroProps) {
   const [open, setOpen] = useState(false)
 
   return (
-    <div className="rounded-2xl border border-white/20 bg-white/10 p-5 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
+    <div
+      className="rounded-2xl border border-white/20 bg-white/10 p-5 backdrop-blur-sm dark:border-white/10 dark:bg-white/5"
+      aria-busy={isPlaceholderData}
+    >
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="flex items-center gap-2 rounded-lg text-sm font-medium text-white/90 hover:text-white"
+            aria-label={`Saldo em ${formatDate(balanceDate)}. Escolher outro dia`}
+            className="flex items-center gap-2 rounded-lg text-sm font-medium text-white/90 outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-white/70"
             onPointerEnter={prefetchDayPicker}
             onFocus={prefetchDayPicker}
           >
@@ -46,7 +58,7 @@ export function BalanceHero({ totalBalance, currency, balanceDate, onSelectDay, 
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-auto p-0">
-          <Suspense fallback={<Skeleton className="m-3 h-72 w-64" />}>
+          <Suspense fallback={<Skeleton className="h-[300px] w-[272px]" />}>
             <BalanceDayPicker
               selected={balanceDate}
               onSelect={(day) => {
