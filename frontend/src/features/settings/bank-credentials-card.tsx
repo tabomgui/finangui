@@ -154,6 +154,12 @@ export function BankCredentialsCard({ highlighted = false }: BankCredentialsCard
                   e copie o Client ID e o Client Secret dela.
                 </p>
 
+                {!configured && (
+                  <p className="text-sm text-muted-foreground">
+                    Se você já tinha bancos conectados, use a mesma aplicação Pluggy que o servidor usava.
+                  </p>
+                )}
+
                 {conflict && (
                   <p role="alert" className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
                     {conflict}

@@ -48,6 +48,28 @@ describe('BankCredentialsCard', () => {
     expect(screen.queryByText('Pluggy conectada')).not.toBeInTheDocument()
   })
 
+  it('sem credenciais, avisa para usar a mesma aplicação Pluggy que o servidor usava (upgrade)', () => {
+    render(<BankCredentialsCard />)
+
+    expect(
+      screen.getByText('Se você já tinha bancos conectados, use a mesma aplicação Pluggy que o servidor usava.'),
+    ).toBeInTheDocument()
+  })
+
+  it('configurado, não mostra o aviso de upgrade (já não é o primeiro cadastro)', () => {
+    credentialsState = {
+      data: { configured: true, provider: 'pluggy', client_id_hint: '3be8', verified_at: '2026-10-01T10:00:00Z' },
+      isPending: false,
+      isError: false,
+    }
+    render(<BankCredentialsCard />)
+    fireEvent.click(screen.getByRole('button', { name: 'Trocar credenciais' }))
+
+    expect(
+      screen.queryByText('Se você já tinha bancos conectados, use a mesma aplicação Pluggy que o servidor usava.'),
+    ).not.toBeInTheDocument()
+  })
+
   it('configurado, mostra o status com o client id mascarado e sem formulário', () => {
     credentialsState = {
       data: { configured: true, provider: 'pluggy', client_id_hint: '3be8', verified_at: '2026-10-01T10:00:00Z' },

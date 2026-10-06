@@ -143,9 +143,13 @@ export function ConnectionCard({
         </DropdownMenu>
       </CardHeader>
 
+      {/* disabled, não escondido: sem provedor configurado (bankingEnabled false) a rota de vínculo
+          responde 409 banking_disabled, mesma razão de showProviderActions acima — mas aqui o botão
+          é a única ação do bloco, então desabilitar deixa claro que ele volta a funcionar depois de
+          cadastrar as credenciais, em vez de a conta pendente simplesmente desaparecer da tela. */}
       {isPendingLink && connection.pending_accounts.length > 0 && (
         <CardContent className="pt-0">
-          <Button size="sm" onClick={() => onLinkAccounts?.(connection)}>
+          <Button size="sm" disabled={!bankingEnabled} onClick={() => onLinkAccounts?.(connection)}>
             <Link2 className="h-4 w-4" />
             Vincular contas
           </Button>
@@ -155,7 +159,7 @@ export function ConnectionCard({
       {isActive && connection.unlinked_accounts.length > 0 && (
         <CardContent className="flex items-center justify-between gap-3 pt-0">
           <p className="text-sm text-muted-foreground">Novas contas no banco</p>
-          <Button size="sm" variant="outline" onClick={() => onLinkAccounts?.(connection)}>
+          <Button size="sm" variant="outline" disabled={!bankingEnabled} onClick={() => onLinkAccounts?.(connection)}>
             <Link2 className="h-4 w-4" />
             Vincular
           </Button>

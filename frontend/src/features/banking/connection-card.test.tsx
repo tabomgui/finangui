@@ -225,6 +225,18 @@ describe('ConnectionCard', () => {
     expect(screen.queryByRole('button', { name: 'Vincular contas' })).not.toBeInTheDocument()
   })
 
+  it('desabilita "Vincular contas" com o banking desligado', () => {
+    const target = connection({
+      status: 'pending_link',
+      pending_accounts: [
+        { external_id: 'ext-1', name: 'Conta', number: null, kind: 'checking', currency: 'BRL', balance: 0, suggested_account_id: null },
+      ],
+    })
+    renderCard({ connection: target, bankingEnabled: false })
+
+    expect(screen.getByRole('button', { name: 'Vincular contas' })).toBeDisabled()
+  })
+
   it('o menu continua disponível em pending_link, mas sem Sincronizar/Reconectar', async () => {
     renderCard({ connection: connection({ status: 'pending_link' }) })
 
@@ -278,5 +290,17 @@ describe('ConnectionCard', () => {
     renderCard({ connection: connection({ status: 'active', unlinked_accounts: [] }) })
 
     expect(screen.queryByText('Novas contas no banco')).not.toBeInTheDocument()
+  })
+
+  it('desabilita "Vincular" (unlinked_accounts) com o banking desligado', () => {
+    const target = connection({
+      status: 'active',
+      unlinked_accounts: [
+        { external_id: 'ext-1', name: 'Conta nova', number: null, kind: 'checking', currency: 'BRL', balance: 0, suggested_account_id: null },
+      ],
+    })
+    renderCard({ connection: target, bankingEnabled: false })
+
+    expect(screen.getByRole('button', { name: 'Vincular' })).toBeDisabled()
   })
 })
