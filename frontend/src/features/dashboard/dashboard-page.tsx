@@ -10,7 +10,7 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { monthKey } from '@/lib/date'
+import { appToday, monthKey } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import { ReauthBanner } from '../banking/reauth-banner'
 import { useReconnectFlow } from '../banking/use-reconnect-flow'
@@ -20,7 +20,7 @@ import { MonthNav } from './month-nav'
 import { OverdueOccurrencesDialog } from './overdue-occurrences-dialog'
 import { PendingCard } from './pending-card'
 import { RecentTransactionsCard } from './recent-transactions-card'
-import { monthFromParam } from './shares'
+import { dayFromParam, defaultBalanceDay, monthFromParam } from './shares'
 import { StatementsCard } from './statements-card'
 import { SummaryCards } from './summary-cards'
 import { TopCategoriesCard } from './top-categories-card'
@@ -30,7 +30,8 @@ export function DashboardPage() {
   // `new Date()` só na montagem: evita recalcular "hoje" a cada render.
   const [currentMonth] = useState(() => monthKey(new Date()))
   const month = monthFromParam(params.get('mes'), currentMonth)
-  const { data, isPending, isError, isPlaceholderData, refetch } = useDashboard(month)
+  const day = dayFromParam(params.get('dia'))
+  const { data, isPending, isError, isPlaceholderData, refetch } = useDashboard(month, day)
   const { data: connections } = useBankConnections()
   const { data: me } = useMe()
   const reconnectFlow = useReconnectFlow()
@@ -38,7 +39,27 @@ export function DashboardPage() {
   // pode desmontar (ex.: sem sugestão também) — o diálogo aberto não pode ir junto nesse momento.
   const [overdueOpen, setOverdueOpen] = useState(false)
 
-  const setMonth = (next: string) => setParams({ mes: next }, { replace: true })
+  // A seta de mês não muda o dia escolhido (mês e dia são independentes): só atualiza `mes`,
+  // preservando `dia` se já estiver na URL.
+  const setMonth = (next: string) => {
+    const nextParams = new URLSearchParams(params)
+    nextParams.set('mes', next)
+    setParams(nextParams, { replace: true })
+  }
+
+  // Tira `?dia` quando o valor escolhido já é o padrão que o backend usaria sem ele (mantém a URL
+  // limpa); senão grava o dia escolhido.
+  const setDay = (next: string) => {
+    const nextParams = new URLSearchParams(params)
+    if (next === defaultBalanceDay(month, appToday())) {
+      nextParams.delete('dia')
+    } else {
+      nextParams.set('dia', next)
+    }
+    setParams(nextParams, { replace: true })
+  }
+
+  const backToToday = () => setDay(appToday())
 
   return (
     <>
@@ -47,7 +68,13 @@ export function DashboardPage() {
           <MonthNav month={month} onChange={setMonth} />
           {data ? (
             <div className={cn('transition-opacity', isPlaceholderData && 'opacity-60')}>
-              <BalanceHero totalBalance={data.total_balance} currency={data.currency} balanceDate={data.balance_date} />
+              <BalanceHero
+                totalBalance={data.total_balance}
+                currency={data.currency}
+                balanceDate={data.balance_date}
+                onSelectDay={setDay}
+                onBackToToday={backToToday}
+              />
             </div>
           ) : isError ? (
             // Sem saldo para mostrar e o card de erro já aparece no corpo da página: só reserva a altura

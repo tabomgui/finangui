@@ -33,6 +33,15 @@ export function today(): string {
   return toDateOnly(new Date())
 }
 
+/**
+ * "Hoje" no fuso do app (America/Sao_Paulo), não no fuso do navegador: usado para o seletor de
+ * dia do saldo (desabilitar dias futuros, "Voltar para hoje"), onde o dia certo depende do
+ * backend, não de onde o usuário está. `en-CA` devolve a data já em "YYYY-MM-DD".
+ */
+export function appToday(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
+}
+
 export function formatDate(value: string): string {
   return format(parseDateOnly(value), 'dd/MM/yyyy')
 }

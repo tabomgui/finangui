@@ -1,0 +1,160 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter, useLocation } from 'react-router-dom'
+import { describe, expect, it, vi } from 'vitest'
+import type { DashboardSummary } from '@/api/types'
+import { DashboardPage } from './dashboard-page'
+
+// Fixa "hoje" para o teste não depender do relógio real: `?mes=2026-10` é tratado como o mês
+// corrente e `?mes=2026-09` como mês passado em todos os casos abaixo.
+vi.mock('@/lib/date', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/date')>()
+  return { ...actual, appToday: () => '2026-10-06' }
+})
+
+const useDashboard = vi.fn()
+
+vi.mock('@/api/queries/dashboard', () => ({
+  useDashboard: (...args: unknown[]) => useDashboard(...args),
+}))
+
+vi.mock('@/api/queries/bank-connections', () => ({ useBankConnections: () => ({ data: [] }) }))
+vi.mock('@/api/queries/auth', () => ({ useMe: () => ({ data: { banking_enabled: true } }) }))
+vi.mock('../banking/use-reconnect-flow', () => ({
+  useReconnectFlow: () => ({ reconnect: vi.fn(), isPending: false, widget: null }),
+}))
+vi.mock('@/api/queries/transfer-suggestions', () => ({ useTransferSuggestions: () => ({ data: undefined }) }))
+vi.mock('@/api/queries/recurrences', () => ({
+  useOverdueOccurrences: () => ({ data: undefined, isPending: false }),
+  useSkipOccurrence: () => ({ isPending: false, variables: undefined, mutateAsync: vi.fn() }),
+  useConfirmOccurrence: () => ({ isPending: false, mutateAsync: vi.fn() }),
+}))
+vi.mock('@/api/queries/cards', () => ({ useCards: () => ({ data: [] }) }))
+vi.mock('@/api/queries/transactions', () => ({ useRecentTransactions: () => ({ data: [], isPending: false, isError: false, refetch: vi.fn() }) }))
+
+// Mocka o calendário lazy-loaded (testado de verdade em `balance-day-picker.test.tsx`): aqui só
+// interessa a integração entre a escolha de dia/"Voltar para hoje" e a URL/query da página.
+vi.mock('./balance-day-picker', () => ({
+  BalanceDayPicker: ({
+    onSelect,
+    onBackToToday,
+  }: {
+    selected: string
+    onSelect: (day: string) => void
+    onBackToToday: () => void
+  }) => (
+    <div data-testid="day-picker">
+      <button type="button" onClick={() => onSelect('2026-10-15')}>
+        escolher-15
+      </button>
+      <button type="button" onClick={onBackToToday}>
+        Voltar para hoje
+      </button>
+    </div>
+  ),
+}))
+
+function dashboardData(overrides: Partial<DashboardSummary> = {}): DashboardSummary {
+  return {
+    month: '2026-10',
+    currency: 'BRL',
+    total_balance: 100000,
+    balance_date: '2026-10-06',
+    accounts: [],
+    income: 0,
+    expense: 0,
+    net: 0,
+    top_categories: [],
+    ...overrides,
+  }
+}
+
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="location">{location.pathname + location.search}</div>
+}
+
+function renderPage(initialEntry = '/') {
+  const client = new QueryClient()
+  client.setQueryData(['notifications', 'unread-count'], 0)
+
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <LocationProbe />
+        <DashboardPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
+function mockDashboard(data: DashboardSummary) {
+  useDashboard.mockReturnValue({ data, isPending: false, isError: false, isPlaceholderData: false, refetch: vi.fn() })
+}
+
+describe('DashboardPage: seletor de dia do saldo', () => {
+  it('sem ?dia na URL, pede o dashboard só com o mês', () => {
+    mockDashboard(dashboardData())
+
+    renderPage('/?mes=2026-10')
+
+    expect(useDashboard).toHaveBeenCalledWith('2026-10', undefined)
+  })
+
+  it('com ?dia na URL, passa o dia pro hook', () => {
+    mockDashboard(dashboardData({ balance_date: '2026-09-15' }))
+
+    renderPage('/?mes=2026-10&dia=2026-09-15')
+
+    expect(useDashboard).toHaveBeenCalledWith('2026-10', '2026-09-15')
+  })
+
+  it('escolher um dia no calendário grava ?dia na URL e refaz a query com o novo dia', async () => {
+    mockDashboard(dashboardData())
+
+    renderPage('/?mes=2026-10')
+
+    fireEvent.click(screen.getByText('Saldo em 06/10/2026'))
+    await screen.findByTestId('day-picker')
+    fireEvent.click(screen.getByText('escolher-15'))
+
+    expect(screen.getByTestId('location')).toHaveTextContent('?mes=2026-10&dia=2026-10-15')
+    expect(useDashboard).toHaveBeenLastCalledWith('2026-10', '2026-10-15')
+  })
+
+  it('trocar o mês pela seta mantém o ?dia escolhido na URL', () => {
+    mockDashboard(dashboardData({ balance_date: '2026-09-15' }))
+
+    renderPage('/?mes=2026-10&dia=2026-09-15')
+
+    fireEvent.click(screen.getByLabelText('Próximo mês'))
+
+    expect(screen.getByTestId('location')).toHaveTextContent('?mes=2026-11&dia=2026-09-15')
+    expect(useDashboard).toHaveBeenLastCalledWith('2026-11', '2026-09-15')
+  })
+
+  it('"Voltar para hoje" num mês passado grava o dia de hoje explicitamente na URL', async () => {
+    mockDashboard(dashboardData({ balance_date: '2026-09-30' }))
+
+    renderPage('/?mes=2026-09')
+
+    fireEvent.click(screen.getByText('Saldo em 30/09/2026'))
+    await screen.findByTestId('day-picker')
+    fireEvent.click(screen.getByText('Voltar para hoje'))
+
+    expect(screen.getByTestId('location')).toHaveTextContent('?mes=2026-09&dia=2026-10-06')
+  })
+
+  it('"Voltar para hoje" no mês corrente tira o ?dia da URL (já é o padrão)', async () => {
+    mockDashboard(dashboardData({ balance_date: '2026-09-15' }))
+
+    renderPage('/?mes=2026-10&dia=2026-09-15')
+
+    fireEvent.click(screen.getByText('Saldo em 15/09/2026'))
+    await screen.findByTestId('day-picker')
+    fireEvent.click(screen.getByText('Voltar para hoje'))
+
+    expect(screen.getByTestId('location')).toHaveTextContent('?mes=2026-10')
+    expect(screen.getByTestId('location')).not.toHaveTextContent('dia=')
+  })
+})
