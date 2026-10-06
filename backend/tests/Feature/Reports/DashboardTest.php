@@ -32,26 +32,6 @@ it('soma receitas e despesas do mês ignorando transferências, ignoradas e proj
         ->assertJsonPath('data.net', 788000);
 });
 
-it('agrupa as maiores despesas pela categoria raiz', function () {
-    actingAsUser();
-    $food = Category::factory()->create(['name' => 'Alimentação']);
-    $market = Category::factory()->create(['name' => 'Mercado', 'parent_id' => $food->id]);
-    $transport = Category::factory()->create(['name' => 'Transporte']);
-
-    Transaction::factory()->create(['date' => '2026-10-02', 'amount' => 10000, 'category_id' => $food->id]);
-    Transaction::factory()->create(['date' => '2026-10-03', 'amount' => 25000, 'category_id' => $market->id]);
-    Transaction::factory()->create(['date' => '2026-10-04', 'amount' => 5000, 'category_id' => $transport->id]);
-    Transaction::factory()->create(['date' => '2026-10-05', 'amount' => 3000, 'category_id' => null]);
-
-    $this->getJson('/api/v1/dashboard?month=2026-10')
-        ->assertJsonPath('data.top_categories.0.category_id', $food->id)
-        ->assertJsonPath('data.top_categories.0.name', 'Alimentação')
-        ->assertJsonPath('data.top_categories.0.amount', 35000)
-        ->assertJsonPath('data.top_categories.1.name', 'Transporte')
-        ->assertJsonPath('data.top_categories.2.category_id', null)
-        ->assertJsonPath('data.top_categories.2.name', 'Sem categoria');
-});
-
 it('exclui transações de subcategoria cujo pai é marcado como transferência', function () {
     actingAsUser();
     $parent = Category::factory()->transfer()->create(['name' => 'Investimentos']);
@@ -60,8 +40,7 @@ it('exclui transações de subcategoria cujo pai é marcado como transferência'
     Transaction::factory()->create(['date' => '2026-10-05', 'amount' => 10000, 'category_id' => $child->id]);
 
     $this->getJson('/api/v1/dashboard?month=2026-10')
-        ->assertJsonPath('data.expense', 0)
-        ->assertJsonCount(0, 'data.top_categories');
+        ->assertJsonPath('data.expense', 0);
 });
 
 it('passa a incluir/excluir a subcategoria quando o pai liga ou desliga a transferência', function () {
@@ -167,7 +146,7 @@ it('exclui o saldo do cartão do saldo total e da lista de contas da Início', f
         ->assertJsonPath('data.accounts.0.name', 'A');
 });
 
-it('parcela projetada do mês não entra em despesa/maiores categorias; a lançada conta na própria data', function () {
+it('parcela projetada do mês não entra em despesa; a lançada conta na própria data', function () {
     actingAsUser();
     $this->travelTo('2026-10-06');
     $category = Category::factory()->create(['name' => 'Eletrônicos']);
@@ -179,13 +158,9 @@ it('parcela projetada do mês não entra em despesa/maiores categorias; a lança
     ])->assertCreated();
     // Parcela 1 (2026-10-05) já lançada (posted); parcela 2 (2026-11-05) é projetada.
 
-    $this->getJson('/api/v1/dashboard?month=2026-10')
-        ->assertJsonPath('data.expense', 15000)
-        ->assertJsonPath('data.top_categories.0.amount', 15000);
+    $this->getJson('/api/v1/dashboard?month=2026-10')->assertJsonPath('data.expense', 15000);
 
-    $this->getJson('/api/v1/dashboard?month=2026-11')
-        ->assertJsonPath('data.expense', 0)
-        ->assertJsonCount(0, 'data.top_categories');
+    $this->getJson('/api/v1/dashboard?month=2026-11')->assertJsonPath('data.expense', 0);
 });
 
 it('pagar fatura não muda receita nem despesa (é transferência, não lançamento)', function () {
@@ -291,7 +266,5 @@ it('isola o resumo de dados de outro usuário', function () {
         ->assertJsonPath('data.total_balance', 31000) // opening_balance 1000 + receita 50000 - despesa 20000
         ->assertJsonCount(1, 'data.accounts')
         ->assertJsonPath('data.income', 50000)
-        ->assertJsonPath('data.expense', 20000)
-        ->assertJsonCount(1, 'data.top_categories')
-        ->assertJsonPath('data.top_categories.0.name', 'Categoria do usuário');
+        ->assertJsonPath('data.expense', 20000);
 });

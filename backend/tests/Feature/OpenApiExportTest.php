@@ -103,16 +103,6 @@ it('documenta include_archived como query param booleano em GET /accounts e /cat
     }
 });
 
-it('documenta top_categories[].category_id como integer|null no dashboard', function () {
-    $document = exportOpenApiDocument();
-
-    $categoryId = $document['paths']['/dashboard']['get']['responses']['200']['content']['application/json']['schema']['properties']['data']['properties']['top_categories']['items']['properties']['category_id'];
-
-    expect($categoryId['type'])->toContain('integer');
-    expect($categoryId['type'])->toContain('null');
-    expect($categoryId['type'])->not->toContain('string');
-});
-
 it('documenta balance como obrigatório em AccountResource', function () {
     $document = exportOpenApiDocument();
 
