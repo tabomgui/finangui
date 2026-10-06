@@ -28,47 +28,40 @@ final class SpendingBreakdown
         /** @var string $primaryCurrency */
         $primaryCurrency = config('finangui.primary_currency');
 
-        $start = $from->toDateString();
-        $end = $to->toDateString();
-
-        $base = Transaction::query()
+        // Uma única consulta agregada: GROUP BY category_id junta as linhas
+        // sem categoria (NULL) num grupo só — essa linha vira o item "Sem
+        // categoria" mais abaixo.
+        /** @var Collection<int, object{category_id: int|null, total: int, count: int}> $rows */
+        $rows = Transaction::query()
             ->reportable()
             ->where('transactions.direction', 'out')
             ->where('transactions.currency', $primaryCurrency)
-            ->whereBetween('transactions.date', [$start, $end]);
-
-        /** @var Collection<int, object{category_id: int, total: int, count: int}> $categorizedRows */
-        $categorizedRows = (clone $base)
-            ->whereNotNull('transactions.category_id')
+            ->whereBetween('transactions.date', [$from->toDateString(), $to->toDateString()])
             ->selectRaw('transactions.category_id as category_id, SUM(transactions.amount) as total, COUNT(*) as count')
             ->groupBy('transactions.category_id')
             ->toBase()
             ->get();
 
-        $uncategorized = (clone $base)
-            ->whereNull('transactions.category_id')
-            ->selectRaw('SUM(transactions.amount) as total, COUNT(*) as count')
-            ->toBase()
-            ->first();
+        $categorizedRows = $rows->reject(fn (object $row) => $row->category_id === null);
+        $uncategorizedRow = $rows->first(fn (object $row) => $row->category_id === null);
 
         $categories = $this->loadCategories($categorizedRows);
 
         $items = $this->buildCategoryItems($categorizedRows, $categories);
 
-        $uncategorizedCount = (int) ($uncategorized->count ?? 0);
-        if ($uncategorizedCount > 0) {
+        if ($uncategorizedRow !== null) {
             $items->push(new SpendingCategoryItem(
                 categoryId: null,
                 name: 'Sem categoria',
                 color: null,
                 icon: null,
-                amount: (int) $uncategorized->total,
-                count: $uncategorizedCount,
+                amount: (int) $uncategorizedRow->total,
+                count: (int) $uncategorizedRow->count,
                 children: [],
             ));
         }
 
-        $items = $items->sortByDesc(fn (SpendingCategoryItem $item) => $item->amount)->values();
+        $items = $this->sorted($items);
 
         return new SpendingBreakdownResult(
             currency: $primaryCurrency,
@@ -82,7 +75,7 @@ final class SpendingBreakdown
      * (precisa de nome/ícone/cor mesmo sem gasto direto no pai, só com
      * gasto nas subcategorias).
      *
-     * @param  Collection<int, object{category_id: int, total: int, count: int}>  $rows
+     * @param  Collection<int, object{category_id: int|null, total: int, count: int}>  $rows  category_id nunca é null aqui de fato (a linha "Sem categoria" já foi separada em for()), mas reject() não estreita o tipo estático
      * @return Collection<int, Category>
      */
     private function loadCategories(Collection $rows): Collection
@@ -104,7 +97,7 @@ final class SpendingBreakdown
     }
 
     /**
-     * @param  Collection<int, object{category_id: int, total: int, count: int}>  $rows
+     * @param  Collection<int, object{category_id: int|null, total: int, count: int}>  $rows  ver loadCategories() sobre o tipo nullable
      * @param  Collection<int, Category>  $categories
      * @return Collection<int, SpendingCategoryItem>
      */
@@ -133,6 +126,7 @@ final class SpendingBreakdown
             }
 
             $rootId = $category->parent_id;
+            /** @var Collection<int, SpendingChildItem> $children */
             $children = $childrenByRoot->get($rootId) ?? collect();
             $children->push(new SpendingChildItem(
                 categoryId: $category->id,
@@ -148,44 +142,67 @@ final class SpendingBreakdown
 
         $rootIds = $directByRoot->keys()->merge($childrenByRoot->keys())->unique();
 
-        return $rootIds->map(function (int $rootId) use ($directByRoot, $childrenByRoot, $categories) {
-            $rootCategory = $categories->get($rootId);
-            $children = $childrenByRoot->get($rootId) ?? collect();
-            $direct = $directByRoot->get($rootId);
+        return $rootIds
+            ->map(function (int $rootId) use ($directByRoot, $childrenByRoot, $categories) {
+                $rootCategory = $categories->get($rootId);
 
-            $amount = (int) $children->sum('amount');
-            $count = (int) $children->sum('count');
-
-            if ($direct !== null) {
-                $amount += $direct['amount'];
-                $count += $direct['count'];
-
-                // Direto no pai só entra no detalhamento quando já existe
-                // alguma subcategoria com gasto — ver docblock da classe.
-                if ($children->isNotEmpty() && $rootCategory !== null) {
-                    $children = $children->push(new SpendingChildItem(
-                        categoryId: $rootCategory->id,
-                        name: $rootCategory->name,
-                        color: $rootCategory->color,
-                        icon: $rootCategory->icon,
-                        amount: $direct['amount'],
-                        count: $direct['count'],
-                        direct: true,
-                    ));
+                // Pai inalcançável (parent_id apontando para uma categoria
+                // que não existe mais): não é um caso de "Sem categoria",
+                // só não há como montar o item — pula a linha.
+                if ($rootCategory === null) {
+                    return null;
                 }
-            }
 
-            $children = $children->sortByDesc(fn (SpendingChildItem $child) => $child->amount)->values();
+                /** @var Collection<int, SpendingChildItem> $children */
+                $children = $childrenByRoot->get($rootId) ?? collect();
+                $direct = $directByRoot->get($rootId);
 
-            return new SpendingCategoryItem(
-                categoryId: $rootCategory?->id,
-                name: $rootCategory->name ?? 'Sem categoria',
-                color: $rootCategory?->color,
-                icon: $rootCategory?->icon,
-                amount: $amount,
-                count: $count,
-                children: $children->all(),
-            );
-        });
+                $amount = (int) $children->sum('amount');
+                $count = (int) $children->sum('count');
+
+                if ($direct !== null) {
+                    $amount += $direct['amount'];
+                    $count += $direct['count'];
+
+                    // Direto no pai só entra no detalhamento quando já existe
+                    // alguma subcategoria com gasto — ver docblock da classe.
+                    if ($children->isNotEmpty()) {
+                        $children->push(new SpendingChildItem(
+                            categoryId: $rootCategory->id,
+                            name: $rootCategory->name,
+                            color: $rootCategory->color,
+                            icon: $rootCategory->icon,
+                            amount: $direct['amount'],
+                            count: $direct['count'],
+                            direct: true,
+                        ));
+                    }
+                }
+
+                return new SpendingCategoryItem(
+                    categoryId: $rootCategory->id,
+                    name: $rootCategory->name,
+                    color: $rootCategory->color,
+                    icon: $rootCategory->icon,
+                    amount: $amount,
+                    count: $count,
+                    children: $this->sorted($children)->all(),
+                );
+            })
+            ->filter();
+    }
+
+    /**
+     * Valor desc, nome asc como critério de desempate (duas categorias/
+     * subcategorias com o mesmo gasto saem em ordem estável e previsível).
+     *
+     * @template TItem of SpendingCategoryItem|SpendingChildItem
+     *
+     * @param  Collection<int, TItem>  $items
+     * @return Collection<int, TItem>
+     */
+    private function sorted(Collection $items): Collection
+    {
+        return $items->sortBy([['amount', 'desc'], ['name', 'asc']])->values();
     }
 }

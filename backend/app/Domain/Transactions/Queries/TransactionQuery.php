@@ -30,6 +30,7 @@ final class TransactionQuery
             ->when($filters['to'] ?? null, fn (Builder $q, $date) => $q->where('date', '<=', $date))
             ->when($filters['status'] ?? null, fn (Builder $q, $status) => $q->where('status', $status))
             ->when($filters['direction'] ?? null, fn (Builder $q, $direction) => $q->where('direction', $direction))
+            ->when($filters['currency'] ?? null, fn (Builder $q, $currency) => $q->where('currency', $currency))
             ->when($filters['reportable'] ?? false, fn (Builder $q) => $q->reportable())
             ->when($filters['search'] ?? null, function (Builder $q, string $term) {
                 $like = '%'.addcslashes($term, '%_\\').'%';

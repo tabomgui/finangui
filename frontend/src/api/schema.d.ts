@@ -4623,14 +4623,20 @@ export interface operations {
         parameters: {
             query?: {
                 account_id?: number;
+                /**
+                 * @description Proibido junto de no_category=true: os dois filtram categoria
+                 *     de formas incompatíveis entre si.
+                 */
                 category_id?: number;
                 /**
                  * @description category_exact restringe category_id à própria categoria, sem
                  *     incluir as subcategorias (comportamento padrão de category_id).
+                 *     Só faz sentido junto de category_id.
                  */
                 category_exact?: boolean;
                 /** @description no_category filtra só lançamentos sem categoria nenhuma. */
                 no_category?: boolean;
+                currency?: string;
                 statement_id?: number;
                 tag_id?: number;
                 from?: string;
@@ -4638,9 +4644,8 @@ export interface operations {
                 status?: components["schemas"]["TransactionStatus"];
                 direction?: components["schemas"]["Direction"];
                 /**
-                 * @description reportable aplica Transaction::scopeReportable() (exclui
-                 *     transferências, ignorados e categorias de transferência), a
-                 *     mesma base usada pelos relatórios de despesa.
+                 * @description only posted transactions that count in reports: excludes
+                 *     pending/projected, ignored, transfers and transfer categories.
                  */
                 reportable?: boolean;
                 search?: string;
