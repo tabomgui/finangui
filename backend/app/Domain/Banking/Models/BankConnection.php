@@ -17,8 +17,19 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * o id do item do provedor (`external_id`); o resto (contas, saldos,
  * transações) é buscado de novo a cada sync — ver `App\Domain\Banking\Jobs\SyncConnection`.
  *
+ * `credential_fingerprint` (sha1 do client_id em caixa baixa — nunca o
+ * client_id em si — ver `App\Domain\Banking\Models\BankCredential::fingerprint()`)
+ * amarra a conexão à credencial da Pluggy que a criou: `CreateConnection`
+ * grava a da credencial atual do usuário; null numa conexão existente
+ * (criada sob a conta global antiga, por variável de ambiente) é adotado
+ * pela própria credencial atual no primeiro sync que terminar com sucesso
+ * (`SyncConnection`). `SaveBankCredentials`/`DeleteBankCredentials` só
+ * contam como "em uso" a conexão cujo fingerprint bate com o da credencial
+ * atual — null ou de outra conta nunca bloqueia.
+ *
  * @property BankProviderName $provider
  * @property ConnectionStatus $status
+ * @property string|null $credential_fingerprint
  * @property CarbonImmutable|null $last_synced_at
  * @property array<string, mixed>|null $settings
  */
@@ -32,6 +43,7 @@ class BankConnection extends Model
     protected $fillable = [
         'user_id', 'provider', 'external_id', 'status', 'institution_name',
         'institution_logo_url', 'last_synced_at', 'last_error', 'settings',
+        'credential_fingerprint',
     ];
 
     /**

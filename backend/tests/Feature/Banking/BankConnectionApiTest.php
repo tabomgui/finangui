@@ -224,6 +224,19 @@ describe('criar conexão', function () {
         expect(fn () => BankConnection::factory()->create(['external_id' => 'dup-item']))
             ->toThrow(UniqueConstraintViolationException::class);
     });
+
+    it('grava credential_fingerprint a partir da credencial atual do usuário', function () {
+        $itemId = '00000000-0000-0000-0000-000000000c04';
+        $this->fake->items[$itemId] = providerItem(['id' => $itemId, 'clientUserId' => 'user:'.$this->user->id]);
+        $this->fake->accountsByItem[$itemId] = [providerAccount(['id' => 'acc-1'])];
+
+        $credential = BankCredential::query()->where('user_id', $this->user->id)->first();
+
+        $this->postJson('/api/v1/bank-connections', ['item_id' => $itemId])->assertCreated();
+
+        $connection = BankConnection::query()->where('external_id', $itemId)->first();
+        expect($connection->credential_fingerprint)->toBe(BankCredential::fingerprint($credential->client_id));
+    });
 });
 
 describe('vincular contas', function () {

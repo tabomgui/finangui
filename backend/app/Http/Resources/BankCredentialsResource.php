@@ -14,7 +14,11 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * client_id_hint e verified_at só aparecem quando configurado (omitidos,
  * nunca null — ver CLAUDE.md sobre o Readable<T> do openapi-fetch);
  * client_id/client_secret nunca saem daqui (nem chegam a sair de
- * App\Domain\Banking\Models\BankCredential — ver $hidden).
+ * App\Domain\Banking\Models\BankCredential — ver $hidden). Uma linha
+ * verificada que não descriptografa mais (ex.: APP_KEY trocada) responde
+ * como não configurada, mesmo com verified_at preenchido — mesma regra de
+ * BankCredential::isVerifiedFor(), para a tela de Configurações não ficar
+ * presa num estado "conectado" que não serve para nada.
  *
  * @mixin BankCredential
  */
@@ -35,6 +39,8 @@ final class BankCredentialsResource extends JsonResource
 
     private function configured(): bool
     {
-        return $this->resource instanceof BankCredential && $this->verified_at !== null;
+        return $this->resource instanceof BankCredential
+            && $this->verified_at !== null
+            && BankCredential::readableClientId($this->resource) !== null;
     }
 }

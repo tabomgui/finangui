@@ -9,6 +9,7 @@ use App\Domain\Banking\Errors\ProviderRequestFailed;
 use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Banking\Jobs\SyncConnection;
 use App\Domain\Banking\Models\BankConnection;
+use App\Domain\Banking\Models\BankCredential;
 use App\Domain\Banking\Providers\FakeBankProvider;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Transactions\Enums\TransactionSource;
@@ -507,6 +508,57 @@ it('nunca ajusta o saldo de abertura de um cartão (fica sempre zero)', function
     $card->refresh();
     expect($card->opening_balance->cents)->toBe(0)
         ->and($card->provider_opening_set_at)->toBeNull();
+});
+
+it('sync bem-sucedido adota o fingerprint da credencial atual numa conexão legada (fingerprint null)', function () {
+    $credential = verifiedBankCredential($this->user);
+    $connection = BankConnection::factory()->active()->create([
+        'user_id' => $this->user->id, 'external_id' => $this->itemId, 'credential_fingerprint' => null,
+    ]);
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId]);
+
+    runConnectionSync($connection->id);
+
+    expect($connection->refresh()->status)->toBe(ConnectionStatus::Active)
+        ->and($connection->credential_fingerprint)->toBe(BankCredential::fingerprint($credential->client_id));
+});
+
+it('sync bem-sucedido nunca sobrescreve um fingerprint já gravado', function () {
+    verifiedBankCredential($this->user);
+    $connection = BankConnection::factory()->active()->create([
+        'user_id' => $this->user->id, 'external_id' => $this->itemId, 'credential_fingerprint' => 'fingerprint-original',
+    ]);
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId]);
+
+    runConnectionSync($connection->id);
+
+    expect($connection->refresh()->status)->toBe(ConnectionStatus::Active)
+        ->and($connection->credential_fingerprint)->toBe('fingerprint-original');
+});
+
+it('sync que termina em erro não adota fingerprint nenhum numa conexão legada', function () {
+    verifiedBankCredential($this->user);
+    $connection = BankConnection::factory()->active()->create([
+        'user_id' => $this->user->id, 'external_id' => $this->itemId, 'credential_fingerprint' => null,
+    ]);
+    fakeBankProvider(providerFailingOn(new FakeBankProvider, 'item', new ProviderRequestFailed(422, 'bad-request')));
+
+    runConnectionSync($connection->id);
+
+    expect($connection->refresh()->status)->toBe(ConnectionStatus::Error)
+        ->and($connection->credential_fingerprint)->toBeNull();
+});
+
+it('sem credencial cadastrada, o sync bem-sucedido não grava fingerprint nenhum', function () {
+    $connection = BankConnection::factory()->active()->create([
+        'user_id' => $this->user->id, 'external_id' => $this->itemId, 'credential_fingerprint' => null,
+    ]);
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId]);
+
+    runConnectionSync($connection->id);
+
+    expect($connection->refresh()->status)->toBe(ConnectionStatus::Active)
+        ->and($connection->credential_fingerprint)->toBeNull();
 });
 
 describe('última tentativa e proteção de failed() contra regressão', function () {

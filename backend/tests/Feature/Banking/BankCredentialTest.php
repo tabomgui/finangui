@@ -40,3 +40,24 @@ it('é único por usuário e provedor', function () {
     expect(fn () => BankCredential::factory()->create(['user_id' => $user->id]))
         ->toThrow(UniqueConstraintViolationException::class);
 });
+
+it('fingerprint() é o sha1 do client_id em caixa baixa, nunca o client_id em si', function () {
+    expect(BankCredential::fingerprint('ABC-123'))
+        ->toBe(sha1('abc-123'))
+        ->not->toContain('ABC-123')
+        ->not->toContain('abc-123');
+
+    expect(BankCredential::fingerprint('abc-123'))->toBe(BankCredential::fingerprint('ABC-123'));
+});
+
+it('readableClientId() devolve null para uma credencial que não descriptografa mais', function () {
+    $user = actingAsUser();
+    $credential = BankCredential::factory()->create(['user_id' => $user->id]);
+    corruptBankCredentialSecret($credential);
+
+    expect(BankCredential::readableClientId($credential->fresh()))->toBeNull();
+});
+
+it('readableClientId() devolve null sem credencial', function () {
+    expect(BankCredential::readableClientId(null))->toBeNull();
+});

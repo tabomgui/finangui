@@ -2106,8 +2106,9 @@ export interface components {
              */
             primary_currency: string;
             /**
-             * @description Sem credenciais da Pluggy verificadas cadastradas por este usuário, o
-             *     frontend esconde o fluxo de conexão bancária inteiro.
+             * @description Sem credenciais da Pluggy verificadas (e legíveis) cadastradas por
+             *     este usuário, o frontend leva o botão "Conectar banco" para o card
+             *     de Configurações em vez de abrir o widget da Pluggy.
              */
             banking_enabled: boolean;
         };

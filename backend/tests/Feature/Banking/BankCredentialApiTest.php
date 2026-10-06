@@ -1,13 +1,17 @@
 <?php
 
+use App\Domain\Banking\Enums\ConnectionStatus;
+use App\Domain\Banking\Jobs\SyncConnection;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Models\BankCredential;
 use App\Domain\Banking\Providers\Pluggy\PluggyProvider;
 use App\Models\User;
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 
 beforeEach(function () {
     config(['services.pluggy.base_url' => 'https://api.pluggy.ai']);
@@ -52,6 +56,18 @@ describe('GET /bank-credentials', function () {
         $this->getJson('/api/v1/bank-credentials')
             ->assertOk()
             ->assertJsonPath('data.configured', false);
+    });
+
+    it('credencial verificada mas ilegível (APP_KEY trocada): configured false, sem client_id_hint/verified_at', function () {
+        $user = actingAsUser();
+        $credential = BankCredential::factory()->create(['user_id' => $user->id]);
+        corruptBankCredentialSecret($credential);
+
+        $this->getJson('/api/v1/bank-credentials')
+            ->assertOk()
+            ->assertJson(['data' => ['configured' => false, 'provider' => 'pluggy']])
+            ->assertJsonMissingPath('data.client_id_hint')
+            ->assertJsonMissingPath('data.verified_at');
     });
 });
 
@@ -292,14 +308,17 @@ describe('PUT /bank-credentials', function () {
             ->and($credential->client_secret)->toBe('new-secret');
     });
 
-    it('trocar client_id com conexões bancárias → 409 bank_credentials_in_use, nada é alterado', function () {
+    it('trocar client_id com uma conexão fingerprinted na conta atual → 409 bank_credentials_in_use, nada é alterado', function () {
         $user = actingAsUser();
         $credential = BankCredential::factory()->create([
             'user_id' => $user->id,
             'client_id' => '77777777-7777-7777-7777-777777777777',
             'client_secret' => 'old-secret',
         ]);
-        BankConnection::factory()->create(['user_id' => $user->id]);
+        BankConnection::factory()->create([
+            'user_id' => $user->id,
+            'credential_fingerprint' => BankCredential::fingerprint('77777777-7777-7777-7777-777777777777'),
+        ]);
 
         Http::fake(['api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-3'])]);
 
@@ -314,6 +333,45 @@ describe('PUT /bank-credentials', function () {
             ->and($credential->refresh()->client_secret)->toBe('old-secret');
 
         Http::assertNothingSent();
+    });
+
+    it('trocar client_id com uma conexão fingerprinted em outra conta não bloqueia', function () {
+        $user = actingAsUser();
+        BankCredential::factory()->create([
+            'user_id' => $user->id,
+            'client_id' => 'aa111111-1111-1111-1111-111111111111',
+        ]);
+        BankConnection::factory()->create([
+            'user_id' => $user->id,
+            'credential_fingerprint' => BankCredential::fingerprint('some-other-account'),
+        ]);
+
+        Http::fake(['api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-other'])]);
+
+        $this->putJson('/api/v1/bank-credentials', [
+            'client_id' => 'bb222222-2222-2222-2222-222222222222',
+            'client_secret' => 'new-secret',
+        ])->assertOk();
+
+        expect(BankCredential::query()->where('user_id', $user->id)->first()->client_id)->toBe('bb222222-2222-2222-2222-222222222222');
+    });
+
+    it('trocar client_id com uma conexão legada (fingerprint null) não bloqueia — conexão da era de env global', function () {
+        $user = actingAsUser();
+        BankCredential::factory()->create([
+            'user_id' => $user->id,
+            'client_id' => 'cc333333-3333-3333-3333-333333333333',
+        ]);
+        BankConnection::factory()->create(['user_id' => $user->id, 'credential_fingerprint' => null]);
+
+        Http::fake(['api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-legacy'])]);
+
+        $this->putJson('/api/v1/bank-credentials', [
+            'client_id' => 'dd444444-4444-4444-4444-444444444444',
+            'client_secret' => 'new-secret',
+        ])->assertOk();
+
+        expect(BankCredential::query()->where('user_id', $user->id)->first()->client_id)->toBe('dd444444-4444-4444-4444-444444444444');
     });
 
     it('trocar client_id sem conexões bancárias é permitido', function () {
@@ -403,6 +461,48 @@ describe('PUT /bank-credentials', function () {
 
         expect($this->postJson('/api/v1/rules/preview', [])->status())->not->toBe(429);
     });
+
+    it('depois de salvar, reenvia para sincronizar as conexões em error do usuário', function () {
+        Queue::fake();
+        $user = actingAsUser();
+        BankCredential::factory()->create(['user_id' => $user->id, 'client_id' => 'ee555555-5555-5555-5555-555555555555']);
+        $errored = BankConnection::factory()->create([
+            'user_id' => $user->id,
+            'status' => ConnectionStatus::Error,
+            'last_error' => 'Cadastre suas credenciais da Pluggy em Configurações.',
+        ]);
+        $active = BankConnection::factory()->active()->create(['user_id' => $user->id]);
+
+        Http::fake(['api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-resync'])]);
+
+        $this->putJson('/api/v1/bank-credentials', [
+            'client_id' => 'ee555555-5555-5555-5555-555555555555',
+            'client_secret' => 'new-secret',
+        ])->assertOk();
+
+        Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $errored->id);
+        Queue::assertNotPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $active->id);
+    });
+
+    it('não falha quando a conexão em error já tem um sync em andamento (ConnectionSyncInProgress é engolido)', function () {
+        $user = actingAsUser();
+        BankCredential::factory()->create(['user_id' => $user->id, 'client_id' => 'ff666666-6666-6666-6666-666666666666']);
+        $errored = BankConnection::factory()->create(['user_id' => $user->id, 'status' => ConnectionStatus::Error]);
+
+        $lock = Cache::lock(UniqueLock::getKey(new SyncConnection($errored->id)));
+        $lock->get();
+
+        Http::fake(['api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-resync-2'])]);
+
+        try {
+            $this->putJson('/api/v1/bank-credentials', [
+                'client_id' => 'ff666666-6666-6666-6666-666666666666',
+                'client_secret' => 'new-secret',
+            ])->assertOk();
+        } finally {
+            $lock->release();
+        }
+    });
 });
 
 describe('PUT /bank-credentials — recuperação de credencial ilegível', function () {
@@ -453,16 +553,42 @@ describe('PUT /bank-credentials — recuperação de credencial ilegível', func
 });
 
 describe('DELETE /bank-credentials', function () {
-    it('com conexões bancárias → 409 bank_credentials_in_use, nada é removido', function () {
+    it('com uma conexão fingerprinted na conta atual → 409 bank_credentials_in_use, nada é removido', function () {
         $user = actingAsUser();
-        BankCredential::factory()->create(['user_id' => $user->id]);
-        BankConnection::factory()->create(['user_id' => $user->id]);
+        $credential = BankCredential::factory()->create(['user_id' => $user->id]);
+        BankConnection::factory()->create([
+            'user_id' => $user->id,
+            'credential_fingerprint' => BankCredential::fingerprint($credential->client_id),
+        ]);
 
         $this->deleteJson('/api/v1/bank-credentials')
             ->assertStatus(409)
             ->assertJsonPath('code', 'bank_credentials_in_use');
 
         expect(BankCredential::query()->where('user_id', $user->id)->exists())->toBeTrue();
+    });
+
+    it('com uma conexão legada (fingerprint null) não bloqueia — conexão da era de env global', function () {
+        $user = actingAsUser();
+        BankCredential::factory()->create(['user_id' => $user->id]);
+        BankConnection::factory()->create(['user_id' => $user->id, 'credential_fingerprint' => null]);
+
+        $this->deleteJson('/api/v1/bank-credentials')->assertNoContent();
+
+        expect(BankCredential::query()->where('user_id', $user->id)->exists())->toBeFalse();
+    });
+
+    it('com uma conexão fingerprinted em outra conta não bloqueia', function () {
+        $user = actingAsUser();
+        BankCredential::factory()->create(['user_id' => $user->id]);
+        BankConnection::factory()->create([
+            'user_id' => $user->id,
+            'credential_fingerprint' => BankCredential::fingerprint('outra-conta-qualquer'),
+        ]);
+
+        $this->deleteJson('/api/v1/bank-credentials')->assertNoContent();
+
+        expect(BankCredential::query()->where('user_id', $user->id)->exists())->toBeFalse();
     });
 
     it('sem conexões bancárias: remove e responde 204', function () {

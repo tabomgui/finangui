@@ -3,13 +3,14 @@
 namespace App\Domain\Banking\Actions;
 
 use App\Domain\Banking\Enums\BankProviderName;
+use App\Domain\Banking\Enums\ConnectionStatus;
 use App\Domain\Banking\Errors\BankCredentialsInUse;
+use App\Domain\Banking\Errors\ConnectionSyncInProgress;
 use App\Domain\Banking\Errors\ProviderAuthFailed;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Models\BankCredential;
 use App\Domain\Banking\Providers\Pluggy\PluggyProvider;
 use App\Models\User;
-use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -22,13 +23,18 @@ use Illuminate\Validation\ValidationException;
  * bilidade transitória) não é capturado aqui: sobe até o renderer global
  * (bootstrap/app.php), que já responde 503 provider_unavailable.
  *
- * Trocar de client_id (conta Pluggy diferente) com conexões bancárias
- * existentes (qualquer status) é bloqueado (BankCredentialsInUse): os itens
- * cadastrados pertencem à conta antiga, então o usuário precisa desconectar
- * os bancos primeiro. Trocar só o client_secret do mesmo client_id é sempre
- * permitido. Um usuário com conexões mas sem credencial cadastrada (conexões
- * de quando a Pluggy era configurada por variável de ambiente, antes desta
- * tabela existir) também pode salvar — não há "conta antiga" para comparar.
+ * Trocar de client_id (conta Pluggy diferente) é bloqueado (BankCredentialsInUse)
+ * só quando o usuário tem conexões bancárias cujo
+ * `credential_fingerprint` bate com o da conta atual (ver
+ * App\Domain\Banking\Models\BankCredential::fingerprint()/currentFingerprintFor()
+ * e App\Domain\Banking\Models\BankConnection) — essas pertencem de fato à
+ * conta antiga, então o usuário precisa desconectá-las primeiro. Conexão com
+ * fingerprint null (criada sob a conta global antiga, por variável de
+ * ambiente, antes de existir essa coluna, ou ainda não adotada por nenhum
+ * sync bem-sucedido — ver App\Domain\Banking\Jobs\SyncConnection) ou de uma
+ * terceira conta nunca bloqueia. Trocar só o client_secret do mesmo
+ * client_id é sempre permitido. Um usuário sem credencial cadastrada
+ * também pode salvar — não há "conta antiga" para comparar.
  *
  * Uma linha atual que não descriptografa mais (client_id OU client_secret —
  * ex.: APP_KEY trocada, dado corrompido) é tratada como se não existisse
@@ -37,9 +43,19 @@ use Illuminate\Validation\ValidationException;
  * gravação sempre apaga a linha atual (legível ou não) e cria uma nova numa
  * transação, em vez de updateOrCreate — assim a recuperação de uma linha
  * corrompida não depende de conseguir atualizá-la.
+ *
+ * Depois que a transação comita, toda conexão do usuário em `error` é
+ * reenviada para sincronizar (QueueConnectionSync, ignorando
+ * ConnectionSyncInProgress — mesmo padrão de
+ * App\Http\Controllers\Api\V1\BankConnectionController::queueSyncIgnoringInProgress):
+ * cobre tanto a credencial recém-cadastrada por um usuário que só tinha
+ * conexões legadas (fingerprint null, mensagem "Cadastre suas credenciais…")
+ * quanto a troca de secret de uma credencial que a Pluggy vinha recusando.
  */
 final class SaveBankCredentials
 {
+    public function __construct(private readonly QueueConnectionSync $queueConnectionSync) {}
+
     /**
      * @throws BankCredentialsInUse
      * @throws ValidationException
@@ -60,7 +76,7 @@ final class SaveBankCredentials
         // a trava da linha do usuário durante a chamada de rede.
         $this->verify($user, $clientId, $clientSecret);
 
-        return DB::transaction(function () use ($user, $clientId, $clientSecret) {
+        $credential = DB::transaction(function () use ($user, $clientId, $clientSecret) {
             // Trava a linha do usuário e refaz a checagem: serializa duas
             // gravações concorrentes (ex.: duas abas) e pega uma conexão
             // criada enquanto a Pluggy respondia.
@@ -88,12 +104,39 @@ final class SaveBankCredentials
                 'verified_at' => now(),
             ]);
         });
+
+        $this->queueErrorConnectionSyncs($user);
+
+        return $credential;
+    }
+
+    /**
+     * A credencial nova pode resolver o motivo de uma conexão ter parado em
+     * `error` (sem isso, a mensagem "Cadastre suas credenciais…" só sairia
+     * da tela no próximo sync agendado, até 6h depois). Um sync que falhar
+     * de novo (ex.: secret ainda errado) volta a gravar `error` do jeito
+     * normal — ver App\Domain\Banking\Jobs\SyncConnection.
+     */
+    private function queueErrorConnectionSyncs(User $user): void
+    {
+        $connections = BankConnection::query()
+            ->where('user_id', $user->id)
+            ->where('status', ConnectionStatus::Error)
+            ->get();
+
+        foreach ($connections as $connection) {
+            try {
+                $this->queueConnectionSync->handle($connection);
+            } catch (ConnectionSyncInProgress) {
+                // Nada a fazer: um sync já está enfileirado ou rodando.
+            }
+        }
     }
 
     /**
      * client_id legível da credencial atual (null sem credencial ou com linha
      * ilegível); lança BankCredentialsInUse quando o novo client_id é de outra
-     * conta e o usuário tem conexões.
+     * conta e o usuário tem conexões com o fingerprint da conta atual.
      *
      * @throws BankCredentialsInUse
      */
@@ -104,9 +147,9 @@ final class SaveBankCredentials
             ->where('provider', BankProviderName::Pluggy)
             ->first();
 
-        $currentClientId = $this->readableClientId($current);
+        $currentClientId = BankCredential::readableClientId($current);
 
-        if ($currentClientId !== null && $currentClientId !== $clientId && $this->hasConnections($user)) {
+        if ($currentClientId !== null && $currentClientId !== $clientId && $this->hasConnectionsFor($user, $currentClientId)) {
             throw new BankCredentialsInUse;
         }
 
@@ -114,32 +157,16 @@ final class SaveBankCredentials
     }
 
     /**
-     * client_id da credencial atual, ou null quando não há nenhuma ou a
-     * linha não descriptografa mais (client_id OU client_secret corrompidos
-     * — lê os dois para decidir, mesmo só precisando do client_id, porque
-     * uma linha com client_secret ilegível também não serve mais para nada).
+     * Só conta como "em uso" a conexão cujo credential_fingerprint bate com
+     * o fingerprint de $clientId (a conta atual) — null ou de outra conta
+     * nunca bloqueia (ver App\Domain\Banking\Models\BankConnection).
      */
-    private function readableClientId(?BankCredential $current): ?string
+    private function hasConnectionsFor(User $user, string $clientId): bool
     {
-        if ($current === null) {
-            return null;
-        }
-
-        try {
-            $clientId = $current->client_id;
-            // @phpstan-ignore expr.resultUnused (lê client_secret só para forçar a descriptografia e detectar corrupção também nele; o valor em si não é usado aqui)
-            $current->client_secret;
-            // @phpstan-ignore catch.neverThrown (falso positivo: Larastan não enxerga que o cast `encrypted` pode lançar ao descriptografar; cobre uma APP_KEY trocada ou dado corrompido, ver tests/Feature/Banking/BankCredentialApiTest.php)
-        } catch (DecryptException) {
-            return null;
-        }
-
-        return $clientId;
-    }
-
-    private function hasConnections(User $user): bool
-    {
-        return BankConnection::query()->where('user_id', $user->id)->exists();
+        return BankConnection::query()
+            ->where('user_id', $user->id)
+            ->where('credential_fingerprint', BankCredential::fingerprint($clientId))
+            ->exists();
     }
 
     /**

@@ -142,6 +142,14 @@ it('banking_enabled é isolado por usuário', function () {
     $this->getJson('/api/v1/me')->assertOk()->assertJsonPath('data.banking_enabled', false);
 });
 
+it('banking_enabled fica falso com credencial verificada mas ilegível (APP_KEY trocada)', function () {
+    $user = actingAsUser();
+    $credential = BankCredential::factory()->create(['user_id' => $user->id]);
+    corruptBankCredentialSecret($credential);
+
+    $this->getJson('/api/v1/me')->assertOk()->assertJsonPath('data.banking_enabled', false);
+});
+
 it('informa o status de auth da instância', function () {
     config([
         'services.google.client_id' => null,
