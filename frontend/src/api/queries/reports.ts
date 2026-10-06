@@ -25,3 +25,11 @@ export function useCategoryComparison(aFrom: string, aTo: string, bFrom: string,
     placeholderData: keepPreviousData,
   })
 }
+
+export function useSpendingBreakdown(from: string, to: string) {
+  return useQuery({
+    queryKey: queryKeys.reportSpending(from, to),
+    queryFn: async () => (await unwrap(api.GET('/reports/spending', { params: { query: { from, to } } }))).data,
+    placeholderData: keepPreviousData,
+  })
+}

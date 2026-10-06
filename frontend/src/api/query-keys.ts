@@ -4,10 +4,17 @@ import type { Direction, ReportBasis } from '@/api/types'
 export type TransactionFilters = {
   account_id?: number
   category_id?: number
+  /** Restringe `category_id` à própria categoria, sem incluir subcategorias. Só junto de `category_id`. */
+  category_exact?: boolean
+  /** Só lançamentos sem categoria nenhuma; incompatível com `category_id`. */
+  no_category?: boolean
   tag_id?: number
   from?: string
   to?: string
   direction?: Direction
+  currency?: string
+  /** Só lançamentos que entram em relatório (ver `Transaction::reportable()` no backend). */
+  reportable?: boolean
   search?: string
   statement_id?: number
 }
@@ -24,6 +31,7 @@ export const queryKeys = {
   categories: (includeArchived: boolean) => ['categories', { includeArchived }] as const,
   tags: () => ['tags'] as const,
   transactions: (filters: TransactionFilters) => ['transactions', 'list', compactFilters(filters)] as const,
+  previewTransactions: (filters: TransactionFilters) => ['transactions', 'preview', compactFilters(filters)] as const,
   recentTransactions: () => ['transactions', 'recent'] as const,
   transaction: (id: number) => ['transactions', 'detail', id] as const,
   transfersRoot: () => ['transfers'] as const,
@@ -51,6 +59,7 @@ export const queryKeys = {
   reportMonthly: (from: string, to: string, basis: ReportBasis) => ['reports', 'monthly', { from, to, basis }] as const,
   reportCategories: (aFrom: string, aTo: string, bFrom: string, bTo: string, basis: ReportBasis) =>
     ['reports', 'categories', { aFrom, aTo, bFrom, bTo, basis }] as const,
+  reportSpending: (from: string, to: string) => ['reports', 'spending', { from, to }] as const,
   notifications: () => ['notifications', 'list'] as const,
   notificationsUnreadCount: () => ['notifications', 'unread-count'] as const,
 }

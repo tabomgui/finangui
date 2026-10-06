@@ -21,9 +21,9 @@ import { OverdueOccurrencesDialog } from './overdue-occurrences-dialog'
 import { PendingCard } from './pending-card'
 import { RecentTransactionsCard } from './recent-transactions-card'
 import { dayFromParam, monthFromParam } from './shares'
+import { SpendingCard } from './spending-card'
 import { StatementsCard } from './statements-card'
 import { SummaryCards } from './summary-cards'
-import { TopCategoriesCard } from './top-categories-card'
 
 export function DashboardPage() {
   const [params, setParams] = useSearchParams()
@@ -132,7 +132,7 @@ export function DashboardPage() {
             <PendingCard onOpenOverdue={() => setOverdueOpen(true)} />
             <StatementsCard />
             <div className="grid gap-4 lg:grid-cols-2">
-              <TopCategoriesCard categories={data.top_categories} expense={data.expense} currency={data.currency} month={month} />
+              <SpendingCard month={month} />
               <AccountsCard accounts={data.accounts} />
             </div>
             <RecentTransactionsCard />

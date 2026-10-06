@@ -8,6 +8,7 @@ import { CategoryPicker } from '@/components/shared/category-picker'
 import { DateInput } from '@/components/shared/date-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -90,12 +91,26 @@ export function TransactionFilters({ filters }: { filters: Filters }) {
               <Label htmlFor="filter-category">Categoria</Label>
               <CategoryPicker
                 id="filter-category"
-                value={filters.category_id ?? null}
-                onChange={(id) => setFilter('category_id', id ?? undefined)}
+                value={filters.no_category ? null : filters.category_id ?? null}
+                onChange={(id) =>
+                  setParams((current) => {
+                    let next = paramsWithFilter(current, 'category_id', id ?? undefined)
+                    next = paramsWithFilter(next, 'no_category', id === null ? true : undefined)
+                    return paramsWithFilter(next, 'category_exact', undefined)
+                  }, { replace: true })
+                }
                 placeholder="Todas"
-                allowNone={false}
                 includeArchived
               />
+              {filters.category_id && !filters.no_category && (
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Checkbox
+                    checked={filters.category_exact ?? false}
+                    onCheckedChange={(checked) => setFilter('category_exact', checked === true ? true : undefined)}
+                  />
+                  Não incluir subcategorias
+                </label>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="filter-tag">Tag</Label>

@@ -4,7 +4,10 @@ type Schemas = components['schemas']
 
 export type DashboardSummary = paths['/dashboard']['get']['responses'][200]['content']['application/json']['data']
 export type DashboardAccount = DashboardSummary['accounts'][number]
-export type TopCategory = DashboardSummary['top_categories'][number]
+
+export type SpendingBreakdown = paths['/reports/spending']['get']['responses'][200]['content']['application/json']['data']
+export type SpendingCategory = SpendingBreakdown['categories'][number]
+export type SpendingChild = SpendingCategory['children'][number]
 
 export type User = Schemas['UserResource']
 export type Account = Schemas['AccountResource']

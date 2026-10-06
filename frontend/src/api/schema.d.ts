@@ -3218,13 +3218,6 @@ export interface operations {
                             income: number;
                             expense: number;
                             net: number;
-                            top_categories: {
-                                category_id: number | null;
-                                name: string | "Sem categoria";
-                                icon: string | null;
-                                color: string | null;
-                                amount: number;
-                            }[];
                         };
                     };
                 };

@@ -31,6 +31,10 @@ vi.mock('@/api/queries/recurrences', () => ({
 }))
 vi.mock('@/api/queries/cards', () => ({ useCards: () => ({ data: [] }) }))
 vi.mock('@/api/queries/transactions', () => ({ useRecentTransactions: () => ({ data: [], isPending: false, isError: false, refetch: vi.fn() }) }))
+// O card de distribuição de gastos (ver spending-card.test.tsx) não aparece em nenhum destes
+// testes (todos ficam com `accounts: []`, que cai no estado vazio da página antes dele), mas
+// mockamos por precaução: sem isso, um teste futuro com contas chamaria a query de verdade.
+vi.mock('@/api/queries/reports', () => ({ useSpendingBreakdown: () => ({ data: undefined, isPending: true, isError: false, isPlaceholderData: false, refetch: vi.fn() }) }))
 
 // Mocka o calendário lazy-loaded (testado de verdade em `balance-day-picker.test.tsx`): aqui só
 // interessa a integração entre a escolha de dia/"Voltar para hoje" e a URL/query da página.
@@ -70,7 +74,6 @@ function dashboardData(overrides: Partial<DashboardSummary> = {}): DashboardSumm
     income: 0,
     expense: 0,
     net: 0,
-    top_categories: [],
     ...overrides,
   }
 }
