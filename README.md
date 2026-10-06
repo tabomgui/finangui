@@ -75,12 +75,12 @@ Regras de vínculo da conta:
 
 ## Conectar bancos (Pluggy)
 
-A integração usa a [Pluggy](https://pluggy.ai) para conectar contas e cartões de bancos reais via Open Finance.
+A integração usa a [Pluggy](https://pluggy.ai) para conectar contas e cartões de bancos reais via Open Finance. As credenciais (`client_id`/`client_secret`) são **por usuário**, não da instância: cada usuário cadastra as suas em Configurações → "Integração bancária (Pluggy)", onde também testa, troca e remove. Elas ficam criptografadas no banco (chave `APP_KEY`) e nunca são devolvidas pela API, só um hint mascarado (ex.: "••••3be8").
 
 1. Crie uma conta em https://dashboard.pluggy.ai e pegue as credenciais do sandbox (ou de produção, depois).
-2. Preencha no `backend/.env`: `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET` e, se precisar apontar para outro ambiente, `PLUGGY_BASE_URL` (vazio cai para `https://api.pluggy.ai`).
+2. Cole `client_id` e `client_secret` no card de Configurações; salvar já testa as credenciais na Pluggy antes de gravar. Se precisar apontar para outro ambiente, `PLUGGY_BASE_URL` no `backend/.env` é opcional (vazio cai para `https://api.pluggy.ai`) — não existe mais `PLUGGY_CLIENT_ID`/`PLUGGY_CLIENT_SECRET` de instância.
 
-Sem `PLUGGY_CLIENT_ID`/`PLUGGY_CLIENT_SECRET`, a integração fica desligada: o botão "Conectar banco" não aparece e os endpoints de conexão respondem 409 (`banking_disabled`).
+Sem credenciais verificadas cadastradas, a integração fica desligada para aquele usuário: o botão "Conectar banco" leva direto ao card de Configurações e os endpoints de conexão respondem 409 (`banking_disabled`). Trocar de `client_id` (outra conta Pluggy) ou remover a credencial é bloqueado enquanto houver conexões bancárias — desconecte os bancos primeiro; só o `client_secret` pode ser trocado livremente. Trocar o `APP_KEY` da instância torna as credenciais já salvas ilegíveis (tratadas como se não existissem) — o usuário precisa recadastrá-las.
 
 No sandbox da Pluggy, use o conector "Pluggy Bank" com usuário `user-ok`, senha `password-ok` e, se pedir MFA, o código `123456`.
 
