@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useMe } from '@/api/queries/auth'
 import { PageBody } from '@/components/layout/page-body'
@@ -22,7 +22,12 @@ const GOOGLE_RESULTS: Record<string, { type: 'success' | 'error'; message: strin
 export function SettingsPage() {
   const { data: user } = useMe()
   const [params, setParams] = useSearchParams()
-  const [highlightPluggy, setHighlightPluggy] = useState(false)
+  const location = useLocation()
+  // Link de outras telas (ex.: "Conectar banco" em Contas, ou o erro de uma conexão sem
+  // credenciais) pode trazer o usuário direto para o card da Pluggy via #pluggy; o próprio
+  // <ScrollRestoration /> (ver `app-shell.tsx`) já rola até o elemento com esse id — só falta
+  // realçar por um instante, para não passar em branco no meio dos outros cards da página.
+  const [highlightPluggy, setHighlightPluggy] = useState(() => location.hash === '#pluggy')
 
   useEffect(() => {
     const result = GOOGLE_RESULTS[params.get('google') ?? '']
@@ -32,16 +37,11 @@ export function SettingsPage() {
     setParams(params, { replace: true })
   }, [params, setParams])
 
-  // Link de outras telas (ex.: "Conectar banco" em Contas, ou o erro de uma conexão sem
-  // credenciais) pode trazer o usuário direto para o card da Pluggy via #pluggy; rola até lá e
-  // realça por um instante, para não passar em branco no meio dos outros cards da página.
   useEffect(() => {
-    if (window.location.hash !== '#pluggy') return
-    document.getElementById('pluggy')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    setHighlightPluggy(true)
+    if (!highlightPluggy) return
     const timeout = window.setTimeout(() => setHighlightPluggy(false), PLUGGY_HIGHLIGHT_MS)
     return () => window.clearTimeout(timeout)
-  }, [])
+  }, [highlightPluggy])
 
   if (!user) return null
 

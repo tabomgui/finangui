@@ -20,8 +20,14 @@ export function useBankCredentials() {
 export function useSaveBankCredentials() {
   const queryClient = useQueryClient()
   return useMutation({
+    // A resposta já vem no corpo de sucesso (ver onSuccess); não há motivo para guardar o
+    // resultado da mutação em cache depois de usado.
+    gcTime: 0,
     mutationFn: async (body: SaveBankCredentialsRequest) => (await unwrap(api.PUT('/bank-credentials', { body }))).data,
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Grava o resultado direto: evita o "flash" de volta ao estado anterior entre o sucesso
+      // da mutação e o refetch disparado pela invalidação abaixo.
+      queryClient.setQueryData(queryKeys.bankCredentials(), data)
       queryClient.invalidateQueries({ queryKey: queryKeys.bankCredentials() })
       queryClient.invalidateQueries({ queryKey: meKey })
       invalidateBankConnections(queryClient)

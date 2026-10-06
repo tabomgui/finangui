@@ -55,11 +55,19 @@ describe('useSaveBankCredentials', () => {
 
     const { result } = renderHook(() => useSaveBankCredentials(), { wrapper: wrapper(client) })
     await act(async () => {
-      await result.current.mutateAsync({ client_id: '11111111-1111-1111-1111-111111111111', client_secret: 'segredo' })
+      await result.current.mutateAsync({ client_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', client_secret: 'segredo' })
     })
 
     expect(PUT).toHaveBeenCalledWith('/bank-credentials', {
-      body: { client_id: '11111111-1111-1111-1111-111111111111', client_secret: 'segredo' },
+      body: { client_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', client_secret: 'segredo' },
+    })
+    // Grava a resposta direto no cache (sem esperar o refetch da invalidação abaixo): evita um
+    // instante mostrando "não configurado" de novo entre o sucesso e a invalidação resolver.
+    expect(client.getQueryData(queryKeys.bankCredentials())).toEqual({
+      configured: true,
+      provider: 'pluggy',
+      client_id_hint: '3be8',
+      verified_at: '2026-10-06T12:00:00Z',
     })
     expect(client.getQueryState(queryKeys.bankCredentials())?.isInvalidated).toBe(true)
     expect(client.getQueryState(meKey)?.isInvalidated).toBe(true)

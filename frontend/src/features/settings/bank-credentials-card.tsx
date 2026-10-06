@@ -17,7 +17,10 @@ import { applyFieldErrors, notifyError } from '@/lib/form-errors'
 import { cn } from '@/lib/utils'
 
 const schema = z.object({
-  client_id: z.string().min(1, 'Informe o Client ID.').pipe(z.uuid('Informe um Client ID válido.')),
+  // O backend aceita qualquer string no formato 8-4-4-4-12 em hexadecimal (não exige os nibbles
+  // de versão/variante do UUID "de verdade" — ver SaveBankCredentialsRequest); z.guid() valida
+  // só o formato, sem essa exigência extra que z.uuid() teria.
+  client_id: z.string().trim().min(1, 'Informe o Client ID.').pipe(z.guid('Informe um Client ID válido.')),
   client_secret: z.string().min(1, 'Informe o Client Secret.').max(200),
 })
 
@@ -55,8 +58,18 @@ export function BankCredentialsCard({ highlighted = false }: BankCredentialsCard
   const configured = credentials?.configured ?? false
   const showForm = !isPending && !isError && (!configured || editing)
 
+  /** Volta ao estado de repouso: formulário limpo, secret oculto, sem conflito pendente. */
+  function closeForm() {
+    form.reset({ client_id: '', client_secret: '' })
+    setShowSecret(false)
+    setConflict(null)
+    setEditing(false)
+    save.reset()
+  }
+
   function startEditing() {
     form.reset({ client_id: '', client_secret: '' })
+    setShowSecret(false)
     setConflict(null)
     setEditing(true)
   }
@@ -65,13 +78,15 @@ export function BankCredentialsCard({ highlighted = false }: BankCredentialsCard
     setConflict(null)
     try {
       await save.mutateAsync(values)
-      form.reset({ client_id: '', client_secret: '' })
-      setShowSecret(false)
-      setEditing(false)
+      closeForm()
       toast.success('Credenciais salvas e verificadas.')
     } catch (error) {
       if (error instanceof ApiError && error.code === 'bank_credentials_in_use') {
         setConflict(error.message)
+        return
+      }
+      if (error instanceof ApiError && error.code === 'provider_unavailable') {
+        toast.error('A Pluggy não respondeu. Tente de novo em instantes.')
         return
       }
       if (!applyFieldErrors(error, form.setError, ['client_id', 'client_secret'])) {
@@ -139,7 +154,11 @@ export function BankCredentialsCard({ highlighted = false }: BankCredentialsCard
                   e copie o Client ID e o Client Secret dela.
                 </p>
 
-                {conflict && <p className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">{conflict}</p>}
+                {conflict && (
+                  <p role="alert" className="rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                    {conflict}
+                  </p>
+                )}
 
                 <form className="space-y-4" onSubmit={onSubmit} noValidate>
                   <Field label="Client ID" htmlFor="pluggy_client_id" error={form.formState.errors.client_id?.message}>
@@ -163,16 +182,20 @@ export function BankCredentialsCard({ highlighted = false }: BankCredentialsCard
                           {...form.register('client_secret')}
                           type={showSecret ? 'text' : 'password'}
                           autoComplete="off"
+                          data-1p-ignore
+                          data-lpignore="true"
                           className="pr-10"
                         />
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon-sm"
                           onClick={() => setShowSecret((current) => !current)}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+                          className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                           aria-label={showSecret ? 'Ocultar Client Secret' : 'Mostrar Client Secret'}
                         >
                           {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </button>
+                        </Button>
                       </div>
                     )}
                   </Field>
@@ -182,7 +205,7 @@ export function BankCredentialsCard({ highlighted = false }: BankCredentialsCard
                       Salvar e testar
                     </Button>
                     {configured && (
-                      <Button type="button" variant="outline" onClick={() => setEditing(false)} disabled={save.isPending}>
+                      <Button type="button" variant="outline" onClick={closeForm} disabled={save.isPending}>
                         Cancelar
                       </Button>
                     )}

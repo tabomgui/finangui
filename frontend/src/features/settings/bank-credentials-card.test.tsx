@@ -5,6 +5,7 @@ import type { BankCredentials } from '@/api/types'
 import { BankCredentialsCard } from './bank-credentials-card'
 
 const saveMutateAsync = vi.fn()
+const saveReset = vi.fn()
 const removeMutateAsync = vi.fn()
 const refetch = vi.fn()
 
@@ -12,7 +13,7 @@ let credentialsState: { data: BankCredentials | undefined; isPending: boolean; i
 
 vi.mock('@/api/queries/bank-credentials', () => ({
   useBankCredentials: () => ({ ...credentialsState, refetch }),
-  useSaveBankCredentials: () => ({ mutateAsync: saveMutateAsync, isPending: false }),
+  useSaveBankCredentials: () => ({ mutateAsync: saveMutateAsync, isPending: false, reset: saveReset }),
   useDeleteBankCredentials: () => ({ mutateAsync: removeMutateAsync, isPending: false }),
 }))
 
@@ -24,6 +25,7 @@ const VALID_UUID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'
 
 beforeEach(() => {
   saveMutateAsync.mockReset().mockResolvedValue({ configured: true, provider: 'pluggy' })
+  saveReset.mockReset()
   removeMutateAsync.mockReset().mockResolvedValue(undefined)
   refetch.mockReset()
   vi.mocked(toast.error).mockReset()
@@ -93,14 +95,35 @@ describe('BankCredentialsCard', () => {
     expect(saveMutateAsync).not.toHaveBeenCalled()
   })
 
-  it('salva com sucesso e mostra confirmação', async () => {
+  it('salva com sucesso, limpa os dois campos e mostra confirmação', async () => {
+    credentialsState = {
+      data: { configured: true, provider: 'pluggy', client_id_hint: '3be8', verified_at: '2026-10-01T10:00:00Z' },
+      isPending: false,
+      isError: false,
+    }
     render(<BankCredentialsCard />)
+    fireEvent.click(screen.getByRole('button', { name: 'Trocar credenciais' }))
 
     fillForm(VALID_UUID, 'segredo-secreto')
     fireEvent.click(screen.getByRole('button', { name: 'Salvar e testar' }))
 
     await waitFor(() => expect(saveMutateAsync).toHaveBeenCalledWith({ client_id: VALID_UUID, client_secret: 'segredo-secreto' }))
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Credenciais salvas e verificadas.'))
+
+    // Depois do sucesso, o formulário fecha; reabrindo, os dois campos continuam vazios.
+    fireEvent.click(screen.getByRole('button', { name: 'Trocar credenciais' }))
+    expect(screen.getByLabelText('Client ID')).toHaveValue('')
+    expect(screen.getByLabelText('Client Secret')).toHaveValue('')
+  })
+
+  it('422 em client_id mostra o erro no campo', async () => {
+    saveMutateAsync.mockRejectedValueOnce(new ApiError(422, 'Dados inválidos.', null, { client_id: ['Client ID inválido.'] }))
+    render(<BankCredentialsCard />)
+
+    fillForm(VALID_UUID, 'segredo')
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar e testar' }))
+
+    await waitFor(() => expect(screen.getByText('Client ID inválido.')).toBeInTheDocument())
   })
 
   it('422 em client_secret mostra o erro no campo', async () => {
@@ -115,7 +138,7 @@ describe('BankCredentialsCard', () => {
     await waitFor(() => expect(screen.getByText('A Pluggy recusou essas credenciais.')).toBeInTheDocument())
   })
 
-  it('409 bank_credentials_in_use mostra a mensagem perto do formulário', async () => {
+  it('409 bank_credentials_in_use não mostra toast, só a mensagem perto do formulário (com role="alert")', async () => {
     saveMutateAsync.mockRejectedValueOnce(
       new ApiError(409, 'Desconecte os bancos antes de trocar de conta Pluggy.', 'bank_credentials_in_use'),
     )
@@ -124,7 +147,41 @@ describe('BankCredentialsCard', () => {
     fillForm(VALID_UUID, 'outro-secret')
     fireEvent.click(screen.getByRole('button', { name: 'Salvar e testar' }))
 
-    await waitFor(() => expect(screen.getByText('Desconecte os bancos antes de trocar de conta Pluggy.')).toBeInTheDocument())
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Desconecte os bancos antes de trocar de conta Pluggy.')
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it('503 provider_unavailable mostra toast de erro', async () => {
+    saveMutateAsync.mockRejectedValueOnce(new ApiError(503, 'Service unavailable.', 'provider_unavailable'))
+    render(<BankCredentialsCard />)
+
+    fillForm(VALID_UUID, 'outro-secret')
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar e testar' }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('A Pluggy não respondeu. Tente de novo em instantes.'))
+  })
+
+  it('Cancelar e reabrir o formulário deixa o secret vazio e oculto', () => {
+    credentialsState = {
+      data: { configured: true, provider: 'pluggy', client_id_hint: '3be8', verified_at: '2026-10-01T10:00:00Z' },
+      isPending: false,
+      isError: false,
+    }
+    render(<BankCredentialsCard />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trocar credenciais' }))
+    fillForm(VALID_UUID, 'rascunho')
+    fireEvent.click(screen.getByRole('button', { name: 'Mostrar Client Secret' }))
+    expect(screen.getByLabelText('Client Secret')).toHaveAttribute('type', 'text')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.getByText('Pluggy conectada')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trocar credenciais' }))
+    const secretInput = screen.getByLabelText('Client Secret')
+    expect(secretInput).toHaveValue('')
+    expect(secretInput).toHaveAttribute('type', 'password')
   })
 
   it('alterna mostrar/ocultar o Client Secret', () => {
