@@ -52,30 +52,24 @@ final class SaveBankCredentials
         // falso positivo/negativo na checagem de troca de conta abaixo.
         $clientId = mb_strtolower($clientId);
 
+        // Checagem barata antes de falar com a Pluggy: troca bloqueada falha
+        // sem nenhuma chamada de rede.
+        $this->currentClientIdAllowingSwitch($user, $clientId);
+
+        // O teste na Pluggy (até ~25s) fica fora da transação para não segurar
+        // a trava da linha do usuário durante a chamada de rede.
+        $this->verify($user, $clientId, $clientSecret);
+
         return DB::transaction(function () use ($user, $clientId, $clientSecret) {
-            // Trava a linha do usuário: serializa duas gravações concorrentes
-            // desta mesma credencial (ex.: duas abas salvando ao mesmo tempo)
-            // para a checagem de troca de conta abaixo e a gravação verem o
-            // mesmo estado.
+            // Trava a linha do usuário e refaz a checagem: serializa duas
+            // gravações concorrentes (ex.: duas abas) e pega uma conexão
+            // criada enquanto a Pluggy respondia.
             User::query()->whereKey($user->id)->lockForUpdate()->firstOrFail();
 
-            $current = BankCredential::query()
-                ->where('user_id', $user->id)
-                ->where('provider', BankProviderName::Pluggy)
-                ->first();
+            $currentClientId = $this->currentClientIdAllowingSwitch($user, $clientId);
 
-            $currentClientId = $this->readableClientId($current);
-
-            if ($currentClientId !== null && $currentClientId !== $clientId && $this->hasConnections($user)) {
-                throw new BankCredentialsInUse;
-            }
-
-            $this->verify($user, $clientId, $clientSecret);
-
-            // client_id mudou (ou a linha antiga era ilegível, então não dá
-            // para saber se mudou): a key cacheada da combinação antiga nunca
-            // mais vai ser usada por ninguém — limpa de todo modo, por
-            // higiene, em vez de deixar expirar sozinha.
+            // client_id mudou: a key cacheada da combinação antiga nunca mais
+            // vai ser usada — limpa por higiene em vez de deixar expirar.
             if ($currentClientId !== null && $currentClientId !== $clientId) {
                 Cache::forget(PluggyProvider::apiKeyCacheKeyFor($user->id, $currentClientId));
             }
@@ -94,6 +88,29 @@ final class SaveBankCredentials
                 'verified_at' => now(),
             ]);
         });
+    }
+
+    /**
+     * client_id legível da credencial atual (null sem credencial ou com linha
+     * ilegível); lança BankCredentialsInUse quando o novo client_id é de outra
+     * conta e o usuário tem conexões.
+     *
+     * @throws BankCredentialsInUse
+     */
+    private function currentClientIdAllowingSwitch(User $user, string $clientId): ?string
+    {
+        $current = BankCredential::query()
+            ->where('user_id', $user->id)
+            ->where('provider', BankProviderName::Pluggy)
+            ->first();
+
+        $currentClientId = $this->readableClientId($current);
+
+        if ($currentClientId !== null && $currentClientId !== $clientId && $this->hasConnections($user)) {
+            throw new BankCredentialsInUse;
+        }
+
+        return $currentClientId;
     }
 
     /**
