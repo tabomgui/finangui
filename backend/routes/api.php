@@ -61,6 +61,7 @@ Route::prefix('v1')->group(function () {
 
         Route::get('reports/monthly', [ReportController::class, 'monthly']);
         Route::get('reports/categories', [ReportController::class, 'categories']);
+        Route::get('reports/spending', [ReportController::class, 'spending']);
 
         // Updates são parciais (PATCH): apiResource()->except('update') tira o
         // PUT/PATCH padrão (que registraria os dois verbos) e o Route::patch

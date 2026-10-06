@@ -703,6 +703,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reports/spending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["report.spending"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/rules/order": {
         parameters: {
             query?: never;
@@ -1698,6 +1714,28 @@ export interface components {
         SaveTagRequest: {
             name: string;
             color?: string | null;
+        };
+        /** SpendingBreakdownResource */
+        SpendingBreakdownResource: {
+            currency: string;
+            total: number;
+            categories: {
+                category_id?: number;
+                name: string;
+                color: string | null;
+                icon: string | null;
+                amount: number;
+                count: number;
+                children: {
+                    category_id: number;
+                    name: string;
+                    color: string | null;
+                    icon: string | null;
+                    amount: number;
+                    count: number;
+                    direct?: boolean;
+                }[];
+            }[];
         };
         /**
          * StatementStatus
@@ -4171,6 +4209,33 @@ export interface operations {
             422: components["responses"]["ValidationException"];
         };
     };
+    "report.spending": {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `SpendingBreakdownResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["SpendingBreakdownResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
     "rule.reorder": {
         parameters: {
             query?: never;
@@ -4559,12 +4624,25 @@ export interface operations {
             query?: {
                 account_id?: number;
                 category_id?: number;
+                /**
+                 * @description category_exact restringe category_id à própria categoria, sem
+                 *     incluir as subcategorias (comportamento padrão de category_id).
+                 */
+                category_exact?: boolean;
+                /** @description no_category filtra só lançamentos sem categoria nenhuma. */
+                no_category?: boolean;
                 statement_id?: number;
                 tag_id?: number;
                 from?: string;
                 to?: string;
                 status?: components["schemas"]["TransactionStatus"];
                 direction?: components["schemas"]["Direction"];
+                /**
+                 * @description reportable aplica Transaction::scopeReportable() (exclui
+                 *     transferências, ignorados e categorias de transferência), a
+                 *     mesma base usada pelos relatórios de despesa.
+                 */
+                reportable?: boolean;
                 search?: string;
                 per_page?: number;
                 cursor?: string;

@@ -98,3 +98,45 @@ it('escapa curingas na busca', function () {
 
     $this->getJson('/api/v1/transactions?search='.urlencode('%'))->assertJsonCount(1, 'data');
 });
+
+it('category_exact restringe o filtro de categoria à própria categoria, sem as filhas', function () {
+    actingAsUser();
+    $food = Category::factory()->create();
+    $market = Category::factory()->create(['parent_id' => $food->id]);
+    Transaction::factory()->create(['category_id' => $food->id]);
+    Transaction::factory()->create(['category_id' => $market->id]);
+
+    $this->getJson("/api/v1/transactions?category_id={$food->id}&category_exact=1")
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.category.id', $food->id);
+
+    $this->getJson("/api/v1/transactions?category_id={$food->id}&category_exact=0")
+        ->assertJsonCount(2, 'data');
+});
+
+it('no_category filtra só lançamentos sem categoria', function () {
+    actingAsUser();
+    $category = Category::factory()->create();
+    Transaction::factory()->create(['category_id' => $category->id]);
+    $uncategorized = Transaction::factory()->create(['category_id' => null]);
+
+    $this->getJson('/api/v1/transactions?no_category=1')
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $uncategorized->id);
+});
+
+it('reportable aplica a mesma base de despesa usada nos relatórios', function () {
+    actingAsUser();
+    $other = Account::factory()->create();
+    Transaction::factory()->create(['is_ignored' => true]);
+    Transaction::factory()->create(['status' => 'pending']);
+    $this->postJson('/api/v1/transfers', [
+        'from_account_id' => Account::factory()->create()->id, 'to_account_id' => $other->id,
+        'date' => '2026-10-05', 'amount' => 1000, 'description' => 'Reserva',
+    ])->assertCreated();
+    $kept = Transaction::factory()->create();
+
+    $this->getJson('/api/v1/transactions?reportable=1')
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $kept->id);
+});
