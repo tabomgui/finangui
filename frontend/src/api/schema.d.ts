@@ -3143,6 +3143,7 @@ export interface operations {
         parameters: {
             query?: {
                 month?: string;
+                date?: string;
             };
             header?: never;
             path?: never;
@@ -3175,12 +3176,11 @@ export interface operations {
                             net: number;
                             top_categories: {
                                 category_id: number | null;
-                                name: string;
+                                name: string | "Sem categoria";
                                 icon: string | null;
                                 color: string | null;
                                 amount: number;
                             }[];
-                            projected_balance?: number;
                         };
                     };
                 };

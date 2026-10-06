@@ -116,25 +116,39 @@ class Account extends Model
     }
 
     /**
-     * Carrega o saldo calculado numa única query (subselect por conta).
-     * Saldo = opening_balance + Σ(posted, não ignoradas) com sinal por direction.
-     * Com $asOf, considera só transações com date <= $asOf (comparação por data, sem hora).
+     * Saldo real de cada conta no dia $asOf (hoje, no fuso do app, quando
+     * omitido) — única regra do "saldo no dia" do domínio de Accounts,
+     * usada aqui, em App\Domain\Reports\Queries\MonthSummary e em
+     * GET /accounts. Conta conectada (provider_balance não nulo) e que não
+     * é cartão usa o saldo informado pelo banco na última sincronização,
+     * descontando os lançamentos (posted, não ignorados) datados depois de
+     * $asOf — o único jeito de "voltar no tempo" a partir de um saldo que
+     * só vale para hoje. As demais contas, incluindo cartão, continuam com
+     * opening_balance + Σ(posted, não ignorados) até $asOf, como antes.
+     * balance() decide qual das duas somas usar; os dois subselects
+     * correlacionados abaixo saem numa única query (sem N+1).
      *
      * @param  Builder<Account>  $query
      */
     public function scopeWithBalance(Builder $query, ?CarbonInterface $asOf = null): void
     {
+        $asOf ??= CarbonImmutable::now();
+        $date = $asOf->toDateString();
+
         if ($query->getQuery()->columns === null) {
             $query->select('accounts.*');
         }
 
-        $query->addSelect(['balance_net' => Transaction::query()
+        $postedNotIgnored = fn () => Transaction::query()
             ->withoutGlobalScopes()
             ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0)")
             ->whereColumn('transactions.account_id', 'accounts.id')
             ->where('status', TransactionStatus::Posted->value)
-            ->where('is_ignored', false)
-            ->when($asOf, fn (Builder $q) => $q->where('date', '<=', $asOf->toDateString())),
+            ->where('is_ignored', false);
+
+        $query->addSelect([
+            'balance_net' => $postedNotIgnored()->where('date', '<=', $date),
+            'balance_after_net' => $postedNotIgnored()->where('date', '>', $date),
         ]);
     }
 
@@ -147,6 +161,10 @@ class Account extends Model
     {
         if (! $this->hasBalance()) {
             throw new LogicException('Carregue a conta com withBalance() antes de ler o saldo.');
+        }
+
+        if ($this->provider_balance !== null && ! $this->isCreditCard()) {
+            return $this->provider_balance->minus(Money::cents((int) $this->attributes['balance_after_net']));
         }
 
         return $this->opening_balance->plus(Money::cents((int) $this->attributes['balance_net']));

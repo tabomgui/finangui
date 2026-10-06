@@ -47,15 +47,7 @@ export function DashboardPage() {
           <MonthNav month={month} onChange={setMonth} />
           {data ? (
             <div className={cn('transition-opacity', isPlaceholderData && 'opacity-60')}>
-              <BalanceHero
-                totalBalance={data.total_balance}
-                currency={data.currency}
-                balanceDate={data.balance_date}
-                projectedBalance={data.projected_balance}
-                month={month}
-                currentMonth={currentMonth}
-                isPlaceholderData={isPlaceholderData}
-              />
+              <BalanceHero totalBalance={data.total_balance} currency={data.currency} balanceDate={data.balance_date} />
             </div>
           ) : isError ? (
             // Sem saldo para mostrar e o card de erro já aparece no corpo da página: só reserva a altura

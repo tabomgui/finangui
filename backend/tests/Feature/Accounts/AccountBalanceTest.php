@@ -49,3 +49,20 @@ it('devolve o saldo ao criar e editar conta', function () {
 
     $this->patchJson("/api/v1/accounts/{$id}", ['opening_balance' => 2000])->assertJsonPath('data.balance', 2000);
 });
+
+it('conta conectada usa o saldo informado pelo banco hoje, não saldo inicial mais lançamentos', function () {
+    actingAsUser();
+    $account = Account::factory()->create(['opening_balance' => 999999, 'provider_balance' => 150000]);
+    Transaction::factory()->for($account)->create(['amount' => 500]); // já refletido no saldo do banco, não deve ser somado de novo
+
+    $this->getJson("/api/v1/accounts/{$account->id}")->assertJsonPath('data.balance', 150000);
+    $this->getJson('/api/v1/accounts')->assertJsonPath('data.0.balance', 150000);
+});
+
+it('cartão conectado ignora o saldo do banco e usa saldo inicial mais lançamentos', function () {
+    actingAsUser();
+    $card = Account::factory()->creditCard()->create(['opening_balance' => -2000, 'provider_balance' => -999999]);
+    Transaction::factory()->for($card)->create(['amount' => 500]);
+
+    $this->getJson("/api/v1/accounts/{$card->id}")->assertJsonPath('data.balance', -2500);
+});
