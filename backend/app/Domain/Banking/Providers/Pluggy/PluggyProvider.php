@@ -58,6 +58,23 @@ final class PluggyProvider implements BankProvider
         return self::API_KEY_CACHE_PREFIX.'.'.$userId.'.'.sha1($clientId);
     }
 
+    /**
+     * Testa client_id/client_secret contra POST /auth, sem fazer mais nada
+     * com o resultado — reaproveita apiKey() (a mesma chamada e o mesmo
+     * cache usados depois por qualquer outra chamada deste provedor) para
+     * App\Domain\Banking\Actions\SaveBankCredentials não duplicar a lógica
+     * HTTP. Credenciais recusadas lançam ProviderAuthFailed; indisponibilidade
+     * do lado da Pluggy (rede, 5xx, 429) lança ProviderUnavailable. Quem
+     * chama precisa limpar a entrada de cache desta combinação usuário/
+     * client_id antes, senão uma key ainda válida de uma chamada anterior
+     * (ex.: o mesmo client_id com o secret antigo) faria este teste passar
+     * sem de fato autenticar com o secret novo.
+     */
+    public function verifyCredentials(): void
+    {
+        $this->apiKey();
+    }
+
     public function connectToken(string $clientUserId, ?string $itemId = null): string
     {
         // POST /connect_token — clientUserId precisa ir dentro de "options":

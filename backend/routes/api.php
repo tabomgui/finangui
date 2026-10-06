@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\Auth\AuthStatusController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\SessionController;
 use App\Http\Controllers\Api\V1\BankConnectionController;
+use App\Http\Controllers\Api\V1\BankCredentialController;
 use App\Http\Controllers\Api\V1\BudgetController;
 use App\Http\Controllers\Api\V1\CardController;
 use App\Http\Controllers\Api\V1\CardStatementController;
@@ -130,6 +131,13 @@ Route::prefix('v1')->group(function () {
         Route::post('import-batches/{batch}/confirm', [ImportBatchController::class, 'confirm'])->whereNumber('batch');
         Route::delete('import-batches/{batch}', [ImportBatchController::class, 'destroy'])->whereNumber('batch');
         Route::post('import-batches/{batch}/revert', [ImportBatchController::class, 'revert'])->whereNumber('batch');
+
+        // Fora do EnsureBankingEnabled de propósito: é por aqui que o
+        // usuário cadastra as credenciais da Pluggy pela primeira vez (ou
+        // troca/remove), então a rota precisa continuar acessível sem elas.
+        Route::get('bank-credentials', [BankCredentialController::class, 'show']);
+        Route::put('bank-credentials', [BankCredentialController::class, 'save'])->middleware('throttle:10,1,bank-credentials');
+        Route::delete('bank-credentials', [BankCredentialController::class, 'destroy']);
 
         // index e destroy ficam fora do EnsureBankingEnabled: listar
         // conexões já existentes e desconectar (que só limpa o lado local,
