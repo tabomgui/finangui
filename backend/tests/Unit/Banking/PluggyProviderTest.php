@@ -103,7 +103,7 @@ it('mapeia o item com needsReauth/isUpdating', function () {
         ->and($item->lastUpdatedAt)->toBeInstanceOf(CarbonImmutable::class);
 });
 
-it('manda clientUserId dentro de options no connect_token, e itemId só na raiz quando informado', function () {
+it('manda clientUserId dentro de options no connect_token, sem avoidDuplicates, e itemId só na raiz quando informado', function () {
     Http::fake([
         'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
         'api.pluggy.ai/connect_token' => Http::response(['accessToken' => 'token-abc']),
@@ -121,7 +121,7 @@ it('manda clientUserId dentro de options no connect_token, e itemId só na raiz 
         $body = $request->data();
 
         return $body['options']['clientUserId'] === 'user:1'
-            && $body['options']['avoidDuplicates'] === true
+            && ! isset($body['options']['avoidDuplicates'])
             && ! isset($body['clientUserId'])
             && ! isset($body['itemId']);
     });
