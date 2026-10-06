@@ -8,7 +8,7 @@ final class BankingDisabled extends DomainError
 {
     public function __construct()
     {
-        parent::__construct('Integração bancária não configurada.');
+        parent::__construct('Cadastre suas credenciais da Pluggy em Configurações.');
     }
 
     public function errorCode(): string

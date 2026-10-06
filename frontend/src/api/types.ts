@@ -89,6 +89,9 @@ export type ProviderAccount = Schemas['ProviderAccountResource']
 export type LinkAccountsRequest = Schemas['LinkAccountsRequest']
 export type ConnectTokenRequest = Schemas['ConnectTokenRequest']
 
+export type BankCredentials = Schemas['BankCredentialsResource']
+export type SaveBankCredentialsRequest = Schemas['SaveBankCredentialsRequest']
+
 export type LoginRequest = Schemas['LoginRequest']
 export type RegisterRequest = Schemas['RegisterRequest']
 export type UpdateProfileRequest = Schemas['UpdateProfileRequest']

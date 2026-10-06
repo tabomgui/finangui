@@ -1,5 +1,6 @@
 import { Landmark, Plus, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAccounts } from '@/api/queries/accounts'
 import { useMe } from '@/api/queries/auth'
 import { useBankConnections } from '@/api/queries/bank-connections'
@@ -68,7 +69,18 @@ export function AccountsPage() {
         subtitle="Bancos, carteira e poupança"
         actions={
           <>
-            {me?.banking_enabled && <ConnectBankButton className={headerButton} />}
+            {me && (me.banking_enabled ? (
+              <ConnectBankButton className={headerButton} />
+            ) : (
+              // Sem credenciais da Pluggy cadastradas: leva para o card em Configurações em vez
+              // de abrir o widget de conexão (a rota de connect-token responderia 409 banking_disabled).
+              <Button className={headerButton} asChild>
+                <Link to="/configuracoes#pluggy">
+                  <Landmark className="h-4 w-4" />
+                  <span className="sr-only sm:not-sr-only">Conectar banco</span>
+                </Link>
+              </Button>
+            ))}
             <Button className={headerButton} onClick={openCreate}>
               <Plus className="h-4 w-4" />
               <span className="sr-only sm:not-sr-only">Nova conta</span>

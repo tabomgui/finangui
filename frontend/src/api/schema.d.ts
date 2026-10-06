@@ -148,6 +148,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bank-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["bankCredential.show"];
+        put: operations["bankCredential.save"];
+        post?: never;
+        delete: operations["bankCredential.destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/budgets": {
         parameters: {
             query?: never;
@@ -1067,6 +1083,13 @@ export interface components {
             pending_accounts: components["schemas"]["ProviderAccountResource"][];
             unlinked_accounts: components["schemas"]["ProviderAccountResource"][];
         };
+        /** BankCredentialsResource */
+        BankCredentialsResource: {
+            configured: boolean;
+            provider: string;
+            client_id_hint?: string;
+            verified_at?: string;
+        };
         /**
          * BankProviderName
          * @enum {string}
@@ -1647,6 +1670,12 @@ export interface components {
             last_applied_at: string | null;
             last_applied_changes: number | null;
         };
+        /** SaveBankCredentialsRequest */
+        SaveBankCredentialsRequest: {
+            /** Format: uuid */
+            client_id: string;
+            client_secret: string;
+        };
         /** SaveBudgetRequest */
         SaveBudgetRequest: {
             category_id: number;
@@ -2077,8 +2106,9 @@ export interface components {
              */
             primary_currency: string;
             /**
-             * @description Sem credenciais da Pluggy configuradas (PLUGGY_CLIENT_ID/SECRET), o
-             *     frontend esconde o fluxo de conexão bancária inteiro.
+             * @description Sem credenciais da Pluggy verificadas (e legíveis) cadastradas por
+             *     este usuário, o frontend leva o botão "Conectar banco" para o card
+             *     de Configurações em vez de abrir o widget da Pluggy.
              */
             banking_enabled: boolean;
         };
@@ -2421,6 +2451,18 @@ export interface operations {
             };
             401: components["responses"]["AuthenticationException"];
             404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "banking_disabled";
+                        message: string;
+                    };
+                };
+            };
             422: components["responses"]["ValidationException"];
         };
     };
@@ -2526,6 +2568,100 @@ export interface operations {
             };
             401: components["responses"]["AuthenticationException"];
             404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "bankCredential.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `BankCredentialsResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BankCredentialsResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
+    "bankCredential.save": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveBankCredentialsRequest"];
+            };
+        };
+        responses: {
+            /** @description `BankCredentialsResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BankCredentialsResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "bank_credentials_in_use";
+                        message: string;
+                    };
+                };
+            };
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "bankCredential.destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["AuthenticationException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "bank_credentials_in_use";
+                        message: string;
+                    };
+                };
+            };
         };
     };
     "budget.index": {

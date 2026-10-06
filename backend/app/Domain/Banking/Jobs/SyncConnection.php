@@ -7,13 +7,16 @@ use App\Domain\Banking\Actions\SyncAccounts;
 use App\Domain\Banking\Actions\SyncBills;
 use App\Domain\Banking\Actions\SyncTransactions;
 use App\Domain\Banking\Contracts\BankProvider;
+use App\Domain\Banking\Contracts\BankProviderFactory;
 use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Data\ProviderCategory;
 use App\Domain\Banking\Enums\ConnectionStatus;
+use App\Domain\Banking\Errors\BankingDisabled;
 use App\Domain\Banking\Errors\ProviderAuthFailed;
 use App\Domain\Banking\Errors\ProviderRequestFailed;
 use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Banking\Models\BankConnection;
+use App\Domain\Banking\Models\BankCredential;
 use App\Domain\Banking\Support\AccountMapper;
 use App\Domain\Banking\Support\ItemRefresher;
 use App\Domain\Notifications\Notifications\ConnectionNeedsReauthNotification;
@@ -85,7 +88,7 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
     }
 
     public function handle(
-        BankProvider $provider,
+        BankProviderFactory $providerFactory,
         AccountMapper $accountMapper,
         ItemRefresher $itemRefresher,
         SyncAccounts $syncAccounts,
@@ -106,11 +109,12 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        UserContext::run($user, fn () => $this->sync($provider, $accountMapper, $itemRefresher, $syncAccounts, $syncBills, $syncTransactions));
+        UserContext::run($user, fn () => $this->sync($providerFactory, $user, $accountMapper, $itemRefresher, $syncAccounts, $syncBills, $syncTransactions));
     }
 
     private function sync(
-        BankProvider $provider,
+        BankProviderFactory $providerFactory,
+        User $user,
         AccountMapper $accountMapper,
         ItemRefresher $itemRefresher,
         SyncAccounts $syncAccounts,
@@ -125,8 +129,20 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
 
         $this->startStatus = $connection->status;
         $syncStartedAt = CarbonImmutable::now();
+        // Fingerprint da credencial usada por esta tentativa (não a mais
+        // recente na hora de gravar o resultado: ver writeStatus()) — só é
+        // de fato aplicada na conexão no final, em caso de sucesso, e só
+        // quando ela ainda está null (ver App\Domain\Banking\Models\BankConnection).
+        $credentialFingerprint = null;
 
         try {
+            // Credenciais do dono da conexão (não um provedor global) — resolvidas
+            // dentro do try: sem credenciais válidas cai no
+            // catch(BankingDisabled) abaixo em vez de derrubar o job (ver o
+            // comentário lá para quando isso acontece de verdade).
+            $provider = $providerFactory->for($user);
+            $credentialFingerprint = BankCredential::currentFingerprintFor($user);
+
             $item = $provider->item($connection->external_id);
             $item = $itemRefresher->refreshAndWait($provider, $connection, $item, $syncStartedAt);
 
@@ -161,12 +177,25 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
                     $categoriesById,
                 );
             }
+        } catch (BankingDisabled $e) {
+            // Acontece para conexões criadas sob as credenciais globais
+            // antigas (variável de ambiente) ou adotadas por um sync
+            // anterior sob uma credencial que o usuário removeu depois
+            // (permitido quando o fingerprint delas não bate com o da conta
+            // atual — ver App\Domain\Banking\Actions\DeleteBankCredentials),
+            // até o usuário cadastrar/recadastrar em Configurações; também
+            // cobre uma credencial que não descriptografa mais (ver
+            // PluggyProviderFactory). Falha permanente: não insiste.
+            // $e->getMessage() já é a mensagem voltada ao usuário de BankingDisabled.
+            $this->writeStatus(ConnectionStatus::Error, $e->getMessage());
+
+            return;
         } catch (ProviderAuthFailed) {
-            // Falha permanente (credenciais do servidor recusadas): não
+            // Falha permanente (credenciais recusadas pela Pluggy): não
             // insiste — nenhuma tentativa seguinte mudaria o resultado.
             // Sem rethrow: o job termina "com sucesso" para a fila (sem
             // retry), o estado de erro é que carrega a notícia.
-            $this->writeStatus(ConnectionStatus::Error, 'Credenciais do servidor recusadas pela Pluggy.');
+            $this->writeStatus(ConnectionStatus::Error, 'A Pluggy recusou suas credenciais. Atualize em Configurações.');
 
             return;
         } catch (ProviderRequestFailed $e) {
@@ -202,7 +231,7 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             throw $e;
         }
 
-        $this->writeStatus(ConnectionStatus::Active, null, $syncStartedAt);
+        $this->writeStatus(ConnectionStatus::Active, null, $syncStartedAt, $credentialFingerprint);
     }
 
     /**
@@ -265,7 +294,7 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             : ($connection->last_synced_at ?? $fresh->provider_history_synced_at ?? CarbonImmutable::now())->subDays(14);
 
         $transactions = $provider->transactions($fresh->external_id, $fresh->isCreditCard(), $dateFrom, $createdAtFrom);
-        $syncTransactions->handle($fresh, $transactions, $syncStartedAt, $categoriesById);
+        $syncTransactions->handle($provider, $fresh, $transactions, $syncStartedAt, $categoriesById);
 
         if ($usesFullHistory) {
             $accountMapper->markHistorySynced($fresh);
@@ -356,12 +385,20 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
      * do job (de antes do primeiro handle()): $this->startStatus nunca foi
      * de fato setado ali — por isso tem sua própria lógica, lendo
      * settings.sync_meta direto do banco em vez desta propriedade.
+     *
+     * $adoptFingerprint (só informado pela chamada de sucesso, no fim de
+     * sync()) é gravado só quando a conexão ainda está com
+     * credential_fingerprint null: uma sincronização que terminou bem com
+     * esta credencial é prova de que o item pertence a ela — adota a
+     * credencial para uma conexão legada (criada sob a conta global antiga,
+     * por variável de ambiente), sem nunca sobrescrever um fingerprint já
+     * gravado (ver App\Domain\Banking\Models\BankConnection).
      */
-    private function writeStatus(ConnectionStatus $status, ?string $error, ?CarbonImmutable $syncedAt = null): void
+    private function writeStatus(ConnectionStatus $status, ?string $error, ?CarbonImmutable $syncedAt = null, ?string $adoptFingerprint = null): void
     {
         $startStatus = $this->startStatus;
 
-        DB::transaction(function () use ($startStatus, $status, $error, $syncedAt) {
+        DB::transaction(function () use ($startStatus, $status, $error, $syncedAt, $adoptFingerprint) {
             $locked = BankConnection::query()->whereKey($this->connectionId)->lockForUpdate()->first();
 
             if ($locked === null) {
@@ -384,6 +421,10 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
 
             if ($syncedAt !== null) {
                 $attributes['last_synced_at'] = $syncedAt;
+            }
+
+            if ($adoptFingerprint !== null && $locked->credential_fingerprint === null) {
+                $attributes['credential_fingerprint'] = $adoptFingerprint;
             }
 
             $wasNeedsReauth = $locked->status === ConnectionStatus::NeedsReauth;

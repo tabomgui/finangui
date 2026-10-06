@@ -2,7 +2,8 @@
 
 namespace App\Domain\Banking\Actions;
 
-use App\Domain\Banking\Contracts\BankProvider;
+use App\Domain\Banking\Contracts\BankProviderFactory;
+use App\Domain\Banking\Errors\BankingDisabled;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Transactions\Enums\TransactionSource;
@@ -27,20 +28,26 @@ use Throwable;
  * lançamento sem external_id ou — num lote pluggy — de outro formato), e o
  * próximo sync duplicaria tudo de novo.
  *
- * Esta ação roda mesmo com o provedor desligado (sem credenciais): quem
- * desconecta pode estar limpando uma conexão de antes das credenciais
- * serem removidas — pula a chamada ao provedor nesse caso, em vez de
- * tentar (e logar) uma falha óbvia.
+ * Esta ação roda mesmo sem credenciais válidas para o dono da conexão
+ * (ex.: removidas por outro caminho antes de todas as conexões serem
+ * desconectadas): pula a chamada ao provedor nesse caso, em vez de tentar
+ * (e logar) uma falha óbvia.
  */
 final class DisconnectConnection
 {
-    public function __construct(private readonly BankProvider $provider) {}
+    public function __construct(private readonly BankProviderFactory $providerFactory) {}
 
     public function handle(BankConnection $connection): void
     {
-        if ($this->provider->enabled()) {
+        try {
+            $provider = $this->providerFactory->for($connection->user);
+        } catch (BankingDisabled) {
+            $provider = null;
+        }
+
+        if ($provider !== null) {
             try {
-                $this->provider->deleteItem($connection->external_id);
+                $provider->deleteItem($connection->external_id);
             } catch (Throwable $e) {
                 Log::warning('Pluggy: falha ao excluir o item ao desconectar; a conexão local é excluída de todo modo.', [
                     'connection_id' => $connection->id,

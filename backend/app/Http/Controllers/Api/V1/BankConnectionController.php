@@ -7,7 +7,7 @@ use App\Domain\Banking\Actions\DisconnectConnection;
 use App\Domain\Banking\Actions\LinkAccounts;
 use App\Domain\Banking\Actions\MarkReconnected;
 use App\Domain\Banking\Actions\QueueConnectionSync;
-use App\Domain\Banking\Contracts\BankProvider;
+use App\Domain\Banking\Contracts\BankProviderFactory;
 use App\Domain\Banking\Errors\ConnectionItemMismatch;
 use App\Domain\Banking\Errors\ConnectionSyncInProgress;
 use App\Domain\Banking\Models\BankConnection;
@@ -35,7 +35,7 @@ use Illuminate\Http\Response;
  */
 final class BankConnectionController extends Controller
 {
-    public function __construct(private readonly BankProvider $provider) {}
+    public function __construct(private readonly BankProviderFactory $providerFactory) {}
 
     public function index(): AnonymousResourceCollection
     {
@@ -62,7 +62,7 @@ final class BankConnectionController extends Controller
             $itemId = $connection->external_id;
         }
 
-        $token = $this->provider->connectToken(CreateConnection::clientUserId($user), $itemId);
+        $token = $this->providerFactory->for($user)->connectToken(CreateConnection::clientUserId($user), $itemId);
 
         return response()->json(['data' => $this->connectTokenData($token, $itemId)]);
     }

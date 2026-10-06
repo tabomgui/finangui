@@ -1,4 +1,5 @@
 import { TriangleAlert } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import type { BankConnection } from '@/api/types'
 import { Button } from '@/components/ui/button'
 
@@ -8,7 +9,7 @@ type ReauthBannerProps = {
   onReconnect?: (connection: BankConnection) => void
   /** Desabilita "Reconectar" enquanto um pedido de token/o widget já está em andamento (ver `useReconnectFlow`). */
   reconnectDisabled?: boolean
-  /** Sem provedor configurado, reconectar não faz sentido (a rota responde 409 banking_disabled) — esconde o botão, mas mantém o aviso. */
+  /** Sem credenciais da Pluggy cadastradas, reconectar não faz sentido (a rota responde 409 banking_disabled) — troca o botão por um link para cadastrá-las. */
   bankingEnabled?: boolean
 }
 
@@ -30,7 +31,7 @@ export function ReauthBanner({ connections, onReconnect, reconnectDisabled = fal
             <TriangleAlert className="h-4 w-4 shrink-0" />
             <span className="truncate">O {connection.institution_name ?? 'banco'} pediu para reconectar.</span>
           </span>
-          {bankingEnabled && (
+          {bankingEnabled ? (
             <Button
               size="sm"
               variant="outline"
@@ -39,6 +40,10 @@ export function ReauthBanner({ connections, onReconnect, reconnectDisabled = fal
               onClick={() => onReconnect?.(connection)}
             >
               Reconectar
+            </Button>
+          ) : (
+            <Button asChild size="sm" variant="outline" className="shrink-0 bg-card">
+              <Link to="/configuracoes#pluggy">Configurar credenciais da Pluggy</Link>
             </Button>
           )}
         </div>

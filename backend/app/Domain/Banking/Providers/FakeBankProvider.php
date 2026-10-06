@@ -50,24 +50,12 @@ final class FakeBankProvider implements BankProvider
     /** @var list<array{method: string, args: array<string, mixed>}> */
     public array $calls = [];
 
-    private bool $enabled = true;
-
     private ?Throwable $nextFailure = null;
-
-    public function setEnabled(bool $enabled): void
-    {
-        $this->enabled = $enabled;
-    }
 
     /** A próxima chamada a qualquer método lança $error em vez de responder. */
     public function failNext(Throwable $error): void
     {
         $this->nextFailure = $error;
-    }
-
-    public function enabled(): bool
-    {
-        return $this->enabled;
     }
 
     public function connectToken(string $clientUserId, ?string $itemId = null): string

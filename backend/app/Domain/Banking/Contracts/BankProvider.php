@@ -12,13 +12,12 @@ use InvalidArgumentException;
 
 /**
  * Isola o provedor de open finance (Pluggy em produção, fake em teste) do
- * resto do domínio Banking.
+ * resto do domínio Banking. Uma instância fala sempre pelas credenciais de
+ * um único usuário — montada por {@see BankProviderFactory::for()}, nunca
+ * resolvida direto do container.
  */
 interface BankProvider
 {
-    /** Falso quando as credenciais do provedor não estão configuradas. */
-    public function enabled(): bool;
-
     /** Token curto para o widget; com $itemId abre em modo atualização. */
     public function connectToken(string $clientUserId, ?string $itemId = null): string;
 

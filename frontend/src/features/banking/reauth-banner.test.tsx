@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import type { BankConnection } from '@/api/types'
 import { ReauthBanner } from './reauth-banner'
@@ -63,15 +64,18 @@ describe('ReauthBanner', () => {
     expect(screen.getByRole('button', { name: 'Reconectar' })).toBeDisabled()
   })
 
-  it('esconde o botão "Reconectar" quando o banking está desligado, mas mantém o aviso', () => {
+  it('troca "Reconectar" por um link para cadastrar credenciais quando o banking está desligado, mas mantém o aviso', () => {
     render(
-      <ReauthBanner
-        connections={[connection({ institution_name: 'Nubank', status: 'needs_reauth' })]}
-        bankingEnabled={false}
-      />,
+      <MemoryRouter>
+        <ReauthBanner
+          connections={[connection({ institution_name: 'Nubank', status: 'needs_reauth' })]}
+          bankingEnabled={false}
+        />
+      </MemoryRouter>,
     )
 
     expect(screen.getByText('O Nubank pediu para reconectar.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reconectar' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Configurar credenciais da Pluggy' })).toHaveAttribute('href', '/configuracoes#pluggy')
   })
 })

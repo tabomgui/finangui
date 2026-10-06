@@ -1,8 +1,6 @@
 <?php
 
-use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Models\BankConnection;
-use App\Domain\Banking\Providers\FakeBankProvider;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
@@ -15,8 +13,9 @@ use Illuminate\Support\Str;
  * (bank-connections/.../sync, 6/min) bem antes do seu próprio teto.
  */
 it('martelar rules/preview não consome o limite de bank-connections/.../sync', function () {
-    app()->instance(BankProvider::class, new FakeBankProvider);
-    actingAsUser();
+    fakeBankProvider();
+    $user = actingAsUser();
+    verifiedBankCredential($user);
     $connection = BankConnection::factory()->active()->create();
 
     // Queue::fake(): só o throttle da rota importa aqui, não o resultado
@@ -34,8 +33,9 @@ it('martelar rules/preview não consome o limite de bank-connections/.../sync', 
 });
 
 it('bank-connections (store) e link-accounts têm limites próprios, isolados de rules/preview', function () {
-    app()->instance(BankProvider::class, new FakeBankProvider);
-    actingAsUser();
+    fakeBankProvider();
+    $user = actingAsUser();
+    verifiedBankCredential($user);
 
     // store: 10/min — a 11ª bate no limite (429); nenhuma delas deveria
     // ter sucesso de verdade (item_id aleatório, sem contas), então o que

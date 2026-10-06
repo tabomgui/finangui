@@ -3,7 +3,6 @@
 use App\Domain\Accounts\Enums\AccountType;
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Banking\Actions\LinkAccounts;
-use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Data\ProviderItem;
 use App\Domain\Banking\Enums\ConnectionStatus;
@@ -11,7 +10,7 @@ use App\Domain\Banking\Errors\AccountNoLongerLinkable;
 use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Banking\Jobs\SyncConnection;
 use App\Domain\Banking\Models\BankConnection;
-use App\Domain\Banking\Providers\FakeBankProvider;
+use App\Domain\Banking\Models\BankCredential;
 use App\Domain\Banking\Support\PendingProviderAccounts;
 use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Models\Transaction;
@@ -51,9 +50,9 @@ function providerAccount(array $overrides = []): ProviderAccount
 }
 
 beforeEach(function () {
-    $this->fake = new FakeBankProvider;
-    app()->instance(BankProvider::class, $this->fake);
+    $this->fake = fakeBankProvider();
     $this->user = actingAsUser();
+    verifiedBankCredential($this->user);
 });
 
 describe('connect-token', function () {
@@ -224,6 +223,19 @@ describe('criar conexão', function () {
 
         expect(fn () => BankConnection::factory()->create(['external_id' => 'dup-item']))
             ->toThrow(UniqueConstraintViolationException::class);
+    });
+
+    it('grava credential_fingerprint a partir da credencial atual do usuário', function () {
+        $itemId = '00000000-0000-0000-0000-000000000c04';
+        $this->fake->items[$itemId] = providerItem(['id' => $itemId, 'clientUserId' => 'user:'.$this->user->id]);
+        $this->fake->accountsByItem[$itemId] = [providerAccount(['id' => 'acc-1'])];
+
+        $credential = BankCredential::query()->where('user_id', $this->user->id)->first();
+
+        $this->postJson('/api/v1/bank-connections', ['item_id' => $itemId])->assertCreated();
+
+        $connection = BankConnection::query()->where('external_id', $itemId)->first();
+        expect($connection->credential_fingerprint)->toBe(BankCredential::fingerprint($credential->client_id));
     });
 });
 
@@ -727,7 +739,14 @@ describe('desconectar', function () {
 
 describe('banking_disabled', function () {
     beforeEach(function () {
-        $this->fake->setEnabled(false);
+        // EnsureBankingEnabled (connect-token/store/link-accounts/reconnected/sync)
+        // lê direto do banco (BankCredential::isVerifiedFor()), não da fábrica fake —
+        // some com a credencial criada no beforeEach de fora para simular isso.
+        BankCredential::query()->delete();
+        // destroy fica fora daquele middleware; quem checa credenciais ali é
+        // DisconnectConnection, direto na fábrica — esta ainda precisa saber
+        // que está "desligada".
+        disableBankProvider();
     });
 
     it('bloqueia as rotas que falam com o provedor', function () {

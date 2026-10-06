@@ -41,6 +41,7 @@ export const queryKeys = {
   importBatches: (accountId?: number) => ['import-batches', 'list', { accountId }] as const,
   importBatch: (id: number) => ['import-batches', 'detail', id] as const,
   bankConnections: () => ['bank-connections'] as const,
+  bankCredentials: () => ['bank-credentials'] as const,
   recurrences: () => ['recurrences'] as const,
   recurrence: (id: number) => ['recurrences', 'detail', id] as const,
   overdueOccurrences: () => ['recurrences', 'overdue'] as const,

@@ -5,12 +5,10 @@ use App\Domain\Banking\Actions\CreateConnection;
 use App\Domain\Banking\Actions\DisconnectConnection;
 use App\Domain\Banking\Actions\LinkAccounts;
 use App\Domain\Banking\Actions\SyncTransactions;
-use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Data\ProviderItem;
 use App\Domain\Banking\Data\ProviderTransaction;
 use App\Domain\Banking\Models\BankConnection;
-use App\Domain\Banking\Providers\FakeBankProvider;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Enums\TransactionSource;
@@ -43,8 +41,7 @@ function relinkProviderAccount(string $id, string $kind = 'checking'): ProviderA
 
 beforeEach(function () {
     $this->user = actingAsUser();
-    $this->fake = new FakeBankProvider;
-    app()->instance(BankProvider::class, $this->fake);
+    $this->fake = fakeBankProvider();
 });
 
 it('vincular uma conta com histórico importado por OFX adota, em vez de duplicar, quando o banco relata o mesmo lançamento', function () {
@@ -70,7 +67,7 @@ it('vincular uma conta com histórico importado por OFX adota, em vez de duplica
         purchaseDate: null, billId: null,
     );
 
-    app(SyncTransactions::class)->handle($linked, [$bankRow], CarbonImmutable::now(), []);
+    app(SyncTransactions::class)->handle($this->fake, $linked, [$bankRow], CarbonImmutable::now(), []);
 
     expect(Transaction::query()->where('account_id', $account->id)->count())->toBe(1);
 
@@ -108,7 +105,7 @@ it('desconectar e vincular de novo a mesma conta não duplica o que o banco já 
         id: 'pluggy-old', date: $today, amountCents: 5000, direction: Direction::Out,
         description: 'Compra', pending: false, categoryId: null, installment: null, purchaseDate: null, billId: null,
     );
-    app(SyncTransactions::class)->handle($linked, [$firstSync], CarbonImmutable::now(), []);
+    app(SyncTransactions::class)->handle($this->fake, $linked, [$firstSync], CarbonImmutable::now(), []);
 
     expect(Transaction::query()->where('account_id', $account->id)->count())->toBe(1);
 
@@ -138,7 +135,7 @@ it('desconectar e vincular de novo a mesma conta não duplica o que o banco já 
         id: 'pluggy-new', date: $today, amountCents: 5000, direction: Direction::Out,
         description: 'Compra', pending: false, categoryId: null, installment: null, purchaseDate: null, billId: null,
     );
-    app(SyncTransactions::class)->handle($relinked, [$secondSync], CarbonImmutable::now(), []);
+    app(SyncTransactions::class)->handle($this->fake, $relinked, [$secondSync], CarbonImmutable::now(), []);
 
     expect(Transaction::query()->where('account_id', $account->id)->count())->toBe(1);
 

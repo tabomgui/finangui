@@ -1,5 +1,6 @@
 <?php
 
+use App\Domain\Banking\Models\BankCredential;
 use App\Models\User;
 
 it('loga com credenciais válidas', function () {
@@ -116,15 +117,37 @@ it('informa a moeda principal configurada', function () {
     $this->getJson('/api/v1/me')->assertOk()->assertJsonPath('data.primary_currency', 'USD');
 });
 
-it('banking_enabled reflete se o provedor bancário está configurado', function () {
-    config(['services.pluggy.client_id' => null, 'services.pluggy.client_secret' => null]);
-    actingAsUser();
+it('banking_enabled reflete se o usuário tem credenciais da Pluggy verificadas', function () {
+    $user = actingAsUser();
 
     $this->getJson('/api/v1/me')->assertOk()->assertJsonPath('data.banking_enabled', false);
 
-    config(['services.pluggy.client_id' => 'id', 'services.pluggy.client_secret' => 'secret']);
+    BankCredential::factory()->create(['user_id' => $user->id]);
 
     $this->getJson('/api/v1/me')->assertOk()->assertJsonPath('data.banking_enabled', true);
+});
+
+it('banking_enabled fica falso com credenciais ainda não verificadas', function () {
+    $user = actingAsUser();
+    BankCredential::factory()->unverified()->create(['user_id' => $user->id]);
+
+    $this->getJson('/api/v1/me')->assertOk()->assertJsonPath('data.banking_enabled', false);
+});
+
+it('banking_enabled é isolado por usuário', function () {
+    $other = User::factory()->create();
+    BankCredential::factory()->create(['user_id' => $other->id]);
+    actingAsUser();
+
+    $this->getJson('/api/v1/me')->assertOk()->assertJsonPath('data.banking_enabled', false);
+});
+
+it('banking_enabled fica falso com credencial verificada mas ilegível (APP_KEY trocada)', function () {
+    $user = actingAsUser();
+    $credential = BankCredential::factory()->create(['user_id' => $user->id]);
+    corruptBankCredentialSecret($credential);
+
+    $this->getJson('/api/v1/me')->assertOk()->assertJsonPath('data.banking_enabled', false);
 });
 
 it('informa o status de auth da instância', function () {

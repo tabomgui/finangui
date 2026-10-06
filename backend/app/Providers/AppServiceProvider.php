@@ -2,8 +2,8 @@
 
 namespace App\Providers;
 
-use App\Domain\Banking\Contracts\BankProvider;
-use App\Domain\Banking\Providers\Pluggy\PluggyProvider;
+use App\Domain\Banking\Contracts\BankProviderFactory;
+use App\Domain\Banking\Providers\Pluggy\PluggyProviderFactory;
 use App\Support\OpenApi\DomainErrorToResponseExtension;
 use Dedoc\Scramble\Scramble;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -18,8 +18,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Testes trocam por FakeBankProvider via $this->app->instance(BankProvider::class, $fake).
-        $this->app->singleton(BankProvider::class, PluggyProvider::class);
+        // Testes trocam por uma fábrica fake (ver tests/Pest.php, fakeBankProvider()) que
+        // devolve App\Domain\Banking\Providers\FakeBankProvider para qualquer usuário.
+        $this->app->singleton(BankProviderFactory::class, PluggyProviderFactory::class);
     }
 
     /**

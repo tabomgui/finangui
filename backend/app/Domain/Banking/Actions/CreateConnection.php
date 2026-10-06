@@ -2,13 +2,14 @@
 
 namespace App\Domain\Banking\Actions;
 
-use App\Domain\Banking\Contracts\BankProvider;
+use App\Domain\Banking\Contracts\BankProviderFactory;
 use App\Domain\Banking\Data\ProviderAccountSuggestion;
 use App\Domain\Banking\Enums\BankProviderName;
 use App\Domain\Banking\Enums\ConnectionStatus;
 use App\Domain\Banking\Errors\ConnectionItemMismatch;
 use App\Domain\Banking\Errors\ConnectionWithoutAccounts;
 use App\Domain\Banking\Models\BankConnection;
+use App\Domain\Banking\Models\BankCredential;
 use App\Domain\Banking\Support\PendingProviderAccounts;
 use App\Models\User;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -27,14 +28,16 @@ use Illuminate\Database\UniqueConstraintViolationException;
  */
 final class CreateConnection
 {
-    public function __construct(private readonly BankProvider $provider) {}
+    public function __construct(private readonly BankProviderFactory $providerFactory) {}
 
     /**
      * @return array{connection: BankConnection, providerAccounts: list<ProviderAccountSuggestion>}
      */
     public function handle(User $user, string $itemId): array
     {
-        $item = $this->provider->item($itemId);
+        $provider = $this->providerFactory->for($user);
+
+        $item = $provider->item($itemId);
 
         if ($item->clientUserId !== self::clientUserId($user)) {
             throw new ConnectionItemMismatch;
@@ -50,7 +53,7 @@ final class CreateConnection
             throw new ConnectionItemMismatch;
         }
 
-        $accounts = $this->provider->accounts($itemId);
+        $accounts = $provider->accounts($itemId);
 
         if ($accounts === []) {
             throw new ConnectionWithoutAccounts;
@@ -65,6 +68,13 @@ final class CreateConnection
                 'institution_name' => $item->institutionName,
                 'institution_logo_url' => $item->institutionLogoUrl,
                 'settings' => ['pending_accounts' => PendingProviderAccounts::toSettings($accounts)],
+                // Amarra a conexão à credencial que a criou (ver
+                // App\Domain\Banking\Models\BankConnection e
+                // BankCredential::currentFingerprintFor()) — null só se o
+                // usuário não tiver mais credencial legível neste exato
+                // instante (não deveria acontecer: EnsureBankingEnabled já
+                // exigiu uma para chegar até aqui).
+                'credential_fingerprint' => BankCredential::currentFingerprintFor($user),
             ]);
         } catch (UniqueConstraintViolationException) {
             // Corrida: outra requisição criou a conexão deste item entre o

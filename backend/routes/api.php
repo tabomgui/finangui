@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\Auth\AuthStatusController;
 use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\SessionController;
 use App\Http\Controllers\Api\V1\BankConnectionController;
+use App\Http\Controllers\Api\V1\BankCredentialController;
 use App\Http\Controllers\Api\V1\BudgetController;
 use App\Http\Controllers\Api\V1\CardController;
 use App\Http\Controllers\Api\V1\CardStatementController;
@@ -131,16 +132,23 @@ Route::prefix('v1')->group(function () {
         Route::delete('import-batches/{batch}', [ImportBatchController::class, 'destroy'])->whereNumber('batch');
         Route::post('import-batches/{batch}/revert', [ImportBatchController::class, 'revert'])->whereNumber('batch');
 
+        // Fora do EnsureBankingEnabled de propósito: é por aqui que o
+        // usuário cadastra as credenciais da Pluggy pela primeira vez (ou
+        // troca/remove), então a rota precisa continuar acessível sem elas.
+        Route::get('bank-credentials', [BankCredentialController::class, 'show']);
+        Route::put('bank-credentials', [BankCredentialController::class, 'save'])->middleware('throttle:10,1,bank-credentials');
+        Route::delete('bank-credentials', [BankCredentialController::class, 'destroy']);
+
         // index e destroy ficam fora do EnsureBankingEnabled: listar
         // conexões já existentes e desconectar (que só limpa o lado local,
-        // ver DisconnectConnection) continuam funcionando mesmo sem o
-        // provedor configurado.
+        // ver DisconnectConnection) continuam funcionando mesmo sem
+        // credenciais da Pluggy cadastradas por este usuário.
         Route::get('bank-connections', [BankConnectionController::class, 'index']);
         Route::delete('bank-connections/{connection}', [BankConnectionController::class, 'destroy'])->whereNumber('connection');
 
-        // EnsureBankingEnabled antes de qualquer FormRequest: sem provedor
-        // configurado, a rota responde 409 banking_disabled mesmo que o
-        // corpo não passasse a validação de campos.
+        // EnsureBankingEnabled antes de qualquer FormRequest: sem credenciais
+        // verificadas cadastradas por este usuário, a rota responde 409
+        // banking_disabled mesmo que o corpo não passasse a validação de campos.
         Route::middleware(EnsureBankingEnabled::class)->group(function () {
             // connect-token antes de {connection}, por clareza (não há
             // colisão de verbo/profundidade entre os dois, mas mantém o
