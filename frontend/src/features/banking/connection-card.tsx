@@ -1,5 +1,6 @@
 import { EllipsisVertical, Landmark, Link2, RefreshCw, Unlink } from 'lucide-react'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ApiError } from '@/api/errors'
 import { useDisconnect, useSyncConnection } from '@/api/queries/bank-connections'
@@ -101,7 +102,17 @@ export function ConnectionCard({
               <Badge variant={STATUS_BADGE_VARIANT[connection.status]}>{CONNECTION_STATUS_LABELS[connection.status]}</Badge>
             </p>
             <p className="truncate text-xs text-muted-foreground">{syncedLabel(connection.last_synced_at)}</p>
-            {connection.last_error && <p className="truncate text-xs text-destructive">{connection.last_error}</p>}
+            {connection.last_error && (
+              <p className="text-xs text-destructive">
+                <span className="block truncate">{connection.last_error}</span>
+                {/* Caso comum: conexão feita com a conta global antiga, sem credenciais próprias cadastradas ainda. */}
+                {!bankingEnabled && (
+                  <Link to="/configuracoes#pluggy" className="font-medium underline-offset-2 hover:underline">
+                    Configurar credenciais da Pluggy
+                  </Link>
+                )}
+              </p>
+            )}
           </div>
         </div>
         <DropdownMenu>

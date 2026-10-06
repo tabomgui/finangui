@@ -178,13 +178,14 @@ describe('AccountsPage', () => {
     expect(screen.getByRole('button', { name: 'Conectar banco' })).toBeInTheDocument()
   })
 
-  it('esconde o botão "Conectar banco" quando banking está desligado', () => {
+  it('"Conectar banco" leva para o card da Pluggy em Configurações quando banking está desligado', () => {
     accountsState = { data: [], isPending: false, isError: false }
     connectionsState = { data: [] }
     meState = { data: { banking_enabled: false, primary_currency: 'BRL' } }
     renderPage()
 
     expect(screen.queryByRole('button', { name: 'Conectar banco' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Conectar banco' })).toHaveAttribute('href', '/configuracoes#pluggy')
   })
 
   it('mostra a faixa de reconexão quando uma conexão precisa de reautenticação', () => {

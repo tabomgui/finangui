@@ -96,6 +96,21 @@ describe('ConnectionCard', () => {
     expect(screen.getByText('Falha ao atualizar.')).toBeInTheDocument()
   })
 
+  it('mostra link para configurar credenciais quando o erro é por falta de credenciais (banking desligado)', () => {
+    renderCard({
+      connection: connection({ institution_name: 'Nubank', status: 'error', last_error: 'Cadastre suas credenciais da Pluggy em Configurações.' }),
+      bankingEnabled: false,
+    })
+
+    expect(screen.getByRole('link', { name: 'Configurar credenciais da Pluggy' })).toHaveAttribute('href', '/configuracoes#pluggy')
+  })
+
+  it('não mostra o link de configurar credenciais quando o banking está ligado', () => {
+    renderCard({ connection: connection({ status: 'error', last_error: 'Falha ao atualizar.' }), bankingEnabled: true })
+
+    expect(screen.queryByRole('link', { name: 'Configurar credenciais da Pluggy' })).not.toBeInTheDocument()
+  })
+
   it('o logo é decorativo (alt vazio) — o nome do banco já aparece em texto', () => {
     const { container } = renderCard({
       connection: connection({ institution_name: 'Nubank', institution_logo_url: 'https://cdn.example.com/logo.png' }),
