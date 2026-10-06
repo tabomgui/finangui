@@ -10,7 +10,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Banking\SaveBankCredentialsRequest;
 use App\Http\Resources\BankCredentialsResource;
 use App\Models\User;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -35,7 +34,7 @@ final class BankCredentialController extends Controller
         return BankCredentialsResource::make($credential);
     }
 
-    public function save(SaveBankCredentialsRequest $request, SaveBankCredentials $saveBankCredentials): JsonResponse
+    public function save(SaveBankCredentialsRequest $request, SaveBankCredentials $saveBankCredentials): BankCredentialsResource
     {
         /** @var User $user */
         $user = $request->user();
@@ -47,12 +46,13 @@ final class BankCredentialController extends Controller
         $credential = $saveBankCredentials->handle($user, $clientId, $clientSecret);
 
         // Upsert: sempre 200, mesmo na primeira vez (quando o model acabou
-        // de ser criado e o wasRecentlyCreated do Eloquent faria o
-        // JsonResource devolver 201 por padrão) — ver App\Http\Controllers\Api\V1\Auth\RegisterController
+        // de ser recriado — ver App\Domain\Banking\Actions\SaveBankCredentials
+        // — e o wasRecentlyCreated do Eloquent faria o JsonResource devolver
+        // 201 por padrão) — ver App\Http\Controllers\Api\V1\Auth\RegisterController
         // para o mesmo ajuste no cadastro.
         $credential->wasRecentlyCreated = false;
 
-        return BankCredentialsResource::make($credential)->response()->setStatusCode(200);
+        return BankCredentialsResource::make($credential);
     }
 
     public function destroy(Request $request, DeleteBankCredentials $deleteBankCredentials): Response

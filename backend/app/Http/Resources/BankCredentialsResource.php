@@ -21,7 +21,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 final class BankCredentialsResource extends JsonResource
 {
     /**
-     * @return array{configured: bool, provider: string, client_id_hint?: string, verified_at?: string}
+     * @return array{configured: bool, provider: 'pluggy', client_id_hint?: string, verified_at?: string}
      */
     public function toArray(Request $request): array
     {

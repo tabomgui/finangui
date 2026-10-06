@@ -7,7 +7,10 @@ use App\Domain\Banking\Providers\FakeBankProvider;
 use App\Domain\Banking\Providers\FakeBankProviderFactory;
 use App\Domain\Imports\Support\Content;
 use App\Models\User;
+use Illuminate\Encryption\Encrypter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 pest()->extend(TestCase::class)->use(RefreshDatabase::class)->in('Feature');
@@ -84,4 +87,30 @@ function disableBankProvider(): void
 function verifiedBankCredential(User $user): BankCredential
 {
     return BankCredential::factory()->create(['user_id' => $user->id]);
+}
+
+/**
+ * Corrompe client_secret de $credential de um jeito que o cast `encrypted`
+ * (e, portanto, Crypt::decryptString()) nunca mais consegue ler: cifra com
+ * um Encrypter de chave diferente da do app. Simula uma APP_KEY trocada
+ * entre o cadastro e agora. Ver também corruptBankCredentialClientId().
+ */
+function corruptBankCredentialSecret(BankCredential $credential): void
+{
+    corruptBankCredentialColumn($credential, 'client_secret');
+}
+
+/** Como corruptBankCredentialSecret(), mas corrompe client_id em vez de client_secret. */
+function corruptBankCredentialClientId(BankCredential $credential): void
+{
+    corruptBankCredentialColumn($credential, 'client_id');
+}
+
+function corruptBankCredentialColumn(BankCredential $credential, string $column): void
+{
+    $otherKeyEncrypter = new Encrypter(Str::random(32), 'AES-256-CBC');
+
+    DB::table('bank_credentials')
+        ->where('id', $credential->id)
+        ->update([$column => $otherKeyEncrypter->encryptString('nao-importa')]);
 }

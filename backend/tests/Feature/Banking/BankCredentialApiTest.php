@@ -4,7 +4,9 @@ use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Models\BankCredential;
 use App\Domain\Banking\Providers\Pluggy\PluggyProvider;
 use App\Models\User;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
@@ -133,6 +135,112 @@ describe('PUT /bank-credentials', function () {
         expect(BankCredential::query()->count())->toBe(0);
     });
 
+    it('erro de conexão (timeout/DNS) ao testar → 503 provider_unavailable, nada é gravado', function () {
+        actingAsUser();
+
+        Http::fake(function () {
+            throw new ConnectionException('Connection timed out');
+        });
+
+        $this->putJson('/api/v1/bank-credentials', [
+            'client_id' => '12121212-1212-1212-1212-121212121212',
+            'client_secret' => 'some-secret',
+        ])
+            ->assertStatus(503)
+            ->assertJsonPath('code', 'provider_unavailable');
+
+        expect(BankCredential::query()->count())->toBe(0);
+    });
+
+    it('401 com credencial já cadastrada: a linha atual não muda (id, secret e verified_at intactos)', function () {
+        $user = actingAsUser();
+        $credential = BankCredential::factory()->create([
+            'user_id' => $user->id,
+            'client_id' => 'ab121212-1212-1212-1212-121212121212',
+            'client_secret' => 'old-secret',
+        ]);
+        $originalVerifiedAt = $credential->verified_at;
+
+        Http::fake(['api.pluggy.ai/auth' => Http::response([], 401)]);
+
+        $this->putJson('/api/v1/bank-credentials', [
+            'client_id' => 'ab121212-1212-1212-1212-121212121212',
+            'client_secret' => 'new-wrong-secret',
+        ])->assertStatus(422);
+
+        $credential->refresh();
+        expect($credential->client_id)->toBe('ab121212-1212-1212-1212-121212121212')
+            ->and($credential->client_secret)->toBe('old-secret')
+            ->and($credential->verified_at->equalTo($originalVerifiedAt))->toBeTrue();
+    });
+
+    it('503 com credencial já cadastrada: a linha atual não muda (id, secret e verified_at intactos)', function () {
+        $user = actingAsUser();
+        $credential = BankCredential::factory()->create([
+            'user_id' => $user->id,
+            'client_id' => 'cd121212-1212-1212-1212-121212121212',
+            'client_secret' => 'old-secret',
+        ]);
+        $originalVerifiedAt = $credential->verified_at;
+
+        Http::fake(['api.pluggy.ai/auth' => Http::response([], 500)]);
+
+        $this->putJson('/api/v1/bank-credentials', [
+            'client_id' => 'cd121212-1212-1212-1212-121212121212',
+            'client_secret' => 'new-secret',
+        ])->assertStatus(503);
+
+        $credential->refresh();
+        expect($credential->client_id)->toBe('cd121212-1212-1212-1212-121212121212')
+            ->and($credential->client_secret)->toBe('old-secret')
+            ->and($credential->verified_at->equalTo($originalVerifiedAt))->toBeTrue();
+    });
+
+    it('conexões de outro usuário não bloqueiam a troca de conta deste usuário', function () {
+        $other = User::factory()->create();
+        BankConnection::factory()->create(['user_id' => $other->id]);
+
+        $user = actingAsUser();
+        BankCredential::factory()->create([
+            'user_id' => $user->id,
+            'client_id' => 'cccccccc-cccc-cccc-cccc-cccccccc0003',
+        ]);
+
+        Http::fake(['api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-x'])]);
+
+        $this->putJson('/api/v1/bank-credentials', [
+            'client_id' => 'dddddddd-dddd-dddd-dddd-dddddddd0004',
+            'client_secret' => 'new-secret',
+        ])->assertOk();
+
+        expect(BankCredential::query()->where('user_id', $user->id)->first()->client_id)->toBe('dddddddd-dddd-dddd-dddd-dddddddd0004');
+    });
+
+    it('depois de trocar o secret com sucesso, o cache fica com a key nova (ou vazio, caso em que a próxima chamada reautentica)', function () {
+        $user = actingAsUser();
+        BankCredential::factory()->create([
+            'user_id' => $user->id,
+            'client_id' => 'eeeeeeee-eeee-eeee-eeee-eeeeeeee0005',
+            'client_secret' => 'old-secret',
+        ]);
+
+        Http::fake(['api.pluggy.ai/auth' => Http::response(['apiKey' => 'brand-new-key'])]);
+
+        $this->putJson('/api/v1/bank-credentials', [
+            'client_id' => 'eeeeeeee-eeee-eeee-eeee-eeeeeeee0005',
+            'client_secret' => 'new-secret',
+        ])->assertOk();
+
+        $cached = Cache::get(PluggyProvider::apiKeyCacheKeyFor($user->id, 'eeeeeeee-eeee-eeee-eeee-eeeeeeee0005'));
+
+        if ($cached === null) {
+            // Aceitável: sem nada cacheado, a próxima chamada ao provedor reautentica do zero.
+            return;
+        }
+
+        expect(Crypt::decryptString($cached))->toBe('brand-new-key');
+    });
+
     it('formato inválido (client_id não-uuid) → 422', function () {
         actingAsUser();
 
@@ -144,7 +252,7 @@ describe('PUT /bank-credentials', function () {
 
     it('trocar apenas o secret do mesmo client_id é permitido mesmo com conexões', function () {
         $user = actingAsUser();
-        $credential = BankCredential::factory()->create([
+        BankCredential::factory()->create([
             'user_id' => $user->id,
             'client_id' => '66666666-6666-6666-6666-666666666666',
             'client_secret' => 'old-secret',
@@ -158,7 +266,30 @@ describe('PUT /bank-credentials', function () {
             'client_secret' => 'new-secret',
         ])->assertOk();
 
-        expect($credential->refresh()->client_secret)->toBe('new-secret');
+        // A linha pode ter sido recriada (a gravação sempre apaga e cria de
+        // novo — ver App\Domain\Banking\Actions\SaveBankCredentials), então
+        // relê por user_id/provider em vez de confiar no id original.
+        expect(BankCredential::query()->where('user_id', $user->id)->first()->client_secret)->toBe('new-secret');
+    });
+
+    it('client_id é comparado e salvo em caixa baixa: variar a caixa do mesmo client_id não conta como troca de conta', function () {
+        $user = actingAsUser();
+        BankCredential::factory()->create([
+            'user_id' => $user->id,
+            'client_id' => 'fedcba98-7654-3210-fedc-ba9876543210',
+        ]);
+        BankConnection::factory()->create(['user_id' => $user->id]);
+
+        Http::fake(['api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-case'])]);
+
+        $this->putJson('/api/v1/bank-credentials', [
+            'client_id' => 'FEDCBA98-7654-3210-FEDC-BA9876543210',
+            'client_secret' => 'new-secret',
+        ])->assertOk();
+
+        $credential = BankCredential::query()->where('user_id', $user->id)->first();
+        expect($credential->client_id)->toBe('fedcba98-7654-3210-fedc-ba9876543210')
+            ->and($credential->client_secret)->toBe('new-secret');
     });
 
     it('trocar client_id com conexões bancárias → 409 bank_credentials_in_use, nada é alterado', function () {
@@ -274,6 +405,53 @@ describe('PUT /bank-credentials', function () {
     });
 });
 
+describe('PUT /bank-credentials — recuperação de credencial ilegível', function () {
+    it('client_secret indecifrável: trata como sem credencial (permite trocar mesmo com conexões) e recria a linha', function () {
+        $user = actingAsUser();
+        $corrupted = BankCredential::factory()->create(['user_id' => $user->id]);
+        corruptBankCredentialSecret($corrupted);
+        BankConnection::factory()->create(['user_id' => $user->id]);
+
+        Http::fake(['api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-recovered'])]);
+
+        $this->putJson('/api/v1/bank-credentials', [
+            'client_id' => '11112222-3333-4444-5555-666677778888',
+            'client_secret' => 'brand-new-secret',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.configured', true);
+
+        expect(BankCredential::query()->where('user_id', $user->id)->count())->toBe(1);
+
+        $recovered = BankCredential::query()->where('user_id', $user->id)->first();
+        expect($recovered->client_id)->toBe('11112222-3333-4444-5555-666677778888')
+            ->and($recovered->client_secret)->toBe('brand-new-secret')
+            ->and($recovered->id)->not->toBe($corrupted->id);
+    });
+
+    it('client_id indecifrável: trata como sem credencial (permite trocar mesmo com conexões) e recria a linha', function () {
+        $user = actingAsUser();
+        $corrupted = BankCredential::factory()->create(['user_id' => $user->id]);
+        corruptBankCredentialClientId($corrupted);
+        BankConnection::factory()->create(['user_id' => $user->id]);
+
+        Http::fake(['api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-recovered-2'])]);
+
+        $this->putJson('/api/v1/bank-credentials', [
+            'client_id' => '99990000-1111-2222-3333-444455556666',
+            'client_secret' => 'another-new-secret',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.configured', true);
+
+        expect(BankCredential::query()->where('user_id', $user->id)->count())->toBe(1);
+
+        $recovered = BankCredential::query()->where('user_id', $user->id)->first();
+        expect($recovered->client_id)->toBe('99990000-1111-2222-3333-444455556666')
+            ->and($recovered->id)->not->toBe($corrupted->id);
+    });
+});
+
 describe('DELETE /bank-credentials', function () {
     it('com conexões bancárias → 409 bank_credentials_in_use, nada é removido', function () {
         $user = actingAsUser();
@@ -294,6 +472,19 @@ describe('DELETE /bank-credentials', function () {
         $this->deleteJson('/api/v1/bank-credentials')->assertNoContent();
 
         expect(BankCredential::query()->where('user_id', $user->id)->exists())->toBeFalse();
+    });
+
+    it('remover limpa a key cacheada da API do client_id removido', function () {
+        $user = actingAsUser();
+        $credential = BankCredential::factory()->create([
+            'user_id' => $user->id,
+            'client_id' => 'abcabcab-cabc-abca-bcab-cabcabcabc01',
+        ]);
+        Cache::put(PluggyProvider::apiKeyCacheKeyFor($user->id, $credential->client_id), 'some-cached-key', now()->addHour());
+
+        $this->deleteJson('/api/v1/bank-credentials')->assertNoContent();
+
+        expect(Cache::get(PluggyProvider::apiKeyCacheKeyFor($user->id, 'abcabcab-cabc-abca-bcab-cabcabcabc01')))->toBeNull();
     });
 
     it('sem credencial cadastrada: ainda responde 204 (idempotente)', function () {

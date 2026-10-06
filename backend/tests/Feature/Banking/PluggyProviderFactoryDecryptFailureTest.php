@@ -7,26 +7,10 @@ use App\Domain\Banking\Jobs\SyncConnection;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Models\BankCredential;
 use App\Models\User;
-use Illuminate\Encryption\Encrypter;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
-/**
- * Simula uma credencial que não descriptografa mais (ex.: APP_KEY trocada
- * entre o cadastro e agora): grava client_secret cru, cifrado por um
- * Encrypter com uma chave diferente da do app — Crypt::decryptString() (e,
- * portanto, o cast `encrypted` do model) nunca vai conseguir ler isso.
- */
-function corruptBankCredentialSecret(BankCredential $credential): void
-{
-    $otherKeyEncrypter = new Encrypter(Str::random(32), 'AES-256-CBC');
-
-    DB::table('bank_credentials')
-        ->where('id', $credential->id)
-        ->update(['client_secret' => $otherKeyEncrypter->encryptString('nao-importa')]);
-}
+// corruptBankCredentialSecret() vem de tests/Pest.php.
 
 it('client_secret indecifrável: loga um warning com só user_id e lança BankingDisabled, sem vazar o valor', function () {
     Log::spy();

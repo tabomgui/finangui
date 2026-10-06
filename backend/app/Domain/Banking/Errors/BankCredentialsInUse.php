@@ -16,7 +16,7 @@ final class BankCredentialsInUse extends DomainError
 {
     public function __construct()
     {
-        parent::__construct('Desconecte os bancos antes de trocar de conta Pluggy.');
+        parent::__construct('Desconecte os bancos antes de trocar ou remover a conta Pluggy.');
     }
 
     public function errorCode(): string

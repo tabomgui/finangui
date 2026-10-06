@@ -35,6 +35,11 @@ return Application::configure(basePath: dirname(__DIR__))
         );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // client_secret nunca entra na sessão flasheada de volta ao formulário
+        // numa 422: App\Http\Requests\Banking\SaveBankCredentialsRequest é a
+        // única rota que recebe esse campo.
+        $exceptions->dontFlash(['client_secret']);
+
         $exceptions->dontReport(DomainError::class);
         $exceptions->render(fn (DomainError $e) => response()->json([
             'code' => $e->errorCode(),
