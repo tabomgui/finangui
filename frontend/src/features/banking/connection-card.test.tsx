@@ -68,6 +68,7 @@ function account(overrides: Partial<Account> = {}): Account {
     connection_id: 1,
     provider_balance: 15000,
     provider_synced_at: null,
+    ledger_balance: 15000,
     ...overrides,
   }
 }
@@ -131,8 +132,8 @@ describe('ConnectionCard', () => {
   it('mostra "Banco informa" quando o saldo do banco difere, só para conta que não é cartão', () => {
     renderCard({
       accounts: [
-        account({ id: 10, name: 'Nubank', type: 'checking', balance: 15000, provider_balance: 16000 }),
-        account({ id: 11, name: 'Cartão', type: 'credit_card', balance: -5000, provider_balance: -8000 }),
+        account({ id: 10, name: 'Nubank', type: 'checking', balance: 15000, ledger_balance: 15000, provider_balance: 16000 }),
+        account({ id: 11, name: 'Cartão', type: 'credit_card', balance: -5000, ledger_balance: -5000, provider_balance: -8000 }),
       ],
     })
 

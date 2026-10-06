@@ -173,9 +173,15 @@ export function ConnectionCard({
             // aberto na hora (inclui autorizações e parcelas que o banco já conta, mas nosso
             // lançamento só lança no fechamento/compra) — ele quase sempre diverge um pouco do
             // nosso, sem isso ser sinal de nada errado. Numa conta corrente/poupança, divergir é
-            // raro e vale avisar (pode ser um lançamento manual duplicado ou que falta).
+            // raro e vale avisar (pode ser um lançamento manual duplicado ou que falta). A
+            // comparação usa ledger_balance (o saldo pelo nosso razão, sempre "hoje"), não
+            // balance (que para conta conectada já é o saldo ajustado pelo informado pelo banco
+            // — compará-lo com provider_balance quase nunca divergiria).
             const showProviderBalance =
-              account.type !== 'credit_card' && account.provider_balance !== null && account.provider_balance !== account.balance
+              account.type !== 'credit_card' &&
+              account.provider_balance !== null &&
+              account.ledger_balance !== undefined &&
+              account.provider_balance !== account.ledger_balance
 
             return (
               <AccountRow

@@ -39,6 +39,20 @@ it('pagamento libera limite', function () {
     $this->getJson("/api/v1/cards/{$this->card->id}")->assertJsonPath('data.limit.used', 20000);
 });
 
+it('pagamento com data futura já conta no saldo e libera limite: cartão usa o razão completo, sem corte por dia', function () {
+    $checking = Account::factory()->create(['user_id' => $this->user->id]);
+    Transaction::factory()->create(['account_id' => $this->card->id, 'amount' => 30000]);
+    $this->postJson('/api/v1/transfers', [
+        'from_account_id' => $checking->id, 'to_account_id' => $this->card->id,
+        'date' => '2026-03-10', 'amount' => 10000, 'description' => 'Pagamento futuro',
+    ])->assertCreated();
+
+    $this->getJson("/api/v1/cards/{$this->card->id}")
+        ->assertOk()
+        ->assertJsonPath('data.balance', -20000)
+        ->assertJsonPath('data.limit.used', 20000);
+});
+
 it('transação pendente conta como limite usado', function () {
     Transaction::factory()->create(['account_id' => $this->card->id, 'amount' => 15000, 'status' => 'pending']);
 

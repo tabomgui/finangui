@@ -54,6 +54,9 @@ final class BankConnectionResource extends JsonResource
                 'is_archived' => $account->is_archived,
                 'balance' => $account->balance()->cents,
                 'provider_balance' => $account->provider_balance?->cents,
+                // Toda conta aqui já é desta conexão, então sempre conectada
+                // (nunca omitido, ao contrário de AccountResource::ledger_balance).
+                'ledger_balance' => $account->ledgerBalance()->cents,
             ])->all(),
             'pending_accounts' => ProviderAccountResource::collection(PendingProviderAccounts::suggestionsFor($this->resource)),
             'unlinked_accounts' => ProviderAccountResource::collection(PendingProviderAccounts::suggestionsFor($this->resource, 'unlinked_accounts')),

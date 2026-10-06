@@ -1050,6 +1050,7 @@ export interface components {
             connection_id: number | null;
             provider_balance: number | null;
             provider_synced_at: string | null;
+            ledger_balance?: number;
         };
         /**
          * AccountType
@@ -1079,6 +1080,11 @@ export interface components {
                 is_archived: boolean;
                 balance: number;
                 provider_balance: number | null;
+                /**
+                 * @description Toda conta aqui já é desta conexão, então sempre conectada
+                 *     (nunca omitido, ao contrário de AccountResource::ledger_balance).
+                 */
+                ledger_balance: number;
             }[];
             pending_accounts: components["schemas"]["ProviderAccountResource"][];
             unlinked_accounts: components["schemas"]["ProviderAccountResource"][];

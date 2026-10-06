@@ -5,6 +5,7 @@ namespace App\Domain\Accounts\Models;
 use App\Domain\Accounts\Enums\AccountType;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Cards\Models\CardStatement;
+use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\Concerns\BelongsToUser;
@@ -116,17 +117,49 @@ class Account extends Model
     }
 
     /**
+     * Chaves selecionadas por scopeWithBalance(); conferidas por
+     * hasBalance() antes de qualquer leitura em balance()/ledgerBalance(),
+     * em vez de assumir que a presença de uma garante as outras.
+     */
+    private const BALANCE_KEYS = [
+        'balance_net', 'balance_net_full', 'balance_net_today',
+        'balance_bank_up_to_sync', 'balance_bank_up_to_asof',
+    ];
+
+    /**
      * Saldo real de cada conta no dia $asOf (hoje, no fuso do app, quando
      * omitido) — única regra do "saldo no dia" do domínio de Accounts,
      * usada aqui, em App\Domain\Reports\Queries\MonthSummary e em
-     * GET /accounts. Conta conectada (provider_balance não nulo) e que não
-     * é cartão usa o saldo informado pelo banco na última sincronização,
-     * descontando os lançamentos (posted, não ignorados) datados depois de
-     * $asOf — o único jeito de "voltar no tempo" a partir de um saldo que
-     * só vale para hoje. As demais contas, incluindo cartão, continuam com
-     * opening_balance + Σ(posted, não ignorados) até $asOf, como antes.
-     * balance() decide qual das duas somas usar; os dois subselects
-     * correlacionados abaixo saem numa única query (sem N+1).
+     * GET /accounts.
+     *
+     * Cartão: sempre opening_balance + Σ(posted, não ignorada), sem corte
+     * de data ($asOf é ignorado) — o mesmo razão completo de sempre, para
+     * bater com o limite (scopeWithCardUsage) e a fatura.
+     *
+     * Conta conectada e que não é cartão (connection_id, provider_balance
+     * e provider_synced_at todos não nulos): âncora no dia da última
+     * sincronização — syncDate = provider_synced_at::date — e aplica a
+     * diferença entre esse dia e $asOf:
+     *     balance($asOf) = provider_balance − Σ(rows, date ≤ syncDate) + Σ(rows, date ≤ $asOf)
+     * "rows" é posted e não ignorada; no lado do banco entra também a
+     * transação ignorada que veio do próprio provedor (source pluggy ou
+     * external_id preenchido) — o saldo do banco já contabilizou esse
+     * lançamento mesmo ele estando ignorado aqui (ex.: um estorno
+     * automático de investimento). pending/projected nunca entram, mesmo
+     * que o saldo do banco os inclua — a API do provedor não distingue
+     * isso de um lançamento efetivado.
+     *
+     * provider_synced_at é gravado (AccountMapper) e lido com o relógio do
+     * próprio PHP, que roda no fuso do app (config('app.timezone'),
+     * ver bootstrap) — por isso o cast direto para data (::date) já é o
+     * dia local certo, sem precisar converter fuso dentro do SQL.
+     *
+     * Demais contas: opening_balance + Σ(posted, não ignorada, date ≤ $asOf).
+     *
+     * balance() decide qual soma usar; ledgerBalance() expõe sempre o
+     * razão de hoje (independente de $asOf), para comparar com o saldo que
+     * o banco informa (ver AccountResource). Os subselects correlacionados
+     * abaixo saem numa única query (sem N+1).
      *
      * @param  Builder<Account>  $query
      */
@@ -134,27 +167,59 @@ class Account extends Model
     {
         $asOf ??= CarbonImmutable::now();
         $date = $asOf->toDateString();
+        $today = CarbonImmutable::now()->toDateString();
 
         if ($query->getQuery()->columns === null) {
             $query->select('accounts.*');
         }
 
-        $postedNotIgnored = fn () => Transaction::query()
+        $signed = "COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0)";
+
+        $posted = fn () => Transaction::query()
             ->withoutGlobalScopes()
-            ->selectRaw("COALESCE(SUM(CASE WHEN direction = 'in' THEN amount ELSE -amount END), 0)")
             ->whereColumn('transactions.account_id', 'accounts.id')
-            ->where('status', TransactionStatus::Posted->value)
-            ->where('is_ignored', false);
+            ->where('status', TransactionStatus::Posted->value);
+
+        $ledgerRows = fn () => $posted()->where('is_ignored', false)->selectRaw($signed);
+
+        // Lançamento do banco: não ignorado, ou ignorado mas que veio do
+        // próprio provedor — já contabilizado no saldo que ele informa.
+        $bankRows = fn () => $posted()
+            ->where(fn (Builder $q) => $q->where('is_ignored', false)
+                ->orWhere('source', TransactionSource::Pluggy->value)
+                ->orWhereNotNull('external_id'))
+            ->selectRaw($signed);
 
         $query->addSelect([
-            'balance_net' => $postedNotIgnored()->where('date', '<=', $date),
-            'balance_after_net' => $postedNotIgnored()->where('date', '>', $date),
+            'balance_net' => $ledgerRows()->where('date', '<=', $date),
+            'balance_net_full' => $ledgerRows(),
+            'balance_net_today' => $ledgerRows()->where('date', '<=', $today),
+            'balance_bank_up_to_sync' => $bankRows()->whereRaw('transactions.date <= accounts.provider_synced_at::date'),
+            'balance_bank_up_to_asof' => $bankRows()->where('date', '<=', $date),
         ]);
     }
 
     public function hasBalance(): bool
     {
-        return array_key_exists('balance_net', $this->attributes);
+        foreach (self::BALANCE_KEYS as $key) {
+            if (! array_key_exists($key, $this->attributes)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Conta conectada (não cartão) com saldo e data de sincronização do
+     * banco: a regra de saldo bancário de scopeWithBalance() se aplica.
+     */
+    private function usesBankBalance(): bool
+    {
+        return ! $this->isCreditCard()
+            && $this->connection_id !== null
+            && $this->provider_balance !== null
+            && $this->provider_synced_at !== null;
     }
 
     public function balance(): Money
@@ -163,11 +228,32 @@ class Account extends Model
             throw new LogicException('Carregue a conta com withBalance() antes de ler o saldo.');
         }
 
-        if ($this->provider_balance !== null && ! $this->isCreditCard()) {
-            return $this->provider_balance->minus(Money::cents((int) $this->attributes['balance_after_net']));
+        if ($this->isCreditCard()) {
+            return $this->opening_balance->plus(Money::cents((int) $this->attributes['balance_net_full']));
+        }
+
+        if ($this->usesBankBalance()) {
+            $delta = (int) $this->attributes['balance_bank_up_to_asof'] - (int) $this->attributes['balance_bank_up_to_sync'];
+
+            return $this->provider_balance->plus(Money::cents($delta));
         }
 
         return $this->opening_balance->plus(Money::cents((int) $this->attributes['balance_net']));
+    }
+
+    /**
+     * Saldo pelo razão interno (opening_balance + lançamentos postados não
+     * ignorados) sempre até hoje, independente de $asOf — só para comparar
+     * com o saldo que o banco informa (ver AccountResource), nunca para
+     * decidir o saldo real da conta (balance()).
+     */
+    public function ledgerBalance(): Money
+    {
+        if (! $this->hasBalance()) {
+            throw new LogicException('Carregue a conta com withBalance() antes de ler o saldo.');
+        }
+
+        return $this->opening_balance->plus(Money::cents((int) $this->attributes['balance_net_today']));
     }
 
     /**

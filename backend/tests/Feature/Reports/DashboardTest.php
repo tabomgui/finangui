@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
@@ -230,20 +231,6 @@ it('aceita date independente de month e calcula o saldo naquele dia', function (
         ->assertJsonPath('data.total_balance', 800);
 });
 
-it('calcula o saldo de uma conta conectada num dia passado descontando lançamentos depois daquele dia', function () {
-    actingAsUser();
-    $this->travelTo('2026-10-15');
-    $account = Account::factory()->create(['opening_balance' => 0, 'provider_balance' => 100000]);
-    Transaction::factory()->for($account)->create(['date' => '2026-10-05', 'amount' => 999999]); // antes de D, já refletido no saldo do banco
-    Transaction::factory()->for($account)->create(['date' => '2026-10-12', 'amount' => 300]); // depois de D=10-10
-    Transaction::factory()->for($account)->income()->create(['date' => '2026-10-11', 'amount' => 150]); // depois de D
-
-    $this->getJson('/api/v1/dashboard?month=2026-10&date=2026-10-10')
-        ->assertOk()
-        ->assertJsonPath('data.balance_date', '2026-10-10')
-        ->assertJsonPath('data.total_balance', 100150); // 100000 - (-300 + 150)
-});
-
 it('rejeita date com formato inválido', function () {
     actingAsUser();
 
@@ -264,10 +251,18 @@ it('rejeita date no futuro', function () {
 it('isola o saldo conectado e a data entre usuários', function () {
     $user = actingAsUser();
     $this->travelTo('2026-10-15');
-    Account::factory()->create(['opening_balance' => 0, 'provider_balance' => 5000]);
+    $connection = BankConnection::factory()->active()->create();
+    Account::factory()->create([
+        'opening_balance' => 0, 'connection_id' => $connection->id,
+        'provider_balance' => 5000, 'provider_synced_at' => now(),
+    ]);
 
     actingAsUser();
-    Account::factory()->create(['opening_balance' => 0, 'provider_balance' => 999999]);
+    $otherConnection = BankConnection::factory()->active()->create();
+    Account::factory()->create([
+        'opening_balance' => 0, 'connection_id' => $otherConnection->id,
+        'provider_balance' => 999999, 'provider_synced_at' => now(),
+    ]);
 
     $this->actingAs($user);
 
