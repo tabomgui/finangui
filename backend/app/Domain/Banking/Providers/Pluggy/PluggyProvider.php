@@ -81,10 +81,13 @@ final class PluggyProvider implements BankProvider
         // na raiz do payload a Pluggy aceita a chamada mas descarta o valor
         // em silêncio (o item nasceria sem clientUserId, e não daria pra
         // conferir depois que ele pertence a este usuário).
+        // Sem avoidDuplicates: a Pluggy compara só os parâmetros de login, e
+        // conectores OAuth (ex.: MeuPluggy) não têm nenhum — qualquer item
+        // anterior do mesmo conector na aplicação vira "duplicado" e a criação
+        // falha com ITEM_USER_ALREADY_EXISTS.
         $payload = [
             'options' => [
                 'clientUserId' => $clientUserId,
-                'avoidDuplicates' => true,
             ],
         ];
 
