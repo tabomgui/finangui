@@ -80,10 +80,13 @@ export function SpendingCard({ month }: SpendingCardProps) {
   const [announcement, setAnnouncement] = useState('')
 
   // Deriva o detalhamento ativo a partir dos dados atuais em vez de espelhar `drillId` num efeito:
-  // se a categoria detalhada não existir mais nesta resposta (deixou de ter gasto depois de uma
-  // edição em outra aba, por exemplo), a tela já volta ao nível de topo sozinha, sem depender de
-  // um reset explícito nem arriscar um detalhamento órfão.
-  const drillCategory = drillId !== null ? data?.categories.find((category) => category.category_id === drillId) : undefined
+  // se a categoria detalhada não existir mais nesta resposta, ou perdeu as subcategorias (deixou
+  // de ter gasto direto/nas filhas depois de uma edição em outra aba, por exemplo), a tela já
+  // volta ao nível de topo sozinha, sem depender de um reset explícito, de um detalhamento órfão
+  // nem de um "Nenhuma despesa" enganoso enquanto a categoria em si ainda tem gasto.
+  const drillCategory = drillId !== null
+    ? data?.categories.find((category) => category.category_id === drillId && category.children.length > 0)
+    : undefined
 
   // Depois de entrar no detalhamento, o foco vai para "Voltar" (o próximo passo natural);
   // depois de "Voltar", vai para o chip da categoria de onde veio (ver onBack/returnFocusKeyRef).

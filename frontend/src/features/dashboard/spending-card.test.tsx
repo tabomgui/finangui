@@ -291,6 +291,47 @@ describe('SpendingCard', () => {
     expect(legend().getByRole('button', { name: /Alimentação/ })).not.toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('categoria detalhada perde as subcategorias (mesma key): volta ao nível de topo em vez de "Nenhuma despesa"', async () => {
+    useSpendingBreakdown.mockReturnValue({ data: withCategories(), isPending: false, isError: false, isPlaceholderData: false, refetch: vi.fn() })
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <SpendingCard key="2026-10" month="2026-10" />
+      </MemoryRouter>,
+    )
+    await screen.findByTestId('donut')
+
+    fireEvent.click(screen.getByText('fatia-Alimentação'))
+    expect(screen.getByRole('button', { name: /Voltar/ })).toBeInTheDocument()
+
+    // Mesma key/mês, nova resposta: "Alimentação" continua existindo (ainda com gasto direto),
+    // mas sem nenhuma subcategoria com gasto.
+    useSpendingBreakdown.mockReturnValue({
+      data: breakdown({
+        total: 50000,
+        categories: [
+          { category_id: 1, name: 'Alimentação', color: null, icon: null, amount: 30000, count: 3, children: [] },
+          { category_id: 3, name: 'Transporte', color: null, icon: null, amount: 20000, count: 1, children: [] },
+        ],
+      }),
+      isPending: false,
+      isError: false,
+      isPlaceholderData: false,
+      refetch: vi.fn(),
+    })
+    rerender(
+      <MemoryRouter>
+        <SpendingCard key="2026-10" month="2026-10" />
+      </MemoryRouter>,
+    )
+
+    expect(screen.queryByRole('button', { name: /Voltar/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Distribuição de gastos' })).toBeInTheDocument()
+    expect(screen.queryByText('Nenhuma despesa neste mês.')).not.toBeInTheDocument()
+    expect(categoryList().getByText('Alimentação')).toBeInTheDocument()
+    expect(categoryList().getByText('Transporte')).toBeInTheDocument()
+  })
+
   it('trocar de mês (key={month}, como no uso real) reseta detalhamento e destaque', async () => {
     useSpendingBreakdown.mockReturnValue({ data: withCategories(), isPending: false, isError: false, isPlaceholderData: false, refetch: vi.fn() })
 
