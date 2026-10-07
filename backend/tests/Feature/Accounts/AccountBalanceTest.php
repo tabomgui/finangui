@@ -111,6 +111,16 @@ describe('conta conectada', function () {
         $this->getJson("/api/v1/accounts/{$account->id}")->assertJsonPath('data.balance', 100700);
     });
 
+    it('lançamento ignorado importado de CSV/OFX (com external_id) não entra no saldo do banco, diferente de um da Pluggy', function () {
+        $account = connectedAccount(['provider_synced_at' => '2026-10-10']);
+        Transaction::factory()->for($account)->income()->create([
+            'date' => '2026-10-12', 'amount' => 700, 'is_ignored' => true,
+            'source' => TransactionSource::Csv, 'external_id' => 'csv-123',
+        ]); // importado com external_id, mas o banco nunca contou esse ignorado: só a Pluggy "vence" sozinha.
+
+        $this->getJson("/api/v1/accounts/{$account->id}")->assertJsonPath('data.balance', 100000);
+    });
+
     it('lançamento manual com data futura não muda o saldo de hoje, mesmo com sync de hoje', function () {
         $account = connectedAccount();
         Transaction::factory()->for($account)->create(['date' => '2026-10-20', 'amount' => 500]);
@@ -137,16 +147,15 @@ describe('conta conectada', function () {
             ->assertJsonPath('data.total_balance', 100150); // 100000 - (-300 + 150)
     });
 
-    it('usa o fim do mês como padrão quando o mês consultado já passou', function () {
+    it('usa hoje como padrão mesmo quando o mês consultado já passou (mês e dia são independentes)', function () {
         $account = connectedAccount();
-        // Despesa depois do fim de setembro, mas antes do sync de hoje: já está refletida no
-        // saldo do banco, então calcular o saldo em 30/09 precisa "devolver" esse valor.
+        // Despesa antes de hoje e já refletida no sync de hoje: não muda o saldo de hoje.
         Transaction::factory()->for($account)->create(['date' => '2026-10-05', 'amount' => 500]);
 
         $this->getJson('/api/v1/dashboard?month=2026-09')
             ->assertOk()
-            ->assertJsonPath('data.balance_date', '2026-09-30')
-            ->assertJsonPath('data.total_balance', 100500);
+            ->assertJsonPath('data.balance_date', '2026-10-15')
+            ->assertJsonPath('data.total_balance', 100000);
     });
 
     it('aceita date igual a hoje', function () {

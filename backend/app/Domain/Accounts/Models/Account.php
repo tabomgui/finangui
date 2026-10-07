@@ -142,12 +142,13 @@ class Account extends Model
      * diferença entre esse dia e $asOf:
      *     balance($asOf) = provider_balance − Σ(rows, date ≤ syncDate) + Σ(rows, date ≤ $asOf)
      * "rows" é posted e não ignorada; no lado do banco entra também a
-     * transação ignorada que veio do próprio provedor (source pluggy ou
-     * external_id preenchido) — o saldo do banco já contabilizou esse
-     * lançamento mesmo ele estando ignorado aqui (ex.: um estorno
-     * automático de investimento). pending/projected nunca entram, mesmo
-     * que o saldo do banco os inclua — a API do provedor não distingue
-     * isso de um lançamento efetivado.
+     * transação ignorada cujo source é pluggy — o saldo do banco já
+     * contabilizou esse lançamento mesmo ele estando ignorado aqui (ex.:
+     * um estorno automático de investimento). external_id sozinho não
+     * basta: CSV/OFX também preenchem essa coluna ao importar, e esses
+     * nunca foram contados pelo banco. pending/projected nunca entram,
+     * mesmo que o saldo do banco os inclua — a API do provedor não
+     * distingue isso de um lançamento efetivado.
      *
      * provider_synced_at é gravado (AccountMapper) e lido com o relógio do
      * próprio PHP, que roda no fuso do app (config('app.timezone'),
@@ -183,11 +184,12 @@ class Account extends Model
         $ledgerRows = fn () => $posted()->where('is_ignored', false)->selectRaw($signed);
 
         // Lançamento do banco: não ignorado, ou ignorado mas que veio do
-        // próprio provedor — já contabilizado no saldo que ele informa.
+        // próprio provedor (source pluggy) — já contabilizado no saldo que
+        // ele informa. `external_id` sozinho não basta: CSV/OFX também
+        // preenchem essa coluna ao importar, e o banco nunca contou esses.
         $bankRows = fn () => $posted()
             ->where(fn (Builder $q) => $q->where('is_ignored', false)
-                ->orWhere('source', TransactionSource::Pluggy->value)
-                ->orWhereNotNull('external_id'))
+                ->orWhere('source', TransactionSource::Pluggy->value))
             ->selectRaw($signed);
 
         $query->addSelect([
