@@ -93,7 +93,7 @@ it('restringe os totais à moeda principal mas lista todas as contas', function 
         ->assertJsonPath('data.accounts.1.currency', 'USD');
 });
 
-it('calcula o saldo das contas até o fim do mês consultado quando o mês já passou', function () {
+it('calcula o saldo das contas até hoje mesmo quando o mês consultado já passou (mês e dia são independentes)', function () {
     actingAsUser();
     $this->travelTo('2026-10-15');
     $account = Account::factory()->create(['opening_balance' => 1000]);
@@ -102,9 +102,10 @@ it('calcula o saldo das contas até o fim do mês consultado quando o mês já p
 
     $this->getJson('/api/v1/dashboard?month=2026-09')
         ->assertOk()
-        ->assertJsonPath('data.balance_date', '2026-09-30')
-        ->assertJsonPath('data.total_balance', 1500)
-        ->assertJsonPath('data.accounts.0.balance', 1500);
+        ->assertJsonPath('data.balance_date', '2026-10-15')
+        ->assertJsonPath('data.today', '2026-10-15')
+        ->assertJsonPath('data.total_balance', 1300)
+        ->assertJsonPath('data.accounts.0.balance', 1300);
 });
 
 it('calcula o saldo das contas até hoje quando o mês consultado é o mês atual', function () {
@@ -191,6 +192,19 @@ it('usa hoje como padrão do dia do saldo no mês futuro, já que não existe sa
     $this->getJson('/api/v1/dashboard?month=2026-12')
         ->assertOk()
         ->assertJsonPath('data.balance_date', '2026-10-15');
+});
+
+it('devolve hoje na chave today, igual ao padrão do dia do saldo e independente de date', function () {
+    actingAsUser();
+    $this->travelTo('2026-10-15');
+    Account::factory()->create(['opening_balance' => 1000]);
+
+    $this->getJson('/api/v1/dashboard?month=2026-10')->assertOk()->assertJsonPath('data.today', '2026-10-15');
+
+    $this->getJson('/api/v1/dashboard?month=2026-01&date=2026-01-05')
+        ->assertOk()
+        ->assertJsonPath('data.today', '2026-10-15')
+        ->assertJsonPath('data.balance_date', '2026-01-05');
 });
 
 it('aceita date independente de month e calcula o saldo naquele dia', function () {

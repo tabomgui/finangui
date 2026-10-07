@@ -13,6 +13,6 @@ final class DashboardController extends Controller
     {
         $month = $request->month();
 
-        return response()->json(['data' => $monthSummary->for($month, $request->balanceDate($month))]);
+        return response()->json(['data' => $monthSummary->for($month, $request->balanceDate())]);
     }
 }

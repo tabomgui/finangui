@@ -15,6 +15,7 @@ final class MonthSummary
      *     currency: string,
      *     total_balance: int,
      *     balance_date: string,
+     *     today: string,
      *     accounts: list<array{id: int, name: string, type: AccountType, currency: string, color: string|null, icon: string|null, balance: int}>,
      *     income: int,
      *     expense: int,
@@ -56,6 +57,11 @@ final class MonthSummary
             'total_balance' => (int) $accounts->where('currency', $primaryCurrency)
                 ->sum(fn (Account $a) => $a->balance()->cents),
             'balance_date' => $balanceDate->toDateString(),
+            // Hoje no fuso do app, independente de $balanceDate (que pode ser um dia escolhido
+            // pelo usuário): o frontend usa esta chave para desabilitar dias futuros no
+            // calendário, "Voltar para hoje" e a lógica de "é hoje" — nunca o relógio do
+            // navegador (ver dashboard-page.tsx).
+            'today' => CarbonImmutable::now()->toDateString(),
             'accounts' => $accounts->map(fn (Account $a) => [
                 'id' => $a->id,
                 'name' => $a->name,

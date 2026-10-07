@@ -28,22 +28,15 @@ final class DashboardRequest extends ApiRequest
 
     /**
      * Dia do saldo, independente do mês (as setas de mês nunca mudam o dia
-     * escolhido). Informado explicitamente, ou o padrão por mês: hoje no
-     * mês atual, fim do mês nos meses passados, hoje nos futuros — não
-     * existe saldo real futuro.
+     * escolhido, e o mês exibido nunca muda o padrão do dia): informado
+     * explicitamente (`date`), ou hoje — sempre, para qualquer mês.
      */
-    public function balanceDate(CarbonImmutable $month): CarbonImmutable
+    public function balanceDate(): CarbonImmutable
     {
         if ($this->filled('date')) {
             return CarbonImmutable::createFromFormat('!Y-m-d', $this->string('date')->value());
         }
 
-        $now = CarbonImmutable::now();
-
-        if ($month->isSameMonth($now)) {
-            return $now;
-        }
-
-        return $month->lessThan($now->startOfMonth()) ? $month->endOfMonth() : $now;
+        return CarbonImmutable::now();
     }
 }

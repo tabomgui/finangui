@@ -3206,6 +3206,13 @@ export interface operations {
                             currency: string;
                             total_balance: number;
                             balance_date: string;
+                            /**
+                             * @description Hoje no fuso do app, independente de $balanceDate (que pode ser um dia escolhido
+                             *     pelo usuário): o frontend usa esta chave para desabilitar dias futuros no
+                             *     calendário, "Voltar para hoje" e a lógica de "é hoje" — nunca o relógio do
+                             *     navegador (ver dashboard-page.tsx).
+                             */
+                            today: string;
                             accounts: {
                                 id: number;
                                 name: string;
