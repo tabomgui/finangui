@@ -39,6 +39,10 @@ export const router = createBrowserRouter([
           { path: 'cartoes', lazy: lazyPage(() => import('@/features/cards/cards-page'), 'CardsPage') },
           { path: 'cartoes/:id', lazy: lazyPage(() => import('@/features/cards/card-detail-page'), 'CardDetailPage') },
           { path: 'contas', lazy: lazyPage(() => import('@/features/accounts/accounts-page'), 'AccountsPage') },
+          {
+            path: 'conexoes/:id/sincronizacoes',
+            lazy: lazyPage(() => import('@/features/banking/sync-history-page'), 'SyncHistoryPage'),
+          },
           { path: 'importar', lazy: lazyPage(() => import('@/features/imports/import-page'), 'ImportPage') },
           { path: 'importar/:id', lazy: lazyPage(() => import('@/features/imports/import-preview-page'), 'ImportPreviewPage') },
           { path: 'categorias', lazy: lazyPage(() => import('@/features/categories/categories-page'), 'CategoriesPage') },

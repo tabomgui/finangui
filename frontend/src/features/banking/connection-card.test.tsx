@@ -182,6 +182,22 @@ describe('ConnectionCard', () => {
     await vi.waitFor(() => expect(toast.error).toHaveBeenCalledWith('Sincronização em andamento.'))
   })
 
+  it('o menu tem um link "Histórico" para a tela de sincronizações da conexão', async () => {
+    renderCard({ connection: connection({ id: 9 }) })
+
+    await openMenu('Ações da conexão Banco Fictício')
+
+    expect(screen.getByRole('menuitem', { name: 'Histórico' })).toHaveAttribute('href', '/conexoes/9/sincronizacoes')
+  })
+
+  it('o link "Histórico" continua disponível em pending_link e com o banking desligado', async () => {
+    renderCard({ connection: connection({ id: 9, status: 'pending_link' }), bankingEnabled: false })
+
+    await openMenu('Ações da conexão Banco Fictício')
+
+    expect(screen.getByRole('menuitem', { name: 'Histórico' })).toHaveAttribute('href', '/conexoes/9/sincronizacoes')
+  })
+
   it('chama onReconnect pelo menu', async () => {
     const onReconnect = vi.fn()
     const target = connection({ id: 5, status: 'needs_reauth' })

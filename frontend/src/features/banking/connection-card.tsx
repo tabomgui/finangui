@@ -1,4 +1,4 @@
-import { EllipsisVertical, Landmark, Link2, RefreshCw, Unlink } from 'lucide-react'
+import { EllipsisVertical, History, Landmark, Link2, RefreshCw, Unlink } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -132,9 +132,17 @@ export function ConnectionCard({
                   <Link2 className="h-4 w-4" />
                   Reconectar
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
               </>
             )}
+            {/* Fora de showProviderActions de propósito: ver o histórico não chama o provedor, então
+                continua disponível mesmo pending_link ou sem credenciais configuradas. */}
+            <DropdownMenuItem asChild>
+              <Link to={`/conexoes/${connection.id}/sincronizacoes`}>
+                <History className="h-4 w-4" />
+                Histórico
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem className="text-destructive" onSelect={() => setDisconnecting(true)}>
               <Unlink className="h-4 w-4" />
               Desconectar

@@ -93,6 +93,12 @@ export type LinkAccountsRequest = Schemas['LinkAccountsRequest']
 export type ConnectTokenRequest = Schemas['ConnectTokenRequest']
 
 export type BankCredentials = Schemas['BankCredentialsResource']
+
+export type BankSyncRun = Schemas['BankSyncRunResource']
+export type BankSyncRunDetail = Schemas['BankSyncRunDetailResource']
+export type BankSyncRunItem = Schemas['BankSyncRunItemResource']
+export type SyncRunStatus = Schemas['SyncRunStatus']
+export type SyncTrigger = Schemas['SyncTrigger']
 export type SaveBankCredentialsRequest = Schemas['SaveBankCredentialsRequest']
 
 export type LoginRequest = Schemas['LoginRequest']
