@@ -129,16 +129,19 @@ describe('ConnectionCard', () => {
     expect(screen.getByText(/150,00/)).toBeInTheDocument()
   })
 
-  it('mostra "Banco informa" quando o saldo do banco difere, só para conta que não é cartão', () => {
+  it('mostra "Pelos lançamentos" quando o razão interno difere do saldo do banco, só para conta que não é cartão', () => {
+    // balance === provider_balance, como na realidade: numa conta conectada o saldo exibido já
+    // é o informado pelo banco. A linha extra compara com ledger_balance (o razão interno).
     renderCard({
       accounts: [
-        account({ id: 10, name: 'Nubank', type: 'checking', balance: 15000, ledger_balance: 15000, provider_balance: 16000 }),
-        account({ id: 11, name: 'Cartão', type: 'credit_card', balance: -5000, ledger_balance: -5000, provider_balance: -8000 }),
+        account({ id: 10, name: 'Nubank', type: 'checking', balance: 16000, ledger_balance: 15000, provider_balance: 16000 }),
+        account({ id: 11, name: 'Cartão', type: 'credit_card', balance: -8000, ledger_balance: -5000, provider_balance: -8000 }),
       ],
     })
 
-    expect(screen.getByText(/Banco informa/)).toBeInTheDocument()
-    expect(screen.getAllByText(/Banco informa/)).toHaveLength(1)
+    expect(screen.getByText(/Pelos lançamentos/)).toBeInTheDocument()
+    expect(screen.getAllByText(/Pelos lançamentos/)).toHaveLength(1)
+    expect(screen.getByText(/150,00/)).toBeInTheDocument()
   })
 
   it('edita uma conta vinculada pelo menu da linha', async () => {
