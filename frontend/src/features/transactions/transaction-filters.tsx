@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
-import { activeFilterCount, paramsWithFilter } from './filters'
+import { activeFilterCount, paramsWithFilter, reportableFilterLabel } from './filters'
 
 const ALL = 'all'
 
@@ -89,19 +89,38 @@ export function TransactionFilters({ filters }: { filters: Filters }) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="filter-category">Categoria</Label>
-              <CategoryPicker
-                id="filter-category"
-                value={filters.no_category ? null : filters.category_id ?? null}
-                onChange={(id) =>
-                  setParams((current) => {
-                    let next = paramsWithFilter(current, 'category_id', id ?? undefined)
-                    next = paramsWithFilter(next, 'no_category', id === null ? true : undefined)
-                    return paramsWithFilter(next, 'category_exact', undefined)
-                  }, { replace: true })
-                }
-                placeholder="Todas"
-                includeArchived
-              />
+              <div className="flex gap-2">
+                <CategoryPicker
+                  id="filter-category"
+                  value={filters.category_id ?? null}
+                  noneSelected={filters.no_category ?? false}
+                  onChange={(id) =>
+                    setParams((current) => {
+                      let next = paramsWithFilter(current, 'category_id', id ?? undefined)
+                      next = paramsWithFilter(next, 'no_category', id === null ? true : undefined)
+                      return paramsWithFilter(next, 'category_exact', undefined)
+                    }, { replace: true })
+                  }
+                  placeholder="Todas"
+                  includeArchived
+                />
+                {(filters.category_id || filters.no_category) && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Limpar categoria"
+                    onClick={() =>
+                      setParams((current) => {
+                        let next = paramsWithFilter(current, 'category_id', undefined)
+                        next = paramsWithFilter(next, 'no_category', undefined)
+                        return paramsWithFilter(next, 'category_exact', undefined)
+                      }, { replace: true })
+                    }
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
               {filters.category_id && !filters.no_category && (
                 <label className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Checkbox
@@ -112,6 +131,24 @@ export function TransactionFilters({ filters }: { filters: Filters }) {
                 </label>
               )}
             </div>
+            {reportableFilterLabel(filters) && (
+              <div className="flex items-center justify-between gap-2 rounded-lg bg-muted px-3 py-2 text-sm">
+                <span>{reportableFilterLabel(filters)}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Remover filtro de relatório/moeda"
+                  onClick={() =>
+                    setParams((current) => {
+                      const next = paramsWithFilter(current, 'reportable', undefined)
+                      return paramsWithFilter(next, 'currency', undefined)
+                    }, { replace: true })
+                  }
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="filter-tag">Tag</Label>
               <Select value={filters.tag_id ? String(filters.tag_id) : ALL} onValueChange={(value) => setFilter('tag_id', value === ALL ? undefined : Number(value))}>

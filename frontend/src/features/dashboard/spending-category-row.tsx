@@ -10,8 +10,7 @@ import { paramsForFilters } from '@/features/transactions/filters'
 import { TransactionRow } from '@/features/transactions/transaction-row'
 import { formatMoney } from '@/lib/money'
 import { cn } from '@/lib/utils'
-import { entryColor } from './spending-colors'
-import { entryLabel, type SpendingViewEntry } from './spending-shares'
+import { entryLabel, transactionCountLabel, type SpendingViewEntry } from './spending-shares'
 
 type SpendingCategoryRowProps = {
   entry: SpendingViewEntry
@@ -29,7 +28,6 @@ export function SpendingCategoryRow({ entry, currency, filters }: SpendingCatego
   const contentId = useId()
   const preview = useTransactionsPreview(filters, open)
   const label = entryLabel(entry)
-  const color = entryColor(entry.categoryId, entry.color)
   const linkTo = `/transacoes?${paramsForFilters(filters).toString()}`
 
   return (
@@ -41,12 +39,12 @@ export function SpendingCategoryRow({ entry, currency, filters }: SpendingCatego
         aria-controls={contentId}
         onClick={() => setOpen((value) => !value)}
       >
-        <CategoryIcon icon={entry.icon} color={color} size="sm" />
+        <CategoryIcon icon={entry.icon} color={entry.displayColor} size="sm" />
         <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
-        <span className="text-xs text-muted-foreground">{entry.count}</span>
+        <span className="text-xs text-muted-foreground">{transactionCountLabel(entry.count)}</span>
         <span className="text-right">
           <span className="block font-semibold tabular-nums">{formatMoney(entry.amount, currency)}</span>
-          <span className="block text-xs text-muted-foreground">{entry.percent}%</span>
+          <span className="block text-xs text-muted-foreground">{entry.percentLabel}</span>
         </span>
         <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} aria-hidden />
       </button>

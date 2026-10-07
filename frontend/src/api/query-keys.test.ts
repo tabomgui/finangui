@@ -35,6 +35,7 @@ function seed(client: QueryClient) {
     queryKeys.budgets('2026-10'),
     queryKeys.goals(),
     queryKeys.goalContributions(1),
+    queryKeys.reportSpending('2026-10-01', '2026-10-31'),
   ]) {
     client.setQueryData(key, 'x')
   }
@@ -54,7 +55,7 @@ describe('query keys', () => {
     expect(queryKeys.transactions({ search: '', account_id: undefined })).toEqual(['transactions', 'list', {}])
   })
 
-  it('invalidateLedger invalida transações, transferências, sugestões de transferência, contas, dashboard, cartões e a prévia de regra', async () => {
+  it('invalidateLedger invalida transações, transferências, sugestões de transferência, contas, dashboard, cartões, relatórios e a prévia de regra', async () => {
     const client = new QueryClient()
     seed(client)
     await invalidateLedger(client)
@@ -67,6 +68,7 @@ describe('query keys', () => {
       'dashboard',
       'goals',
       'installment-plans',
+      'reports',
       'rule-preview',
       'transactions',
       'transfer-suggestions',
@@ -74,11 +76,11 @@ describe('query keys', () => {
     ])
   })
 
-  it('invalidateCategories invalida categorias, transações, dashboard, parcelamentos e a prévia de regra', async () => {
+  it('invalidateCategories invalida categorias, transações, dashboard, relatórios, parcelamentos e a prévia de regra', async () => {
     const client = new QueryClient()
     seed(client)
     await invalidateCategories(client)
-    expect(invalidated(client)).toEqual(['categories', 'dashboard', 'installment-plans', 'rule-preview', 'transactions'])
+    expect(invalidated(client)).toEqual(['categories', 'dashboard', 'installment-plans', 'reports', 'rule-preview', 'transactions'])
   })
 
   it('invalidateTags invalida tags, transações e a prévia de regra', async () => {

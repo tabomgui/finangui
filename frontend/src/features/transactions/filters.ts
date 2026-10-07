@@ -21,12 +21,12 @@ const PARAM_NAMES: Record<keyof Omit<TransactionFilters, 'statement_id'>, string
 }
 
 /**
- * `category_exact`, `reportable` e `currency` são modificadores/consistência (ex.: links vindos
- * do card de distribuição de gastos do Início), não filtros que o usuário percebe como tal:
- * ficam fora da contagem exibida no botão "Filtros" para não inflar o número por algo que ele
- * não escolheu à toa.
+ * `category_exact` é um modificador do filtro de categoria (não um filtro à parte): fica fora da
+ * contagem exibida no botão "Filtros" para não inflar o número por algo que não é uma escolha
+ * independente. `reportable`/`currency` já aparecem como uma linha própria e removível no painel
+ * (ver `reportableFilterLabel`), então contam normalmente.
  */
-const EXCLUDED_FROM_COUNT = new Set(['search', 'category_exact', 'reportable', 'currency'])
+const EXCLUDED_FROM_COUNT = new Set(['search', 'category_exact'])
 
 const DATE_ONLY = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/
 
@@ -47,11 +47,19 @@ export function filtersFromParams(params: URLSearchParams): TransactionFilters {
   const search = params.get(PARAM_NAMES.search)?.trim()
   const currency = params.get(PARAM_NAMES.currency)?.trim()
 
+  const noCategory = boolFlag(params.get(PARAM_NAMES.no_category))
+  // `no_category` e `category_id` filtram categoria de formas incompatíveis (mesma regra do
+  // backend, `IndexTransactionsRequest`): um valor malformado/conflitante na URL não chega a
+  // `category_id` nenhum — `sem_categoria=1` sempre vence. `category_exact` só faz sentido junto
+  // de `category_id`; sem ele (direto, ou porque `sem_categoria` acabou de zerá-lo), também cai.
+  const categoryId = noCategory ? undefined : positiveInt(params.get(PARAM_NAMES.category_id))
+  const categoryExact = categoryId ? boolFlag(params.get(PARAM_NAMES.category_exact)) : undefined
+
   const filters: TransactionFilters = {
     account_id: positiveInt(params.get(PARAM_NAMES.account_id)),
-    category_id: positiveInt(params.get(PARAM_NAMES.category_id)),
-    category_exact: boolFlag(params.get(PARAM_NAMES.category_exact)),
-    no_category: boolFlag(params.get(PARAM_NAMES.no_category)),
+    category_id: categoryId,
+    category_exact: categoryExact,
+    no_category: noCategory,
     tag_id: positiveInt(params.get(PARAM_NAMES.tag_id)),
     from: from && DATE_ONLY.test(from) ? from : undefined,
     to: to && DATE_ONLY.test(to) ? to : undefined,
@@ -62,6 +70,18 @@ export function filtersFromParams(params: URLSearchParams): TransactionFilters {
   }
 
   return Object.fromEntries(Object.entries(filters).filter(([, value]) => value !== undefined)) as TransactionFilters
+}
+
+/**
+ * Texto da linha removível de `relatorio`/`moeda` no painel de filtros (ver `transaction-filters.tsx`):
+ * `null` quando nenhum dos dois está ativo, para o painel não mostrar a linha à toa.
+ */
+export function reportableFilterLabel(filters: TransactionFilters): string | null {
+  if (!filters.reportable && !filters.currency) return null
+  const parts: string[] = []
+  if (filters.reportable) parts.push('Só lançamentos que entram em relatórios')
+  if (filters.currency) parts.push(`(${filters.currency})`)
+  return parts.join(' ')
 }
 
 export function paramsWithFilter<K extends keyof Omit<TransactionFilters, 'statement_id'>>(

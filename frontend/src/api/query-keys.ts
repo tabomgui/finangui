@@ -103,13 +103,13 @@ export function invalidateLedger(queryClient: QueryClient) {
 }
 
 /**
- * Nome, ícone e flag de transferência aparecem nas transações, nas top categorias do mês e nos
- * parcelamentos; a prévia de uma regra ainda não salva também mostra nome de categoria por
- * `category_id` (ver `rule-preview-card.tsx`), então renomear/arquivar uma categoria a deixaria
- * desatualizada sem essa invalidação.
+ * Nome, ícone e flag de transferência aparecem nas transações, na distribuição de gastos da
+ * Início (`reports/spending`) e nos parcelamentos; a prévia de uma regra ainda não salva também
+ * mostra nome de categoria por `category_id` (ver `rule-preview-card.tsx`), então renomear/
+ * arquivar uma categoria deixaria tudo isso desatualizado sem essa invalidação.
  */
 export function invalidateCategories(queryClient: QueryClient) {
-  return invalidate(queryClient, ['categories', 'transactions', 'dashboard', 'installment-plans', 'rule-preview'])
+  return invalidate(queryClient, ['categories', 'transactions', 'dashboard', 'reports', 'installment-plans', 'rule-preview'])
 }
 
 /** Mesma razão de `invalidateCategories` para `rule-preview`: a prévia também mostra nome de tag. */

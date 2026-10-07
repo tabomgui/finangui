@@ -1,5 +1,6 @@
 import type { TransactionFilters } from '@/api/query-keys'
 import type { SpendingCategory, SpendingChild } from '@/api/types'
+import { assignEntryColors } from './spending-colors'
 
 /**
  * Uma linha do nível atual do card de distribuição de gastos — categoria-raiz (ou "Sem
@@ -12,22 +13,41 @@ export type SpendingViewEntry = {
   key: string
   categoryId: number | null
   name: string
+  /** Cor própria da categoria (`null` quando não tem) — use `displayColor` para desenhar. */
   color: string | null
+  /** Cor final a desenhar (fatia/chip/ícone): a própria quando houver, senão o fallback atribuído por `assignEntryColors` para esta tela. */
+  displayColor: string
   icon: string | null
   amount: number
   count: number
   direct: boolean
   hasChildren: boolean
   percent: number
+  /** Percentual pronto para exibir: "<1%" para fatia pequena mas não nula, nunca "0%" com gasto real. */
+  percentLabel: string
 }
 
-function withPercent<T extends { amount: number }>(entries: T[], total: number): (T & { percent: number })[] {
-  return entries.map((entry) => ({ ...entry, percent: total > 0 ? Math.round((entry.amount / total) * 100) : 0 }))
+type RawEntry = Omit<SpendingViewEntry, 'percent' | 'percentLabel' | 'displayColor'>
+
+function formatPercentLabel(amount: number, total: number): string {
+  if (total <= 0 || amount <= 0) return '0%'
+  const percent = (amount / total) * 100
+  return percent < 1 ? '<1%' : `${Math.round(percent)}%`
+}
+
+function finalize(entries: RawEntry[], total: number): SpendingViewEntry[] {
+  const colors = assignEntryColors(entries)
+  return entries.map((entry) => ({
+    ...entry,
+    percent: total > 0 ? Math.round((entry.amount / total) * 100) : 0,
+    percentLabel: formatPercentLabel(entry.amount, total),
+    displayColor: colors.get(entry.key) ?? entry.color ?? '#6b7280',
+  }))
 }
 
 /** Nível de topo: uma linha por categoria-raiz, mais "Sem categoria" (`categoryId` nulo). */
 export function rootViewEntries(categories: SpendingCategory[], total: number): SpendingViewEntry[] {
-  return withPercent(
+  return finalize(
     categories.map((category) => ({
       key: String(category.category_id ?? 'none'),
       categoryId: category.category_id ?? null,
@@ -45,7 +65,7 @@ export function rootViewEntries(categories: SpendingCategory[], total: number): 
 
 /** Detalhamento: uma linha por subcategoria com gasto, mais a entrada "direto no pai" quando houver. */
 export function childViewEntries(children: SpendingChild[], total: number): SpendingViewEntry[] {
-  return withPercent(
+  return finalize(
     children.map((child) => {
       // `direct` só vem quando true (ver convenção de nunca tipar uma chave só como `null`/ausente no CLAUDE.md).
       const direct = child.direct ?? false
@@ -68,6 +88,11 @@ export function childViewEntries(children: SpendingChild[], total: number): Spen
 /** "<Pai> (direto)" para a entrada de gasto lançado direto na categoria-pai; senão, o nome como veio da API. */
 export function entryLabel(entry: { name: string; direct: boolean }): string {
   return entry.direct ? `${entry.name} (direto)` : entry.name
+}
+
+/** "1 lançamento" / "N lançamentos" — o número isolado ("1") lia estranho na linha da categoria. */
+export function transactionCountLabel(count: number): string {
+  return count === 1 ? '1 lançamento' : `${count} lançamentos`
 }
 
 /**

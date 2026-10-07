@@ -132,7 +132,7 @@ export function DashboardPage() {
             <PendingCard onOpenOverdue={() => setOverdueOpen(true)} />
             <StatementsCard />
             <div className="grid gap-4 lg:grid-cols-2">
-              <SpendingCard month={month} />
+              <SpendingCard key={month} month={month} />
               <AccountsCard accounts={data.accounts} />
             </div>
             <RecentTransactionsCard />
