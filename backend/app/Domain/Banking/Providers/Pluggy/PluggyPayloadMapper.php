@@ -94,6 +94,7 @@ final class PluggyPayloadMapper
             currency: (string) $data['currencyCode'],
             balanceCents: self::toCents((float) $data['balance']),
             creditLimitCents: isset($creditData['creditLimit']) ? self::toCents((float) $creditData['creditLimit']) : null,
+            availableCreditLimitCents: isset($creditData['availableCreditLimit']) ? self::toCents((float) $creditData['availableCreditLimit']) : null,
             closingDay: isset($creditData['balanceCloseDate']) ? self::dayOf((string) $creditData['balanceCloseDate']) : null,
             dueDay: isset($creditData['balanceDueDate']) ? self::dayOf((string) $creditData['balanceDueDate']) : null,
         );

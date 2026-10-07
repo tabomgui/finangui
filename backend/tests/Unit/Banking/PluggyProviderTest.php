@@ -571,6 +571,18 @@ it('mapeia os pagamentos informados dentro de uma fatura', function () {
         ->and($withoutPayment->payments)->toBe([]);
 });
 
+it('mapeia o limite disponível do cartão (availableCreditLimit)', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/accounts*' => Http::response(pluggyFixture('accounts.json')),
+    ]);
+
+    $accounts = $this->provider->accounts('item-1');
+    $card = collect($accounts)->firstWhere('kind', 'credit_card');
+
+    expect($card->availableCreditLimitCents)->toBe(401235);
+});
+
 it('calendarDate: hora UTC exatamente meia-noite usa a mesma data, sem converter de fuso', function () {
     Http::fake([
         'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),

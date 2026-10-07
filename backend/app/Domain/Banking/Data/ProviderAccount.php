@@ -20,6 +20,7 @@ final readonly class ProviderAccount
         public string $currency,
         public int $balanceCents,
         public ?int $creditLimitCents = null,
+        public ?int $availableCreditLimitCents = null,
         public ?int $closingDay = null,
         public ?int $dueDay = null,
     ) {}

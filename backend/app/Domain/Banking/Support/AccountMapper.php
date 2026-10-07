@@ -41,6 +41,7 @@ final class AccountMapper
             'opening_balance' => 0,
             'icon' => $isCreditCard ? 'credit-card' : 'landmark',
             'credit_limit' => $isCreditCard ? $account->creditLimitCents : null,
+            'available_credit_limit' => $isCreditCard ? $account->availableCreditLimitCents : null,
             'closing_day' => $isCreditCard ? ($account->closingDay ?? self::DEFAULT_CLOSING_DAY) : null,
             'due_day' => $isCreditCard ? ($account->dueDay ?? self::DEFAULT_DUE_DAY) : null,
             'last_four' => $isCreditCard ? self::last4($account->number) : null,
@@ -98,8 +99,9 @@ final class AccountMapper
             // ?? $existing->credit_limit (não só o ternário por tipo): o
             // banco pode mandar o sync sem o limite desta vez (campo
             // omitido/null) — nesse caso mantém o limite que já tínhamos,
-            // em vez de apagar.
+            // em vez de apagar. Mesmo raciocínio para available_credit_limit.
             'credit_limit' => $account->kind === 'credit_card' ? ($account->creditLimitCents ?? $existing->credit_limit) : $existing->credit_limit,
+            'available_credit_limit' => $account->kind === 'credit_card' ? ($account->availableCreditLimitCents ?? $existing->available_credit_limit) : $existing->available_credit_limit,
         ]);
 
         return $existing;
