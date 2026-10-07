@@ -4,6 +4,7 @@ namespace App\Domain\Banking\Support;
 
 use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Data\ProviderItem;
+use App\Domain\Banking\Enums\SyncTrigger;
 use App\Domain\Banking\Errors\ProviderRequestFailed;
 use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Banking\Models\BankConnection;
@@ -18,34 +19,60 @@ use Throwable;
  * anterior, deste sync ou de fora) só espera, sem pedir outro; sem
  * lastUpdatedAt (nunca atualizado) não há como saber se está velho, então
  * também só espera (nunca refresca "no escuro" — refreshItem tem limite de
- * uso pela Pluggy). Pede atualização só quando lastUpdatedAt existe e já tem
- * 20h ou mais. Falha do provedor ao pedir ou esperar a atualização
- * (indisponível ou recusado) não derruba o sync inteiro: loga e segue com o
- * último item que conseguiu buscar.
+ * uso pela Pluggy). Limiar de "velho" depende do gatilho do sync
+ * (ver staleAfter()): um sync agendado pode esperar o item renovar sozinho
+ * (a Pluggy atualiza 1×/dia); um disparado pelo usuário (manual, ou depois de
+ * conectar/salvar credenciais) quer dados frescos na hora. Falha do provedor
+ * ao pedir a atualização (indisponível ou recusado) não derruba o sync
+ * inteiro: segue com o último item que conseguiu buscar, e o motivo vira um
+ * aviso no histórico de sincronização (App\Domain\Banking\Models\BankSyncRun,
+ * ver ItemRefreshOutcome::$warning) — uma falha ao esperar a atualização
+ * (consultar o item de novo) só loga, sem aviso: o próprio refresh já foi
+ * pedido com sucesso, e nada de novo a avisar além de seguir com o item que
+ * já tínhamos.
  */
 final class ItemRefresher
 {
-    private const STALE_AFTER_HOURS = 20;
+    private const SCHEDULED_STALE_AFTER_HOURS = 12;
+
+    private const MANUAL_STALE_AFTER_MINUTES = 30;
 
     private const MAX_WAIT_ATTEMPTS = 30;
 
     private const POLL_INTERVAL_SECONDS = 3;
 
-    public function refreshAndWait(BankProvider $provider, BankConnection $connection, ProviderItem $item, CarbonImmutable $syncStartedAt): ProviderItem
+    public function refreshAndWait(BankProvider $provider, BankConnection $connection, ProviderItem $item, CarbonImmutable $syncStartedAt, SyncTrigger $trigger): ItemRefreshOutcome
     {
         $shouldRefresh = ! $item->isUpdating()
             && $item->lastUpdatedAt !== null
-            && $item->lastUpdatedAt->lessThanOrEqualTo($syncStartedAt->subHours(self::STALE_AFTER_HOURS));
+            && $item->lastUpdatedAt->lessThanOrEqualTo($this->staleThreshold($syncStartedAt, $trigger));
+
+        $warning = null;
 
         if ($shouldRefresh) {
             try {
                 $provider->refreshItem($connection->external_id);
             } catch (ProviderUnavailable|ProviderRequestFailed $e) {
+                $warning = 'Não foi possível pedir uma atualização ao banco; seguindo com os dados mais recentes já disponíveis.';
                 $this->logWarning('Pluggy: falha ao pedir atualização do item; seguindo com o item já buscado.', $connection, $e);
             }
         }
 
-        return $this->waitForUpdate($provider, $connection, $item);
+        $item = $this->waitForUpdate($provider, $connection, $item);
+
+        return new ItemRefreshOutcome($item, $shouldRefresh, $warning);
+    }
+
+    /**
+     * `Scheduled`: 12h (a Pluggy já atualiza o item sozinha 1×/dia; não há
+     * motivo para forçar antes disso). Qualquer gatilho por ação do usuário
+     * (`Manual`, `Connect`, `Credentials`) quer dados frescos: 30min.
+     */
+    private function staleThreshold(CarbonImmutable $syncStartedAt, SyncTrigger $trigger): CarbonImmutable
+    {
+        return $trigger === SyncTrigger::Scheduled
+            ? $syncStartedAt->subHours(self::SCHEDULED_STALE_AFTER_HOURS)
+            : $syncStartedAt->subMinutes(self::MANUAL_STALE_AFTER_MINUTES);
     }
 
     private function waitForUpdate(BankProvider $provider, BankConnection $connection, ProviderItem $item): ProviderItem

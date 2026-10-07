@@ -42,20 +42,27 @@ final class SyncBills
 
     /**
      * @param  list<ProviderBill>  $bills
+     * @return int quantas faturas foram de fato gravadas (criadas ou atualizadas) — para App\Domain\Banking\Jobs\SyncConnection alimentar `bills_count` do histórico de sincronização (App\Domain\Banking\Models\BankSyncRun); uma fatura ignorada por não caber na ordem local (ver createOrAdopt()) não conta
      *
      * @throws NotACreditCard
      */
-    public function handle(Account $card, array $bills): void
+    public function handle(Account $card, array $bills): int
     {
         if (! $card->isCreditCard() || $card->closing_day === null || $card->due_day === null) {
             throw new NotACreditCard;
         }
 
+        $applied = 0;
+
         foreach ($bills as $bill) {
-            $this->applyBill($card, $bill);
+            if ($this->applyBill($card, $bill)) {
+                $applied++;
+            }
         }
 
         $this->syncCardDays($card, $bills);
+
+        return $applied;
     }
 
     /**
@@ -151,7 +158,7 @@ final class SyncBills
         return $bestDay;
     }
 
-    private function applyBill(Account $card, ProviderBill $bill): void
+    private function applyBill(Account $card, ProviderBill $bill): bool
     {
         $due = CarbonImmutable::parse($bill->dueDate)->startOfDay();
         $closing = $bill->closingDate !== null
@@ -166,15 +173,15 @@ final class SyncBills
         $statement ??= $this->findAdoptionCandidate($card, $due, $closing, $bill->id);
 
         if ($statement === null) {
-            $this->createOrAdopt($card, $bill, $due, $closing);
-
-            return;
+            return $this->createOrAdopt($card, $bill, $due, $closing);
         }
 
         $this->applyToExisting($statement, $bill, $due, $closing);
+
+        return true;
     }
 
-    private function createOrAdopt(Account $card, ProviderBill $bill, CarbonImmutable $due, CarbonImmutable $closing): void
+    private function createOrAdopt(Account $card, ProviderBill $bill, CarbonImmutable $due, CarbonImmutable $closing): bool
     {
         ['previous' => $previous, 'next' => $next] = StatementOrdering::neighborsForAccount($card->id, $closing);
 
@@ -188,7 +195,7 @@ final class SyncBills
                 'reported_total' => $bill->totalCents,
             ]);
 
-            return;
+            return true;
         }
 
         // Não cabe na ordem — uma fatura local vizinha está no caminho (ex.:
@@ -204,7 +211,7 @@ final class SyncBills
         if ($nearest !== null) {
             $this->applyToExisting($nearest, $bill, $nearest->due_date, $nearest->closing_date);
 
-            return;
+            return true;
         }
 
         Log::warning('Pluggy: fatura nova do banco não cabe na ordem das faturas locais e nenhuma fatura próxima pôde ser adotada; ignorando.', [
@@ -213,6 +220,8 @@ final class SyncBills
             'due_date' => $due->toDateString(),
             'closing_date' => $closing->toDateString(),
         ]);
+
+        return false;
     }
 
     private function applyToExisting(CardStatement $statement, ProviderBill $bill, CarbonImmutable $due, CarbonImmutable $closing): void

@@ -94,6 +94,11 @@ final class UpdateTransaction
 
             if ($statementId !== null) {
                 $this->assignStatement->handle($transaction, (int) $statementId);
+                // O usuário escolheu a fatura de propósito: a sincronização
+                // bancária (App\Domain\Imports\Actions\MatchedTransactionOutcomes::update())
+                // nunca mais move statement_id por conta própria a partir do
+                // bill_id do banco para esta transação — ver Transaction::isPlainCardPurchase().
+                $transaction->statement_locked = true;
             } elseif ($transaction->isDirty(['account_id', 'date', 'direction'])) {
                 // Pagamento reconhecido virando saída (ex.: estava marcado
                 // como pagamento por engano): deixa de ser pagamento antes

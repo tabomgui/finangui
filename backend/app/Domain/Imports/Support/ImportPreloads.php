@@ -37,7 +37,10 @@ final class ImportPreloads
         $billIds = [];
 
         foreach ($decisions as $decision) {
-            if ($decision->outcome !== RowOutcome::New) {
+            // Update: só a sincronização bancária preenche meta.bill_id, e só
+            // nela um lançamento já fechado pode trocar de fatura informada
+            // pelo banco (ver MatchedTransactionOutcomes::update()).
+            if ($decision->outcome !== RowOutcome::New && $decision->outcome !== RowOutcome::Update) {
                 continue;
             }
 

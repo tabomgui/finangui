@@ -173,7 +173,7 @@ final class IngestTransactions
             match ($decision->outcome) {
                 RowOutcome::New => $this->insertNew($batch, $account, $decision->row, $rules, $historyMemo, $billStatementMemo, $usableCategoriesByName, $stats, $plansBySeedIndex, $index, $insertedIds),
                 RowOutcome::Duplicate => $stats['duplicates']++,
-                RowOutcome::Update => $this->matchedOutcomes->update($decision, $undo, $stats),
+                RowOutcome::Update => $this->matchedOutcomes->update($decision, $batch->format, $billStatementMemo, $undo, $stats),
                 RowOutcome::ReplaceInstallment => $decision->transactionId !== null
                     ? $this->matchedOutcomes->replaceInstallmentOutcome($decision, $batch, $undo, $stats)
                     : $deferred[] = $decision,

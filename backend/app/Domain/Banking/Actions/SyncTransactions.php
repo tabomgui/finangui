@@ -6,6 +6,7 @@ use App\Domain\Accounts\Models\Account;
 use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Data\ProviderCategory;
 use App\Domain\Banking\Data\ProviderTransaction;
+use App\Domain\Banking\Data\SyncTransactionsResult;
 use App\Domain\Banking\Support\TransactionMapper;
 use App\Domain\Imports\Actions\IngestTransactions;
 use App\Domain\Imports\Data\ParsedRow;
@@ -71,19 +72,22 @@ final class SyncTransactions
      *
      * @param  iterable<ProviderTransaction>  $transactions
      * @param  array<string, ProviderCategory>  $categoriesById  categorias do provedor (ver App\Domain\Banking\Jobs\SyncConnection, que busca uma vez por job e repassa para cada conta)
+     * @return SyncTransactionsResult o que de fato foi inserido/atualizado — para App\Domain\Banking\Jobs\SyncConnection alimentar o histórico de sincronização (App\Domain\Banking\Models\BankSyncRun)
      */
-    public function handle(BankProvider $provider, Account $account, iterable $transactions, CarbonImmutable $syncStartedAt, array $categoriesById): void
+    public function handle(BankProvider $provider, Account $account, iterable $transactions, CarbonImmutable $syncStartedAt, array $categoriesById): SyncTransactionsResult
     {
         $creditCard = $account->isCreditCard();
         $minDate = $account->provider_sync_from?->toDateString();
 
         [$rows] = $this->mapRows($transactions, $creditCard, $minDate, $categoriesById);
 
+        $result = new SyncTransactionsResult;
+
         if ($rows !== []) {
-            $this->ingestRows($account, $rows, $syncStartedAt);
+            $result = $result->merge($this->ingestRows($account, $rows, $syncStartedAt));
         }
 
-        $this->cleanupStalePending($provider, $account, $creditCard, $minDate, $categoriesById, $syncStartedAt);
+        return $result->merge($this->cleanupStalePending($provider, $account, $creditCard, $minDate, $categoriesById, $syncStartedAt));
     }
 
     /**
@@ -118,14 +122,14 @@ final class SyncTransactions
      *
      * @param  array<string, ProviderCategory>  $categoriesById
      */
-    private function cleanupStalePending(BankProvider $provider, Account $account, bool $creditCard, ?string $minDate, array $categoriesById, CarbonImmutable $syncStartedAt): void
+    private function cleanupStalePending(BankProvider $provider, Account $account, bool $creditCard, ?string $minDate, array $categoriesById, CarbonImmutable $syncStartedAt): SyncTransactionsResult
     {
         $threshold = $syncStartedAt->subDays(self::STALE_PENDING_DAYS)->toDateString();
 
         $oldestStaleDate = $this->stalePendingQuery($account, $threshold)->min('date');
 
         if ($oldestStaleDate === null) {
-            return;
+            return new SyncTransactionsResult;
         }
 
         try {
@@ -144,20 +148,20 @@ final class SyncTransactions
                 'message' => $e->getMessage(),
             ]);
 
-            return;
+            return new SyncTransactionsResult;
         }
 
-        if ($rows !== []) {
-            $this->ingestRows($account, $rows, $syncStartedAt);
-        }
+        $result = $rows !== [] ? $this->ingestRows($account, $rows, $syncStartedAt) : new SyncTransactionsResult;
 
         $this->deleteStalePending($account, $receivedIds, $threshold);
+
+        return $result;
     }
 
     /**
      * @param  list<ParsedRow>  $rows
      */
-    private function ingestRows(Account $account, array $rows, CarbonImmutable $syncStartedAt): void
+    private function ingestRows(Account $account, array $rows, CarbonImmutable $syncStartedAt): SyncTransactionsResult
     {
         $batch = ImportBatch::create([
             'account_id' => $account->id,
@@ -191,7 +195,19 @@ final class SyncTransactions
             // sincronizações, sempre marcado como não revertível mesmo
             // assim.
             ImportBatch::query()->whereKey($completed->id)->delete();
+
+            return new SyncTransactionsResult;
         }
+
+        // import_batch_id só é gravado em linha de fato nova (ver
+        // IngestTransactions::insertNew()) — nunca em Update/Adopt/Replace/Swap
+        // de uma transação já existente, então esta consulta devolve
+        // exatamente o que este lote inseriu, sem precisar que
+        // IngestTransactions exponha isso no retorno.
+        $insertedIds = Transaction::query()->where('import_batch_id', $completed->id)->pluck('id')->all();
+        $updatedCount = (int) ($completed->stats['updated'] ?? 0);
+
+        return new SyncTransactionsResult($insertedIds, $updatedCount);
     }
 
     private function isNoOp(ImportBatch $batch): bool

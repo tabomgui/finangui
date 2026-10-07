@@ -4,6 +4,7 @@ use App\Domain\Accounts\Models\Account;
 use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Data\ProviderItem;
 use App\Domain\Banking\Enums\ConnectionStatus;
+use App\Domain\Banking\Enums\SyncTrigger;
 use App\Domain\Banking\Errors\ProviderAuthFailed;
 use App\Domain\Banking\Errors\ProviderRequestFailed;
 use App\Domain\Banking\Errors\ProviderUnavailable;
@@ -12,6 +13,7 @@ use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Models\BankCredential;
 use App\Domain\Banking\Providers\FakeBankProvider;
 use App\Domain\Cards\Models\CardStatement;
+use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Models\Transaction;
 use Carbon\CarbonImmutable;
@@ -19,9 +21,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Sleep;
 use Throwable;
 
-function runConnectionSync(int $connectionId): SyncConnection
+function runConnectionSync(int $connectionId, SyncTrigger $trigger = SyncTrigger::Scheduled, string $jobUuid = ''): SyncConnection
 {
-    $job = new SyncConnection($connectionId);
+    $job = new SyncConnection($connectionId, $trigger, $jobUuid);
     app()->call([$job, 'handle']);
 
     return $job;
@@ -127,18 +129,54 @@ it('sincroniza contas, faturas e transações, e marca a conexão como sincroniz
         ->toBe(TransactionSource::Pluggy);
 });
 
-it('item com mais de 20h dispara refresh e espera a atualização a cada 3s, até o máximo de 90s', function () {
+it('sync agendado: item com mais de 12h dispara refresh e espera a atualização a cada 3s, até o máximo de 90s', function () {
     $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
 
     $this->fake->items[$this->itemId] = providerItem([
-        'id' => $this->itemId, 'status' => 'UPDATED', 'lastUpdatedAt' => CarbonImmutable::now()->subHours(21),
+        'id' => $this->itemId, 'status' => 'UPDATED', 'lastUpdatedAt' => CarbonImmutable::now()->subHours(13),
     ]);
 
-    runConnectionSync($connection->id);
+    runConnectionSync($connection->id, SyncTrigger::Scheduled);
 
     $refreshCalls = array_filter($this->fake->calls, fn (array $c) => $c['method'] === 'refreshItem');
     expect($refreshCalls)->toHaveCount(1);
     expect($connection->refresh()->status)->toBe(ConnectionStatus::Active);
+});
+
+it('sync agendado: item com menos de 12h não dispara refresh', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+
+    $this->fake->items[$this->itemId] = providerItem([
+        'id' => $this->itemId, 'status' => 'UPDATED', 'lastUpdatedAt' => CarbonImmutable::now()->subHours(11),
+    ]);
+
+    runConnectionSync($connection->id, SyncTrigger::Scheduled);
+
+    expect(array_filter($this->fake->calls, fn (array $c) => $c['method'] === 'refreshItem'))->toBeEmpty();
+});
+
+it('sync manual: item com mais de 30 minutos já dispara refresh, mesmo bem abaixo do limiar agendado', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+
+    $this->fake->items[$this->itemId] = providerItem([
+        'id' => $this->itemId, 'status' => 'UPDATED', 'lastUpdatedAt' => CarbonImmutable::now()->subMinutes(45),
+    ]);
+
+    runConnectionSync($connection->id, SyncTrigger::Manual);
+
+    expect(array_filter($this->fake->calls, fn (array $c) => $c['method'] === 'refreshItem'))->toHaveCount(1);
+});
+
+it('sync manual: item com menos de 30 minutos não dispara refresh', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+
+    $this->fake->items[$this->itemId] = providerItem([
+        'id' => $this->itemId, 'status' => 'UPDATED', 'lastUpdatedAt' => CarbonImmutable::now()->subMinutes(10),
+    ]);
+
+    runConnectionSync($connection->id, SyncTrigger::Manual);
+
+    expect(array_filter($this->fake->calls, fn (array $c) => $c['method'] === 'refreshItem'))->toBeEmpty();
 });
 
 it('item já em UPDATING só espera (a cada 3s, até 90s) sem pedir outro refresh', function () {
@@ -310,6 +348,58 @@ it('syncs seguintes usam createdAtFrom = last_synced_at − 14 dias, para uma co
     $call = collect($this->fake->calls)->firstWhere('method', 'transactions');
     expect($call['args']['createdAtFrom'])->toBe('2026-09-06')
         ->and($call['args']['dateFrom'])->toBeNull();
+});
+
+it('syncs seguintes também buscam os últimos 40 dias por data, além de createdAtFrom', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-10-03 12:00:00'));
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => '2026-09-20 10:00:00']);
+    Account::factory()->create([
+        'user_id' => $this->user->id, 'connection_id' => $connection->id, 'external_id' => 'acc-1',
+        'provider_history_synced_at' => '2026-09-20 10:00:00',
+    ]);
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId]);
+    $this->fake->accountsByItem[$this->itemId] = [providerAccount(['id' => 'acc-1'])];
+
+    runConnectionSync($connection->id);
+
+    $calls = collect($this->fake->calls)->where('method', 'transactions')->values();
+    expect($calls)->toHaveCount(2)
+        ->and($calls[0]['args']['createdAtFrom'])->toBe('2026-09-06')
+        ->and($calls[0]['args']['dateFrom'])->toBeNull()
+        ->and($calls[1]['args']['dateFrom'])->toBe('2026-08-24')
+        ->and($calls[1]['args']['createdAtFrom'])->toBeNull();
+});
+
+it('a janela de 40 dias por data pega a mudança de um lançamento antigo que createdAtFrom sozinho perderia', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-10-03 12:00:00'));
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => '2026-09-20 10:00:00']);
+    $account = Account::factory()->create([
+        'user_id' => $this->user->id, 'connection_id' => $connection->id, 'external_id' => 'acc-1',
+        'provider_history_synced_at' => '2026-09-01 10:00:00',
+    ]);
+    $old = Transaction::factory()->create([
+        'account_id' => $account->id, 'external_id' => 'ext-old', 'status' => 'posted',
+        'source' => TransactionSource::Pluggy, 'direction' => Direction::Out,
+        'amount' => 5000, 'date' => '2026-08-28', 'description' => 'Compra',
+    ]);
+
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId]);
+    $this->fake->accountsByItem[$this->itemId] = [providerAccount(['id' => 'acc-1'])];
+    // Fora da janela de createdAtFrom (criada bem antes de last_synced_at −
+    // 14 dias), mas dentro dos últimos 40 dias por data — só a segunda
+    // busca (dateFrom) traz esta mudança.
+    $this->fake->transactionsByAccount['acc-1'] = [syncProviderTransaction([
+        'id' => 'ext-old', 'date' => '2026-08-28', 'amountCents' => 5500, 'description' => 'Compra (corrigida)',
+    ])];
+
+    runConnectionSync($connection->id);
+
+    // A janela de 40 dias traz a mudança, mas só o que a sincronização
+    // atualiza de verdade: a descrição (ainda era o texto original do
+    // banco) acompanha; valor e data nunca mudam num lançamento existente.
+    expect($old->refresh()->amount->cents)->toBe(5000)
+        ->and($old->date->toDateString())->toBe('2026-08-28')
+        ->and($old->description)->toBe('Compra (corrigida)');
 });
 
 it('conta vinculada depois, numa conexão já sincronizada antes, ainda usa dateFrom de 365 dias no primeiro sync dela', function () {

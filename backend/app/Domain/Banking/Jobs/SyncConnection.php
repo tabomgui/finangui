@@ -12,7 +12,9 @@ use App\Domain\Banking\Contracts\BankProviderFactory;
 use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Data\ProviderBill;
 use App\Domain\Banking\Data\ProviderCategory;
+use App\Domain\Banking\Data\ProviderTransaction;
 use App\Domain\Banking\Enums\ConnectionStatus;
+use App\Domain\Banking\Enums\SyncTrigger;
 use App\Domain\Banking\Errors\BankingDisabled;
 use App\Domain\Banking\Errors\ProviderAuthFailed;
 use App\Domain\Banking\Errors\ProviderRequestFailed;
@@ -64,6 +66,12 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
 
     public int $timeout = 600;
 
+    /**
+     * Syncs seguintes: janela re-sincronizada por data, além de
+     * createdAtFrom — ver recentWindowTransactions().
+     */
+    private const RESYNC_WINDOW_DAYS = 40;
+
     /** @var list<int> */
     public array $backoff = [60, 300, 900];
 
@@ -78,8 +86,19 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
      */
     private ?ConnectionStatus $startStatus = null;
 
+    /**
+     * $trigger tem default só para não quebrar quem despacha/instancia este
+     * job sem se importar com a origem (ex.: testes antigos, ou o probe de
+     * App\Domain\Banking\Actions\QueueConnectionSync, que nunca chega a
+     * chamar handle()); todo dispatch "de verdade" informa o valor certo
+     * (ver App\Domain\Banking\Jobs\SyncStaleConnections e
+     * App\Domain\Banking\Actions\QueueConnectionSync) — fica registrado em
+     * App\Domain\Banking\Models\BankSyncRun e também decide o limiar de
+     * "item velho" em App\Domain\Banking\Support\ItemRefresher.
+     */
     public function __construct(
         public int $connectionId,
+        public SyncTrigger $trigger = SyncTrigger::Scheduled,
     ) {}
 
     public function uniqueId(): string
@@ -151,7 +170,7 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             $credentialFingerprint = BankCredential::currentFingerprintFor($user);
 
             $item = $provider->item($connection->external_id);
-            $item = $itemRefresher->refreshAndWait($provider, $connection, $item, $syncStartedAt);
+            $item = $itemRefresher->refreshAndWait($provider, $connection, $item, $syncStartedAt, $this->trigger)->item;
 
             if ($item->needsReauth()) {
                 $this->writeStatus(
@@ -316,17 +335,10 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
         }
 
         $usesFullHistory = $fresh->provider_history_synced_at === null;
-        $dateFrom = $usesFullHistory ? $this->firstSyncFloor($fresh) : null;
-        // last_synced_at da conexão é o normal; sem ele (não deveria
-        // acontecer, já que provider_history_synced_at desta conta implica
-        // que algum sync da conexão já terminou — mas por segurança), cai
-        // para o próprio instante do histórico desta conta, melhor
-        // estimativa do que "agora", que traria praticamente nada.
-        $createdAtFrom = $usesFullHistory
-            ? null
-            : ($connection->last_synced_at ?? $fresh->provider_history_synced_at ?? CarbonImmutable::now())->subDays(14);
+        $transactions = $usesFullHistory
+            ? $provider->transactions($fresh->external_id, $fresh->isCreditCard(), $this->firstSyncFloor($fresh), null)
+            : $this->recentWindowTransactions($provider, $fresh, $connection);
 
-        $transactions = $provider->transactions($fresh->external_id, $fresh->isCreditCard(), $dateFrom, $createdAtFrom);
         $syncTransactions->handle($provider, $fresh, $transactions, $syncStartedAt, $categoriesById);
 
         if ($usesFullHistory) {
@@ -353,7 +365,7 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
      */
     private function reconciliationWindowFrom(array $bills): CarbonImmutable
     {
-        $floor = CarbonImmutable::now()->subDays(40);
+        $floor = CarbonImmutable::now()->subDays(self::RESYNC_WINDOW_DAYS);
         $earliestBillClosing = ReconcileCardPayments::earliestBillClosing($bills);
 
         return $earliestBillClosing !== null && $earliestBillClosing->lessThan($floor) ? $earliestBillClosing : $floor;
@@ -370,6 +382,48 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
         $floor = CarbonImmutable::now()->subDays(365);
 
         return $account->provider_sync_from !== null ? $floor->max($account->provider_sync_from) : $floor;
+    }
+
+    /**
+     * Syncs seguintes (conta já com o histórico completo buscado): além de
+     * `createdAtFrom` (lançamentos novos desde o último sync, com 14 dias de
+     * folga — como antes), busca também os últimos
+     * RESYNC_WINDOW_DAYS dias por data (`dateFrom`), para pegar uma alteração
+     * num lançamento já antigo que o banco relata diferente agora — status
+     * pending→posted, valor, data, fatura, descrição (ver
+     * App\Domain\Imports\Support\IngestionPlanner::decisionForExisting()) —,
+     * não só lançamentos novos. BankProvider::transactions() não aceita os
+     * dois filtros juntos, então são duas buscas, unidas por `external_id`
+     * (a segunda só "ganha" de propósito: o mesmo lançamento não deveria
+     * divergir entre as duas buscas do mesmo sync).
+     *
+     * @return list<ProviderTransaction>
+     */
+    private function recentWindowTransactions(BankProvider $provider, Account $account, BankConnection $connection): array
+    {
+        // last_synced_at da conexão é o normal; sem ele (não deveria
+        // acontecer, já que provider_history_synced_at desta conta implica
+        // que algum sync da conexão já terminou — mas por segurança), cai
+        // para o próprio instante do histórico desta conta, melhor
+        // estimativa do que "agora", que traria praticamente nada.
+        $createdAtFrom = ($connection->last_synced_at ?? $account->provider_history_synced_at ?? CarbonImmutable::now())->subDays(14);
+        $byCreatedAt = $provider->transactions($account->external_id, $account->isCreditCard(), null, $createdAtFrom);
+
+        $dateFrom = CarbonImmutable::now()->subDays(self::RESYNC_WINDOW_DAYS);
+        $byRecentDate = $provider->transactions($account->external_id, $account->isCreditCard(), $dateFrom, null);
+
+        /** @var array<string, ProviderTransaction> $byId */
+        $byId = [];
+
+        foreach ($byCreatedAt as $transaction) {
+            $byId[$transaction->id] = $transaction;
+        }
+
+        foreach ($byRecentDate as $transaction) {
+            $byId[$transaction->id] = $transaction;
+        }
+
+        return array_values($byId);
     }
 
     /**
