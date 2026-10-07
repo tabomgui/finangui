@@ -18,6 +18,7 @@ function providerBill(array $overrides = []): ProviderBill
         dueDate: $overrides['dueDate'] ?? '2026-04-20',
         closingDate: array_key_exists('closingDate', $overrides) ? $overrides['closingDate'] : '2026-04-10',
         totalCents: $overrides['totalCents'] ?? 50000,
+        payments: $overrides['payments'] ?? [],
     );
 }
 
@@ -179,4 +180,89 @@ it('a vizinha mais próxima disponível para adotar, a mais de 45 dias do vencim
     expect($tooFar->external_id)->toBeNull()
         ->and($blocking->external_id)->toBe('other-bill')
         ->and(CardStatement::query()->where('account_id', $this->card->id)->count())->toBe(2);
+});
+
+it('a fatura mais recente informada pelo banco (maior fechamento) define closing_day/due_day do cartão', function () {
+    $this->action->handle($this->card, [
+        providerBill(['id' => 'bill-1', 'closingDate' => '2026-04-10', 'dueDate' => '2026-04-20']),
+        providerBill(['id' => 'bill-2', 'closingDate' => '2026-05-05', 'dueDate' => '2026-05-15']),
+    ]);
+
+    $this->card->refresh();
+    expect($this->card->closing_day)->toBe(5)
+        ->and($this->card->due_day)->toBe(15);
+});
+
+it('closing_day/due_day não mudam quando já batem com a fatura mais recente', function () {
+    $card = Account::factory()->creditCard(closingDay: 5, dueDay: 15)->create();
+
+    $this->action->handle($card, [providerBill(['id' => 'bill-1', 'closingDate' => '2026-04-05', 'dueDate' => '2026-04-15'])]);
+
+    $card->refresh();
+    expect($card->closing_day)->toBe(5)->and($card->due_day)->toBe(15);
+});
+
+it('dias do cartão nunca reescrevem faturas já gravadas, só os ciclos futuros', function () {
+    $existing = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-02-10', 'due_date' => '2026-02-20']);
+
+    $this->action->handle($this->card, [providerBill(['id' => 'bill-1', 'closingDate' => '2026-04-05', 'dueDate' => '2026-04-15'])]);
+
+    $existing->refresh();
+    expect($existing->closing_date->toDateString())->toBe('2026-02-10')
+        ->and($existing->due_date->toDateString())->toBe('2026-02-20');
+    expect($this->card->refresh()->closing_day)->toBe(5);
+});
+
+it('sem nenhuma fatura no lote, closing_day/due_day do cartão ficam como estavam', function () {
+    $this->action->handle($this->card, []);
+
+    expect($this->card->refresh()->closing_day)->toBe(10)->and($this->card->due_day)->toBe(20);
+});
+
+it('usa o dia mais comum entre as últimas 3 faturas, não só o da mais recente, contra um desvio pontual de fim de semana', function () {
+    $card = Account::factory()->creditCard(closingDay: 10, dueDay: 20)->create();
+
+    $this->action->handle($card, [
+        providerBill(['id' => 'bill-1', 'closingDate' => '2026-02-05', 'dueDate' => '2026-02-15']),
+        providerBill(['id' => 'bill-2', 'closingDate' => '2026-03-05', 'dueDate' => '2026-03-15']),
+        // Fechamento desta fatura caiu um dia depois (ex.: dia 5 era domingo).
+        providerBill(['id' => 'bill-3', 'closingDate' => '2026-04-06', 'dueDate' => '2026-04-15']),
+    ]);
+
+    expect($card->refresh()->closing_day)->toBe(5)
+        ->and($card->due_day)->toBe(15);
+});
+
+it('ignora o fechamento no último dia de um mês curto quando o dia atual do cartão é maior (mês sem esse dia, não mudança real)', function () {
+    $card = Account::factory()->creditCard(closingDay: 31, dueDay: 10)->create();
+
+    // Fevereiro de 2026 (não bissexto) só tem até o dia 28.
+    $this->action->handle($card, [providerBill(['id' => 'bill-1', 'closingDate' => '2026-02-28', 'dueDate' => '2026-03-10'])]);
+
+    expect($card->refresh()->closing_day)->toBe(31);
+});
+
+it('due_day do cartão também se ajusta quando o fechamento da fatura mais recente vem calculado (closing_date ausente)', function () {
+    $card = Account::factory()->creditCard(closingDay: 10, dueDay: 20)->create();
+
+    // Sem closingDate: o fechamento é calculado a partir dos dias atuais do
+    // cartão (closingForDueDate cai de volta no dia 10 de fechamento, sem
+    // achar um ciclo nominal que reproduza exatamente este vencimento), mas
+    // due_day vem direto do vencimento informado pelo banco — aqui, 15.
+    $this->action->handle($card, [providerBill(['id' => 'bill-1', 'closingDate' => null, 'dueDate' => '2026-05-15'])]);
+
+    expect($card->refresh()->closing_day)->toBe(10)
+        ->and($card->due_day)->toBe(15);
+});
+
+it('fatura antiga chegando por último no lote não muda o resultado: a ordenação é por fechamento, não pela ordem da lista', function () {
+    $card = Account::factory()->creditCard(closingDay: 10, dueDay: 20)->create();
+
+    $this->action->handle($card, [
+        providerBill(['id' => 'bill-new', 'closingDate' => '2026-05-05', 'dueDate' => '2026-05-15']),
+        providerBill(['id' => 'bill-old', 'closingDate' => '2026-02-10', 'dueDate' => '2026-02-20']),
+    ]);
+
+    expect($card->refresh()->closing_day)->toBe(5)
+        ->and($card->due_day)->toBe(15);
 });
