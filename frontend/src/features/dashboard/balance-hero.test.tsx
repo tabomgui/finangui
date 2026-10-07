@@ -1,59 +1,119 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import { BalanceHero } from './balance-hero'
 
+// Mocka o módulo lazy-loaded (calendário real/react-day-picker): o comportamento do calendário
+// em si é testado em `balance-day-picker.test.tsx`. Aqui só interessa que o `BalanceHero` monta o
+// popover com as props certas e reage às callbacks dele.
+vi.mock('./balance-day-picker', () => ({
+  BalanceDayPicker: ({
+    selected,
+    onSelect,
+    onBackToToday,
+  }: {
+    selected: string
+    onSelect: (day: string) => void
+    onBackToToday: () => void
+  }) => (
+    <div data-testid="day-picker" data-selected={selected}>
+      <button type="button" onClick={() => onSelect('2026-10-15')}>
+        escolher-15
+      </button>
+      <button type="button" onClick={onBackToToday}>
+        Voltar para hoje
+      </button>
+    </div>
+  ),
+}))
+
+function renderHero(overrides: Partial<Parameters<typeof BalanceHero>[0]> = {}) {
+  const onSelectDay = vi.fn()
+  const onBackToToday = vi.fn()
+  const utils = render(
+    <BalanceHero
+      totalBalance={100000}
+      currency="BRL"
+      balanceDate="2026-10-04"
+      today="2026-10-06"
+      onSelectDay={onSelectDay}
+      onBackToToday={onBackToToday}
+      {...overrides}
+    />,
+  )
+  return { ...utils, onSelectDay, onBackToToday }
+}
+
 describe('BalanceHero', () => {
-  it('sem saldo previsto, mostra só o saldo atual', () => {
-    render(<BalanceHero totalBalance={100000} currency="BRL" balanceDate="2026-10-04" month="2026-10" currentMonth="2026-10" />)
+  it('mostra o saldo do dia informado', () => {
+    renderHero()
 
     expect(screen.getByText('Saldo em 04/10/2026')).toBeInTheDocument()
+    expect(screen.getByText('R$ 1.000,00')).toBeInTheDocument()
     expect(screen.queryByText(/Previsto/)).not.toBeInTheDocument()
   })
 
-  it('mês atual: rotula com o dia/mês do fim do mês mostrado', () => {
-    render(
-      <BalanceHero
-        totalBalance={100000}
-        currency="BRL"
-        balanceDate="2026-10-04"
-        projectedBalance={80000}
-        month="2026-10"
-        currentMonth="2026-10"
-      />,
-    )
+  it('saldo negativo muda a cor do valor', () => {
+    renderHero({ totalBalance: -5000 })
 
-    expect(screen.getByText('Previsto para 31/10:')).toBeInTheDocument()
-    expect(screen.getByText('R$ 800,00')).toBeInTheDocument()
+    const balance = screen.getByText('-R$ 50,00')
+    expect(balance).toHaveClass('text-red-200')
   })
 
-  it('mês seguinte: rotula com o nome do mês ("fim de novembro")', () => {
-    render(
-      <BalanceHero
-        totalBalance={100000}
-        currency="BRL"
-        balanceDate="2026-10-04"
-        projectedBalance={-5000}
-        month="2026-11"
-        currentMonth="2026-10"
-      />,
-    )
+  it('antes do clique, não monta o calendário (nem o chunk lazy)', () => {
+    renderHero()
 
-    expect(screen.getByText('Previsto para o fim de novembro:')).toBeInTheDocument()
+    expect(screen.queryByTestId('day-picker')).not.toBeInTheDocument()
   })
 
-  it('isPlaceholderData: esconde o saldo previsto (ainda é do mês anterior)', () => {
-    render(
-      <BalanceHero
-        totalBalance={100000}
-        currency="BRL"
-        balanceDate="2026-10-04"
-        projectedBalance={80000}
-        month="2026-11"
-        currentMonth="2026-10"
-        isPlaceholderData
-      />,
-    )
+  it('clicar no botão de data abre o calendário com o dia atual do saldo', async () => {
+    renderHero({ balanceDate: '2026-10-04' })
 
-    expect(screen.queryByText(/Previsto/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('Saldo em 04/10/2026'))
+
+    const picker = await screen.findByTestId('day-picker')
+    expect(picker).toHaveAttribute('data-selected', '2026-10-04')
+  })
+
+  it('escolher um dia no calendário chama onSelectDay e fecha o popover', async () => {
+    const { onSelectDay } = renderHero()
+
+    fireEvent.click(screen.getByText('Saldo em 04/10/2026'))
+    await screen.findByTestId('day-picker')
+
+    fireEvent.click(screen.getByText('escolher-15'))
+
+    expect(onSelectDay).toHaveBeenCalledWith('2026-10-15')
+    expect(screen.queryByTestId('day-picker')).not.toBeInTheDocument()
+  })
+
+  it('"Voltar para hoje" chama onBackToToday e fecha o popover', async () => {
+    const { onBackToToday } = renderHero()
+
+    fireEvent.click(screen.getByText('Saldo em 04/10/2026'))
+    await screen.findByTestId('day-picker')
+
+    fireEvent.click(screen.getByText('Voltar para hoje'))
+
+    expect(onBackToToday).toHaveBeenCalled()
+    expect(screen.queryByTestId('day-picker')).not.toBeInTheDocument()
+  })
+
+  it('o botão de data tem um rótulo acessível e um contorno de foco', () => {
+    renderHero({ balanceDate: '2026-10-04' })
+
+    const trigger = screen.getByRole('button', { name: 'Saldo em 04/10/2026. Escolher outro dia' })
+    expect(trigger).toHaveClass('focus-visible:ring-2', 'focus-visible:ring-white/70')
+  })
+
+  it('isPlaceholderData marca o card como ocupado (aria-busy)', () => {
+    const { container } = renderHero({ isPlaceholderData: true })
+
+    expect(container.firstChild).toHaveAttribute('aria-busy', 'true')
+  })
+
+  it('sem isPlaceholderData, o card não fica marcado como ocupado', () => {
+    const { container } = renderHero()
+
+    expect(container.firstChild).toHaveAttribute('aria-busy', 'false')
   })
 })

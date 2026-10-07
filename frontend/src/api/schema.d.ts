@@ -703,6 +703,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reports/spending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["report.spending"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/rules/order": {
         parameters: {
             query?: never;
@@ -1050,6 +1066,7 @@ export interface components {
             connection_id: number | null;
             provider_balance: number | null;
             provider_synced_at: string | null;
+            ledger_balance?: number;
         };
         /**
          * AccountType
@@ -1079,6 +1096,11 @@ export interface components {
                 is_archived: boolean;
                 balance: number;
                 provider_balance: number | null;
+                /**
+                 * @description Toda conta aqui já é desta conexão, então sempre conectada
+                 *     (nunca omitido, ao contrário de AccountResource::ledger_balance).
+                 */
+                ledger_balance: number;
             }[];
             pending_accounts: components["schemas"]["ProviderAccountResource"][];
             unlinked_accounts: components["schemas"]["ProviderAccountResource"][];
@@ -1692,6 +1714,28 @@ export interface components {
         SaveTagRequest: {
             name: string;
             color?: string | null;
+        };
+        /** SpendingBreakdownResource */
+        SpendingBreakdownResource: {
+            currency: string;
+            total: number;
+            categories: {
+                category_id?: number;
+                name: string;
+                color: string | null;
+                icon: string | null;
+                amount: number;
+                count: number;
+                children: {
+                    category_id: number;
+                    name: string;
+                    color: string | null;
+                    icon: string | null;
+                    amount: number;
+                    count: number;
+                    direct?: boolean;
+                }[];
+            }[];
         };
         /**
          * StatementStatus
@@ -3143,6 +3187,7 @@ export interface operations {
         parameters: {
             query?: {
                 month?: string;
+                date?: string;
             };
             header?: never;
             path?: never;
@@ -3161,6 +3206,13 @@ export interface operations {
                             currency: string;
                             total_balance: number;
                             balance_date: string;
+                            /**
+                             * @description Hoje no fuso do app, independente de $balanceDate (que pode ser um dia escolhido
+                             *     pelo usuário): o frontend usa esta chave para desabilitar dias futuros no
+                             *     calendário, "Voltar para hoje" e a lógica de "é hoje" — nunca o relógio do
+                             *     navegador (ver dashboard-page.tsx).
+                             */
+                            today: string;
                             accounts: {
                                 id: number;
                                 name: string;
@@ -3173,14 +3225,6 @@ export interface operations {
                             income: number;
                             expense: number;
                             net: number;
-                            top_categories: {
-                                category_id: number | null;
-                                name: string;
-                                icon: string | null;
-                                color: string | null;
-                                amount: number;
-                            }[];
-                            projected_balance?: number;
                         };
                     };
                 };
@@ -4165,6 +4209,33 @@ export interface operations {
             422: components["responses"]["ValidationException"];
         };
     };
+    "report.spending": {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `SpendingBreakdownResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["SpendingBreakdownResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
     "rule.reorder": {
         parameters: {
             query?: never;
@@ -4552,13 +4623,31 @@ export interface operations {
         parameters: {
             query?: {
                 account_id?: number;
+                /**
+                 * @description Proibido junto de no_category=true: os dois filtram categoria
+                 *     de formas incompatíveis entre si.
+                 */
                 category_id?: number;
+                /**
+                 * @description category_exact restringe category_id à própria categoria, sem
+                 *     incluir as subcategorias (comportamento padrão de category_id).
+                 *     Só faz sentido junto de category_id.
+                 */
+                category_exact?: boolean;
+                /** @description no_category filtra só lançamentos sem categoria nenhuma. */
+                no_category?: boolean;
+                currency?: string;
                 statement_id?: number;
                 tag_id?: number;
                 from?: string;
                 to?: string;
                 status?: components["schemas"]["TransactionStatus"];
                 direction?: components["schemas"]["Direction"];
+                /**
+                 * @description only posted transactions that count in reports: excludes
+                 *     pending/projected, ignored, transfers and transfer categories.
+                 */
+                reportable?: boolean;
                 search?: string;
                 per_page?: number;
                 cursor?: string;

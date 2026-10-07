@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  appToday,
   formatDate,
   formatDayLabel,
   formatDayMonth,
@@ -12,6 +13,20 @@ import {
   shiftMonth,
   toDateOnly,
 } from './date'
+
+describe('appToday', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('usa o fuso do app (America/Sao_Paulo), não o do navegador', () => {
+    vi.useFakeTimers()
+    // 2026-10-07T02:30:00Z é 2026-10-06T23:30 em America/Sao_Paulo (UTC-3): ainda dia 06.
+    vi.setSystemTime(new Date('2026-10-07T02:30:00Z'))
+
+    expect(appToday()).toBe('2026-10-06')
+  })
+})
 
 describe('isDateOnly', () => {
   it('só reconhece o formato "YYYY-MM-DD", sem validar o calendário', () => {

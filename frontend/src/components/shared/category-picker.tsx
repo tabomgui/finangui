@@ -19,6 +19,14 @@ type CategoryPickerProps = Partial<FieldControlProps> & {
   placeholder?: string
   /** Permite escolher "Sem categoria". */
   allowNone?: boolean
+  /**
+   * Distingue "Sem categoria" escolhida de propósito de "nada escolhido ainda" — os dois chegam
+   * com `value: null`, mas só o primeiro deve aparecer como selecionado no gatilho/marcado na
+   * lista. Sem informar, cai no comportamento de sempre (`value === null` já é "Sem categoria"),
+   * correto para um campo de formulário; um filtro com um terceiro estado "nenhum filtro" (ex.:
+   * `transaction-filters.tsx`) precisa informar este prop à parte.
+   */
+  noneSelected?: boolean
   /** Lista também categorias arquivadas (ex.: filtros, que precisam achar lançamentos antigos). */
   includeArchived?: boolean
   disabled?: boolean
@@ -31,6 +39,7 @@ export function CategoryPicker({
   kind,
   placeholder = 'Escolha a categoria',
   allowNone = true,
+  noneSelected,
   includeArchived = false,
   disabled = false,
   'aria-label': ariaLabel,
@@ -40,6 +49,13 @@ export function CategoryPicker({
   const { data: categories = [] } = useCategories(true)
   const options = flattenCategoryOptions(categories, { kind, keepId: value, includeArchived })
   const selected = categories.find((category) => category.id === value)
+  // Marca "Sem categoria" na lista sempre que `value` for null (comportamento de sempre, um campo
+  // de formulário já trata assim); só o GATILHO precisa do terceiro estado, por isso só mostra
+  // "Sem categoria" ali quando o chamador pede de propósito (`noneSelected === true`), nunca por
+  // inferência — senão todo formulário com `allowNone` passaria a mostrar "Sem categoria" em vez
+  // do placeholder sempre que o campo começasse vazio.
+  const isNoneChecked = noneSelected ?? value === null
+  const showNoneInTrigger = noneSelected === true
 
   const choose = (id: number | null) => {
     onChange(id)
@@ -66,6 +82,11 @@ export function CategoryPicker({
               <CategoryIcon icon={selected.icon} color={selected.color} size="sm" className="h-6 w-6" />
               {selected.name}
             </span>
+          ) : showNoneInTrigger ? (
+            <span className="flex items-center gap-2 truncate">
+              <CategoryIcon icon={null} color={null} size="sm" className="h-6 w-6" />
+              Sem categoria
+            </span>
           ) : (
             <span className="text-muted-foreground">{placeholder}</span>
           )}
@@ -80,7 +101,7 @@ export function CategoryPicker({
             <CommandGroup>
               {allowNone && (
                 <CommandItem value="none" keywords={['Sem categoria']} onSelect={() => choose(null)}>
-                  <Check className={cn('h-4 w-4', value === null ? 'opacity-100' : 'opacity-0')} />
+                  <Check className={cn('h-4 w-4', isNoneChecked ? 'opacity-100' : 'opacity-0')} />
                   Sem categoria
                 </CommandItem>
               )}

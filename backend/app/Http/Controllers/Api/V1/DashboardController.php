@@ -11,6 +11,8 @@ final class DashboardController extends Controller
 {
     public function __invoke(DashboardRequest $request, MonthSummary $monthSummary): JsonResponse
     {
-        return response()->json(['data' => $monthSummary->for($request->month())]);
+        $month = $request->month();
+
+        return response()->json(['data' => $monthSummary->for($month, $request->balanceDate())]);
     }
 }

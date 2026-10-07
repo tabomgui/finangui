@@ -4,8 +4,10 @@ import {
   activeFilterCount,
   effectiveTransactionFilters,
   filtersFromParams,
+  paramsForFilters,
   paramsWithFilter,
   paramsWithFuture,
+  reportableFilterLabel,
   showFutureFromParams,
 } from './filters'
 
@@ -31,6 +33,75 @@ describe('filtros na URL', () => {
 
   it('conta filtros ativos fora a busca', () => {
     expect(activeFilterCount({ account_id: 1, search: 'x', from: '2026-10-01' })).toBe(2)
+  })
+
+  it('lê category_exact, no_category, reportable e currency (flags "1"/moeda); category_exact fora da contagem, reportable/currency dentro', () => {
+    const params = new URLSearchParams('categoria=5&exata=1&relatorio=1&moeda=BRL&tipo=out')
+
+    expect(filtersFromParams(params)).toEqual({
+      category_id: 5,
+      category_exact: true,
+      reportable: true,
+      currency: 'BRL',
+      direction: 'out',
+    })
+    expect(activeFilterCount(filtersFromParams(params))).toBe(4) // categoria + tipo + relatorio + moeda; exata não conta (modificador de categoria)
+  })
+
+  it('ignora moeda que não tem o formato de código ISO (3 letras maiúsculas)', () => {
+    expect(filtersFromParams(new URLSearchParams('moeda=brl')).currency).toBeUndefined()
+    expect(filtersFromParams(new URLSearchParams('moeda=BR')).currency).toBeUndefined()
+    expect(filtersFromParams(new URLSearchParams('moeda=BRLL')).currency).toBeUndefined()
+    expect(filtersFromParams(new URLSearchParams('moeda=<script>')).currency).toBeUndefined()
+    expect(filtersFromParams(new URLSearchParams('moeda=USD')).currency).toBe('USD')
+  })
+
+  it('lê sem_categoria=1 como no_category', () => {
+    expect(filtersFromParams(new URLSearchParams('sem_categoria=1'))).toEqual({ no_category: true })
+  })
+
+  it('ignora um valor de flag diferente de "1"', () => {
+    expect(filtersFromParams(new URLSearchParams('exata=true'))).toEqual({})
+  })
+
+  it('normaliza exata sem categoria: descarta category_exact quando não há category_id', () => {
+    expect(filtersFromParams(new URLSearchParams('exata=1'))).toEqual({})
+  })
+
+  it('normaliza categoria + sem_categoria ao mesmo tempo: sem_categoria vence, categoria (e exata) somem', () => {
+    expect(filtersFromParams(new URLSearchParams('categoria=5&exata=1&sem_categoria=1'))).toEqual({ no_category: true })
+  })
+})
+
+describe('reportableFilterLabel', () => {
+  it('combina relatório e moeda numa só linha', () => {
+    expect(reportableFilterLabel({ reportable: true, currency: 'BRL' })).toBe('Só lançamentos que entram em relatórios (BRL)')
+  })
+
+  it('só relatório, sem moeda', () => {
+    expect(reportableFilterLabel({ reportable: true })).toBe('Só lançamentos que entram em relatórios')
+  })
+
+  it('só moeda, sem relatório', () => {
+    expect(reportableFilterLabel({ currency: 'USD' })).toBe('(USD)')
+  })
+
+  it('null quando nenhum dos dois está ativo', () => {
+    expect(reportableFilterLabel({})).toBeNull()
+  })
+})
+
+describe('paramsForFilters', () => {
+  it('monta os mesmos nomes curtos usados por filtersFromParams', () => {
+    const filters = { category_id: 5, category_exact: true, reportable: true, currency: 'BRL', direction: 'out' as const, from: '2026-10-01', to: '2026-10-31' }
+
+    const params = paramsForFilters(filters)
+
+    expect(filtersFromParams(params)).toEqual(filters)
+  })
+
+  it('omite chaves ausentes em vez de gravá-las vazias', () => {
+    expect(paramsForFilters({ account_id: 1 }).toString()).toBe('conta=1')
   })
 })
 

@@ -89,7 +89,7 @@ final class CategoryComparison
             // Join bruto: ignora o global scope por usuário de Category, mas é
             // seguro porque category_id é validado no write para pertencer ao
             // mesmo usuário da transação, e os nomes exibidos vêm da query
-            // escopada em for() (mesma justificativa de MonthSummary::topCategories).
+            // escopada em for() (mesma justificativa de SpendingBreakdown).
             ->leftJoin('categories as c', 'c.id', '=', 'transactions.category_id');
 
         if ($basis === ReportBasis::Statement) {

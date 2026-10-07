@@ -1,8 +1,8 @@
 <?php
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Categories\Models\Category;
-use App\Domain\Recurrences\Models\Recurrence;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 
@@ -32,26 +32,6 @@ it('soma receitas e despesas do mês ignorando transferências, ignoradas e proj
         ->assertJsonPath('data.net', 788000);
 });
 
-it('agrupa as maiores despesas pela categoria raiz', function () {
-    actingAsUser();
-    $food = Category::factory()->create(['name' => 'Alimentação']);
-    $market = Category::factory()->create(['name' => 'Mercado', 'parent_id' => $food->id]);
-    $transport = Category::factory()->create(['name' => 'Transporte']);
-
-    Transaction::factory()->create(['date' => '2026-10-02', 'amount' => 10000, 'category_id' => $food->id]);
-    Transaction::factory()->create(['date' => '2026-10-03', 'amount' => 25000, 'category_id' => $market->id]);
-    Transaction::factory()->create(['date' => '2026-10-04', 'amount' => 5000, 'category_id' => $transport->id]);
-    Transaction::factory()->create(['date' => '2026-10-05', 'amount' => 3000, 'category_id' => null]);
-
-    $this->getJson('/api/v1/dashboard?month=2026-10')
-        ->assertJsonPath('data.top_categories.0.category_id', $food->id)
-        ->assertJsonPath('data.top_categories.0.name', 'Alimentação')
-        ->assertJsonPath('data.top_categories.0.amount', 35000)
-        ->assertJsonPath('data.top_categories.1.name', 'Transporte')
-        ->assertJsonPath('data.top_categories.2.category_id', null)
-        ->assertJsonPath('data.top_categories.2.name', 'Sem categoria');
-});
-
 it('exclui transações de subcategoria cujo pai é marcado como transferência', function () {
     actingAsUser();
     $parent = Category::factory()->transfer()->create(['name' => 'Investimentos']);
@@ -60,8 +40,7 @@ it('exclui transações de subcategoria cujo pai é marcado como transferência'
     Transaction::factory()->create(['date' => '2026-10-05', 'amount' => 10000, 'category_id' => $child->id]);
 
     $this->getJson('/api/v1/dashboard?month=2026-10')
-        ->assertJsonPath('data.expense', 0)
-        ->assertJsonCount(0, 'data.top_categories');
+        ->assertJsonPath('data.expense', 0);
 });
 
 it('passa a incluir/excluir a subcategoria quando o pai liga ou desliga a transferência', function () {
@@ -114,7 +93,7 @@ it('restringe os totais à moeda principal mas lista todas as contas', function 
         ->assertJsonPath('data.accounts.1.currency', 'USD');
 });
 
-it('calcula o saldo das contas até o fim do mês consultado quando o mês já passou', function () {
+it('calcula o saldo das contas até hoje mesmo quando o mês consultado já passou (mês e dia são independentes)', function () {
     actingAsUser();
     $this->travelTo('2026-10-15');
     $account = Account::factory()->create(['opening_balance' => 1000]);
@@ -123,9 +102,10 @@ it('calcula o saldo das contas até o fim do mês consultado quando o mês já p
 
     $this->getJson('/api/v1/dashboard?month=2026-09')
         ->assertOk()
-        ->assertJsonPath('data.balance_date', '2026-09-30')
-        ->assertJsonPath('data.total_balance', 1500)
-        ->assertJsonPath('data.accounts.0.balance', 1500);
+        ->assertJsonPath('data.balance_date', '2026-10-15')
+        ->assertJsonPath('data.today', '2026-10-15')
+        ->assertJsonPath('data.total_balance', 1300)
+        ->assertJsonPath('data.accounts.0.balance', 1300);
 });
 
 it('calcula o saldo das contas até hoje quando o mês consultado é o mês atual', function () {
@@ -156,17 +136,18 @@ it('não conta no saldo transação futura dentro do próprio mês atual, mas co
         ->assertJsonPath('data.expense', 200);
 });
 
-it('conta o saldo do cartão no saldo total, mesmo com saldo inicial negativo', function () {
+it('exclui o saldo do cartão do saldo total e da lista de contas da Início', function () {
     actingAsUser();
     Account::factory()->create(['name' => 'A', 'opening_balance' => 1000]);
     Account::factory()->creditCard()->create(['name' => 'Cartão', 'opening_balance' => -2000]);
 
     $this->getJson('/api/v1/dashboard?month=2026-10')
-        ->assertJsonPath('data.total_balance', -1000)
-        ->assertJsonCount(2, 'data.accounts');
+        ->assertJsonPath('data.total_balance', 1000)
+        ->assertJsonCount(1, 'data.accounts')
+        ->assertJsonPath('data.accounts.0.name', 'A');
 });
 
-it('parcela projetada do mês não entra em despesa/maiores categorias; a lançada conta na própria data', function () {
+it('parcela projetada do mês não entra em despesa; a lançada conta na própria data', function () {
     actingAsUser();
     $this->travelTo('2026-10-06');
     $category = Category::factory()->create(['name' => 'Eletrônicos']);
@@ -178,13 +159,9 @@ it('parcela projetada do mês não entra em despesa/maiores categorias; a lança
     ])->assertCreated();
     // Parcela 1 (2026-10-05) já lançada (posted); parcela 2 (2026-11-05) é projetada.
 
-    $this->getJson('/api/v1/dashboard?month=2026-10')
-        ->assertJsonPath('data.expense', 15000)
-        ->assertJsonPath('data.top_categories.0.amount', 15000);
+    $this->getJson('/api/v1/dashboard?month=2026-10')->assertJsonPath('data.expense', 15000);
 
-    $this->getJson('/api/v1/dashboard?month=2026-11')
-        ->assertJsonPath('data.expense', 0)
-        ->assertJsonCount(0, 'data.top_categories');
+    $this->getJson('/api/v1/dashboard?month=2026-11')->assertJsonPath('data.expense', 0);
 });
 
 it('pagar fatura não muda receita nem despesa (é transferência, não lançamento)', function () {
@@ -207,114 +184,80 @@ it('pagar fatura não muda receita nem despesa (é transferência, não lançame
         ->assertJsonPath('data.expense', 30000);
 });
 
-it('soma saldo de hoje com previstas e pendentes até o fim do mês atual, ignorando ignoradas e outra moeda', function () {
-    actingAsUser();
-    $this->travelTo('2026-10-15');
-    $account = Account::factory()->create(['opening_balance' => 1000]);
-    $usd = Account::factory()->create(['currency' => 'USD', 'opening_balance' => 5000]);
-
-    Transaction::factory()->for($account)->create(['date' => '2026-10-05', 'amount' => 200]); // posted, conta pro saldo de hoje
-    Transaction::factory()->for($account)->create(['date' => '2026-10-20', 'amount' => 300, 'status' => TransactionStatus::Projected]);
-    Transaction::factory()->for($account)->income()->create(['date' => '2026-10-18', 'amount' => 150, 'status' => TransactionStatus::Pending]);
-    Transaction::factory()->for($account)->create([
-        'date' => '2026-10-22', 'amount' => 99999, 'status' => TransactionStatus::Projected, 'is_ignored' => true,
-    ]);
-    Transaction::factory()->for($usd)->create([
-        'date' => '2026-10-22', 'amount' => 99999, 'currency' => 'USD', 'status' => TransactionStatus::Projected,
-    ]);
-
-    $this->getJson('/api/v1/dashboard?month=2026-10')
-        ->assertOk()
-        ->assertJsonPath('data.projected_balance', 650); // 1000 - 200 (hoje) - 300 + 150
-});
-
-it('saldo previsto de mês futuro acumula previstas de meses anteriores ainda pendentes', function () {
-    actingAsUser();
-    $this->travelTo('2026-10-15');
-    $account = Account::factory()->create(['opening_balance' => 1000]);
-
-    Transaction::factory()->for($account)->create(['date' => '2026-10-20', 'amount' => 100, 'status' => TransactionStatus::Projected]);
-    Transaction::factory()->for($account)->create(['date' => '2026-11-10', 'amount' => 500, 'status' => TransactionStatus::Projected]);
-
-    $this->getJson('/api/v1/dashboard?month=2026-11')
-        ->assertOk()
-        ->assertJsonPath('data.projected_balance', 400); // 1000 - 100 - 500
-});
-
-it('não traz saldo previsto para mês passado', function () {
-    actingAsUser();
-    $this->travelTo('2026-10-15');
-    Account::factory()->create(['opening_balance' => 1000]);
-
-    $this->getJson('/api/v1/dashboard?month=2026-09')
-        ->assertOk()
-        ->assertJsonMissingPath('data.projected_balance');
-});
-
-it('não traz saldo previsto para dois meses ou mais no futuro', function () {
+it('usa hoje como padrão do dia do saldo no mês futuro, já que não existe saldo real futuro', function () {
     actingAsUser();
     $this->travelTo('2026-10-15');
     Account::factory()->create(['opening_balance' => 1000]);
 
     $this->getJson('/api/v1/dashboard?month=2026-12')
         ->assertOk()
-        ->assertJsonMissingPath('data.projected_balance');
+        ->assertJsonPath('data.balance_date', '2026-10-15');
 });
 
-it('conta no saldo previsto uma transação já lançada com data futura dentro do mês atual', function () {
-    actingAsUser();
-    $this->travelTo('2026-10-15');
-    $account = Account::factory()->create(['opening_balance' => 1000]);
-    // Lançada (posted), mas com data depois de hoje: não entra no saldo "de
-    // hoje" (total_balance), mas precisa entrar na base do saldo previsto,
-    // que é até o fim do mês, não até hoje.
-    Transaction::factory()->for($account)->create(['date' => '2026-10-20', 'amount' => 200]);
-
-    $this->getJson('/api/v1/dashboard?month=2026-10')
-        ->assertOk()
-        ->assertJsonPath('data.total_balance', 1000)
-        ->assertJsonPath('data.projected_balance', 800);
-});
-
-it('soma no saldo previsto tanto uma prevista de recorrência quanto uma parcela projetada de cartão', function () {
-    actingAsUser();
-    $this->travelTo('2026-09-05');
-    $account = Account::factory()->create(['opening_balance' => 100000]);
-    $card = Account::factory()->creditCard(closingDay: 10, dueDay: 20)->create();
-
-    $this->postJson('/api/v1/transactions', [
-        'account_id' => $card->id, 'date' => '2026-09-05', 'amount' => 20000, 'direction' => 'out',
-        'description' => 'Notebook', 'installments' => 2,
-    ])->assertCreated();
-    // Parcela 1 (09-05, 10000) já lançada; parcela 2 (10-05, 10000) é projetada.
-
-    $recurrence = Recurrence::factory()->create([
-        'account_id' => $account->id, 'description' => 'Aluguel', 'amount' => 5000, 'direction' => 'out',
-    ]);
-    Transaction::factory()->for($account)->create([
-        'status' => 'projected', 'source' => 'recurrence', 'recurrence_id' => $recurrence->id,
-        'recurrence_date' => '2026-10-20', 'date' => '2026-10-20', 'amount' => 5000, 'direction' => 'out',
-    ]);
-
-    $this->travelTo('2026-10-15');
-
-    $this->getJson('/api/v1/dashboard?month=2026-10')
-        ->assertOk()
-        // saldo até fim de outubro (100000 - 10000 da parcela 1 já lançada)
-        // - 10000 (parcela 2 projetada) - 5000 (prevista de recorrência)
-        ->assertJsonPath('data.projected_balance', 75000);
-});
-
-it('exclui previstas de conta arquivada do saldo previsto', function () {
+it('devolve hoje na chave today, igual ao padrão do dia do saldo e independente de date', function () {
     actingAsUser();
     $this->travelTo('2026-10-15');
     Account::factory()->create(['opening_balance' => 1000]);
-    $archived = Account::factory()->archived()->create(['opening_balance' => 0]);
-    Transaction::factory()->for($archived)->create(['date' => '2026-10-20', 'amount' => 500, 'status' => TransactionStatus::Projected]);
 
-    $this->getJson('/api/v1/dashboard?month=2026-10')
+    $this->getJson('/api/v1/dashboard?month=2026-10')->assertOk()->assertJsonPath('data.today', '2026-10-15');
+
+    $this->getJson('/api/v1/dashboard?month=2026-01&date=2026-01-05')
         ->assertOk()
-        ->assertJsonPath('data.projected_balance', 1000);
+        ->assertJsonPath('data.today', '2026-10-15')
+        ->assertJsonPath('data.balance_date', '2026-01-05');
+});
+
+it('aceita date independente de month e calcula o saldo naquele dia', function () {
+    actingAsUser();
+    $this->travelTo('2026-10-15');
+    $account = Account::factory()->create(['opening_balance' => 1000]);
+    Transaction::factory()->for($account)->create(['date' => '2026-10-03', 'amount' => 200]);
+
+    $this->getJson('/api/v1/dashboard?month=2026-01&date=2026-10-05')
+        ->assertOk()
+        ->assertJsonPath('data.month', '2026-01')
+        ->assertJsonPath('data.balance_date', '2026-10-05')
+        ->assertJsonPath('data.total_balance', 800);
+});
+
+it('rejeita date com formato inválido', function () {
+    actingAsUser();
+
+    $this->getJson('/api/v1/dashboard?date=15-10-2026')
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('date');
+});
+
+it('rejeita date no futuro', function () {
+    actingAsUser();
+    $this->travelTo('2026-10-15');
+
+    $this->getJson('/api/v1/dashboard?date=2026-10-16')
+        ->assertStatus(422)
+        ->assertJsonValidationErrors('date');
+});
+
+it('isola o saldo conectado e a data entre usuários', function () {
+    $user = actingAsUser();
+    $this->travelTo('2026-10-15');
+    $connection = BankConnection::factory()->active()->create();
+    Account::factory()->create([
+        'opening_balance' => 0, 'connection_id' => $connection->id,
+        'provider_balance' => 5000, 'provider_synced_at' => now(),
+    ]);
+
+    actingAsUser();
+    $otherConnection = BankConnection::factory()->active()->create();
+    Account::factory()->create([
+        'opening_balance' => 0, 'connection_id' => $otherConnection->id,
+        'provider_balance' => 999999, 'provider_synced_at' => now(),
+    ]);
+
+    $this->actingAs($user);
+
+    $this->getJson('/api/v1/dashboard?month=2026-10&date=2026-10-10')
+        ->assertOk()
+        ->assertJsonPath('data.total_balance', 5000);
 });
 
 it('isola o resumo de dados de outro usuário', function () {
@@ -337,7 +280,5 @@ it('isola o resumo de dados de outro usuário', function () {
         ->assertJsonPath('data.total_balance', 31000) // opening_balance 1000 + receita 50000 - despesa 20000
         ->assertJsonCount(1, 'data.accounts')
         ->assertJsonPath('data.income', 50000)
-        ->assertJsonPath('data.expense', 20000)
-        ->assertJsonCount(1, 'data.top_categories')
-        ->assertJsonPath('data.top_categories.0.name', 'Categoria do usuário');
+        ->assertJsonPath('data.expense', 20000);
 });

@@ -25,6 +25,20 @@ export function useTransactions(filters: TransactionFilters) {
   })
 }
 
+/**
+ * Prévia sob demanda (até 20 lançamentos, sem paginação): usada pela linha expansível do card de
+ * distribuição de gastos do Início. Chave própria (`previewTransactions`), separada da lista
+ * principal (`useTransactions`, infinita) para não colidir formatos de cache diferentes sob a
+ * mesma chave; `enabled` só dispara a busca quando a linha é de fato aberta.
+ */
+export function useTransactionsPreview(filters: TransactionFilters, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.previewTransactions(filters),
+    queryFn: async () => unwrap(api.GET('/transactions', { params: { query: { ...compactFilters(filters), per_page: 20 } } })),
+    enabled,
+  })
+}
+
 /** "Recentes" não devem incluir parcelas projetadas futuras: limita a hoje. */
 export function useRecentTransactions(limit = 5) {
   return useQuery({

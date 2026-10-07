@@ -4,10 +4,17 @@ import type { Direction, ReportBasis } from '@/api/types'
 export type TransactionFilters = {
   account_id?: number
   category_id?: number
+  /** Restringe `category_id` à própria categoria, sem incluir subcategorias. Só junto de `category_id`. */
+  category_exact?: boolean
+  /** Só lançamentos sem categoria nenhuma; incompatível com `category_id`. */
+  no_category?: boolean
   tag_id?: number
   from?: string
   to?: string
   direction?: Direction
+  currency?: string
+  /** Só lançamentos que entram em relatório (ver `Transaction::reportable()` no backend). */
+  reportable?: boolean
   search?: string
   statement_id?: number
 }
@@ -24,12 +31,13 @@ export const queryKeys = {
   categories: (includeArchived: boolean) => ['categories', { includeArchived }] as const,
   tags: () => ['tags'] as const,
   transactions: (filters: TransactionFilters) => ['transactions', 'list', compactFilters(filters)] as const,
+  previewTransactions: (filters: TransactionFilters) => ['transactions', 'preview', compactFilters(filters)] as const,
   recentTransactions: () => ['transactions', 'recent'] as const,
   transaction: (id: number) => ['transactions', 'detail', id] as const,
   transfersRoot: () => ['transfers'] as const,
   transfer: (id: string) => ['transfers', id] as const,
   transferSuggestions: () => ['transfer-suggestions'] as const,
-  dashboard: (month: string) => ['dashboard', month] as const,
+  dashboard: (month: string, day?: string) => ['dashboard', month, day] as const,
   cards: (includeArchived: boolean) => ['cards', 'list', { includeArchived }] as const,
   card: (id: number) => ['cards', 'detail', id] as const,
   cardStatements: (cardId: number) => ['card-statements', 'list', cardId] as const,
@@ -51,6 +59,7 @@ export const queryKeys = {
   reportMonthly: (from: string, to: string, basis: ReportBasis) => ['reports', 'monthly', { from, to, basis }] as const,
   reportCategories: (aFrom: string, aTo: string, bFrom: string, bTo: string, basis: ReportBasis) =>
     ['reports', 'categories', { aFrom, aTo, bFrom, bTo, basis }] as const,
+  reportSpending: (from: string, to: string) => ['reports', 'spending', { from, to }] as const,
   notifications: () => ['notifications', 'list'] as const,
   notificationsUnreadCount: () => ['notifications', 'unread-count'] as const,
 }
@@ -94,13 +103,13 @@ export function invalidateLedger(queryClient: QueryClient) {
 }
 
 /**
- * Nome, ícone e flag de transferência aparecem nas transações, nas top categorias do mês e nos
- * parcelamentos; a prévia de uma regra ainda não salva também mostra nome de categoria por
- * `category_id` (ver `rule-preview-card.tsx`), então renomear/arquivar uma categoria a deixaria
- * desatualizada sem essa invalidação.
+ * Nome, ícone e flag de transferência aparecem nas transações, na distribuição de gastos da
+ * Início (`reports/spending`) e nos parcelamentos; a prévia de uma regra ainda não salva também
+ * mostra nome de categoria por `category_id` (ver `rule-preview-card.tsx`), então renomear/
+ * arquivar uma categoria deixaria tudo isso desatualizado sem essa invalidação.
  */
 export function invalidateCategories(queryClient: QueryClient) {
-  return invalidate(queryClient, ['categories', 'transactions', 'dashboard', 'installment-plans', 'rule-preview'])
+  return invalidate(queryClient, ['categories', 'transactions', 'dashboard', 'reports', 'installment-plans', 'rule-preview'])
 }
 
 /** Mesma razão de `invalidateCategories` para `rule-preview`: a prévia também mostra nome de tag. */
