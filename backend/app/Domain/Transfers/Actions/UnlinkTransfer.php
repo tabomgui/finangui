@@ -43,9 +43,14 @@ final class UnlinkTransfer
 
             // A saída de cartão mantém o statement_id como está; só a entrada
             // (que podia estar marcada como pagamento de fatura) recalcula,
-            // agora pela data normal — AssignStatement já decide isso sozinho
-            // olhando isTransferLeg(), que aqui já é false.
+            // agora pela data normal. card_payment_statement_id precisa ser
+            // zerado antes de chamar AssignStatement: ele também trata uma
+            // entrada já marcada como pagamento (isCardPayment()) como
+            // pagamento, justamente para sobreviver a uma reatribuição comum
+            // — aqui é o caso contrário, o desfazer em si decide que esta
+            // entrada deixou de ser pagamento.
             $in->transfer_id = null;
+            $in->card_payment_statement_id = null;
             $this->assignStatement->handle($in);
             $in->save();
 

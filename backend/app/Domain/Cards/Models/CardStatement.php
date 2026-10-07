@@ -70,9 +70,12 @@ class CardStatement extends Model
     }
 
     /**
-     * Carrega cobranças líquidas (saídas − estornos) e pagamentos (entradas que
-     * são perna de transferência) numa única query. Considera todo status,
-     * inclusive parcelas projetadas; ignora transações marcadas como ignoradas.
+     * Carrega cobranças líquidas (saídas − estornos) e pagamentos (entradas
+     * marcadas como pagamento reconhecido — card_payment_statement_id, ver
+     * App\Domain\Cards\Actions\AssignStatement e App\Domain\Banking\Actions\ReconcileCardPayments)
+     * numa única query. Considera todo status, inclusive parcelas
+     * projetadas; ignora transações marcadas como ignoradas (ex.: pagamento
+     * duplicado).
      *
      * Numa fatura ainda aberta (closing_date > hoje), uma ocorrência de
      * recorrência ainda não confirmada (Transaction::isUnconfirmedOccurrence())
@@ -100,18 +103,47 @@ class CardStatement extends Model
 
         $query->select('card_statements.*')->addSelect([
             'charges_net' => $charges->selectRaw(
-                "COALESCE(SUM(CASE WHEN transactions.direction = 'out' THEN transactions.amount WHEN transactions.transfer_id IS NULL THEN -transactions.amount ELSE 0 END), 0)"
+                "COALESCE(SUM(CASE WHEN transactions.direction = 'out' THEN transactions.amount WHEN transactions.card_payment_statement_id IS NULL THEN -transactions.amount ELSE 0 END), 0)"
             ),
             'payments_sum' => $linked()
                 ->where('transactions.direction', Direction::In->value)
-                ->whereNotNull('transactions.transfer_id')
+                ->whereNotNull('transactions.card_payment_statement_id')
                 ->selectRaw('COALESCE(SUM(transactions.amount), 0)'),
         ]);
     }
 
-    public function total(): Money
+    /**
+     * Total calculado: saídas − estornos ligados à fatura, sem pagamentos
+     * (ver scopeWithTotals). Sempre o total de uma fatura aberta — o banco só
+     * informa reported_total depois de fechar.
+     */
+    public function computedTotal(): Money
     {
         return Money::cents((int) $this->loadedTotal('charges_net'));
+    }
+
+    /**
+     * Total exibido: o do banco (reported_total) quando a fatura já fechou e
+     * ele foi informado; senão, o calculado. remaining() e status() usam este
+     * total, nunca o calculado diretamente — ver computedTotal() para o aviso
+     * de divergência (CardStatementResource).
+     *
+     * Limitação conhecida: reported_total é o total que o banco cobrou nesta
+     * fatura — se ela foi paga parcialmente, o saldo que sobrou normalmente
+     * já aparece somado ao reported_total da fatura seguinte (prática comum
+     * de juros rotativo), não como uma dedução aqui. remaining() desta
+     * fatura mostra só o que falta pagar dela mesma; o saldo residual que o
+     * banco rolou para a próxima fatura só se reflete no reported_total dela.
+     */
+    public function total(?CarbonImmutable $today = null): Money
+    {
+        $today ??= CarbonImmutable::today();
+
+        if ($this->reported_total !== null && $this->isClosed($today)) {
+            return $this->reported_total;
+        }
+
+        return $this->computedTotal();
     }
 
     public function paid(): Money
@@ -119,18 +151,23 @@ class CardStatement extends Model
         return Money::cents((int) $this->loadedTotal('payments_sum'));
     }
 
-    public function remaining(): Money
+    public function remaining(?CarbonImmutable $today = null): Money
     {
-        return Money::cents(max($this->total()->cents - $this->paid()->cents, 0));
+        return Money::cents(max($this->total($today)->cents - $this->paid()->cents, 0));
+    }
+
+    public function isClosed(CarbonImmutable $today): bool
+    {
+        return ! $today->startOfDay()->lessThan($this->closing_date);
     }
 
     public function status(CarbonImmutable $today): StatementStatus
     {
-        if ($today->startOfDay()->lessThan($this->closing_date)) {
+        if (! $this->isClosed($today)) {
             return StatementStatus::Open;
         }
 
-        $total = $this->total()->cents;
+        $total = $this->total($today)->cents;
         $paid = $this->paid()->cents;
 
         return match (true) {

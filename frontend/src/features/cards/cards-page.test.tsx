@@ -40,6 +40,8 @@ const nubank: Card = {
   due_day: 17,
   balance: -120000,
   limit: { used: 150000, projected: 0, available: 350000 },
+  used_limit: 150000,
+  available_limit: 350000,
   current_statement: {
     id: 10,
     account_id: 1,
@@ -47,6 +49,7 @@ const nubank: Card = {
     due_date: '2026-10-17',
     reported_total: null,
     total: 120000,
+    computed_total: 120000,
     paid: 0,
     remaining: 120000,
     status: 'open',

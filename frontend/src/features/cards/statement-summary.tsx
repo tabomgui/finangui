@@ -1,29 +1,34 @@
 import { TriangleAlert } from 'lucide-react'
-import type { CardStatement } from '@/api/types'
+import type { Card as CardType, CardStatement } from '@/api/types'
 import { MoneyText } from '@/components/shared/money-text'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatDate } from '@/lib/date'
 import { formatMoney } from '@/lib/money'
 import { dueLabel } from './statement-labels'
+import { StatementLimitMeter } from './statement-limit-meter'
 import { StatementStatusBadge } from './statement-status-badge'
 
 type StatementSummaryProps = {
   statement: CardStatement
   currency: string
+  limit: Pick<CardType, 'used_limit' | 'available_limit' | 'credit_limit'>
   onPay: () => void
   onEditDates: () => void
 }
 
-export function StatementSummary({ statement, currency, onPay, onEditDates }: StatementSummaryProps) {
+export function StatementSummary({ statement, currency, limit, onPay, onEditDates }: StatementSummaryProps) {
   return (
     <Card className="space-y-4 rounded-2xl p-4 shadow-card">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className="text-xs text-muted-foreground">Total da fatura</p>
-          <MoneyText cents={statement.total} currency={currency} className="text-2xl font-bold" />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-center justify-between gap-2 sm:justify-start sm:gap-4">
+          <div>
+            <p className="text-xs text-muted-foreground">Total da fatura</p>
+            <MoneyText cents={statement.total} currency={currency} className="text-2xl font-bold" />
+          </div>
+          <StatementStatusBadge statement={statement} />
         </div>
-        <StatementStatusBadge statement={statement} />
+        <StatementLimitMeter {...limit} currency={currency} />
       </div>
 
       <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm">
@@ -48,7 +53,7 @@ export function StatementSummary({ statement, currency, onPay, onEditDates }: St
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
             O banco informou {formatMoney(statement.reported_total, currency)}; o total calculado aqui é{' '}
-            {formatMoney(statement.total, currency)}.
+            {formatMoney(statement.computed_total, currency)}.
           </p>
         </div>
       )}

@@ -21,6 +21,7 @@ const statement: CardStatement = {
   due_date: '2026-10-17',
   reported_total: 120000,
   total: 120000,
+  computed_total: 120000,
   paid: 0,
   remaining: 120000,
   status: 'open',

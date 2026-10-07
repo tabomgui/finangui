@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
@@ -23,6 +24,40 @@ it('lista só cartões, com limite usado, projetado e disponível', function () 
         ->assertJsonPath('data.0.limit.projected', 60000)
         ->assertJsonPath('data.0.limit.available', 380000)
         ->assertJsonPath('data.0.balance', -60000);
+});
+
+it('sem dados do banco, used_limit e available_limit vêm do cálculo e do limite cadastrado', function () {
+    Transaction::factory()->create(['account_id' => $this->card->id, 'amount' => 20000]);
+
+    $this->getJson("/api/v1/cards/{$this->card->id}")->assertOk()
+        ->assertJsonPath('data.used_limit', 20000)
+        ->assertJsonPath('data.available_limit', 480000)
+        ->assertJsonPath('data.credit_limit', 500000);
+});
+
+it('cartão sem limite cadastrado e sem dados do banco não expõe available_limit', function () {
+    $noLimit = Account::factory()->create(['user_id' => $this->user->id, 'type' => 'credit_card', 'closing_day' => 10, 'due_day' => 20]);
+
+    $response = $this->getJson("/api/v1/cards/{$noLimit->id}")->assertOk();
+
+    expect($response->json('data'))->not->toHaveKey('available_limit');
+});
+
+it('com dados do banco, used_limit e available_limit vêm do provedor, não do cálculo local', function () {
+    $connection = BankConnection::factory()->create(['user_id' => $this->user->id]);
+    $this->card->update([
+        'connection_id' => $connection->id,
+        'external_id' => 'ext-card-1',
+        'provider_balance' => -77000,
+        'available_credit_limit' => 423000,
+    ]);
+    // Compra local que o banco ainda não processou — used_limit do banco não
+    // deve bater com o cálculo local (1000 vs 77000), prova de que vem do provedor.
+    Transaction::factory()->create(['account_id' => $this->card->id, 'amount' => 1000]);
+
+    $this->getJson("/api/v1/cards/{$this->card->id}")->assertOk()
+        ->assertJsonPath('data.used_limit', 77000)
+        ->assertJsonPath('data.available_limit', 423000);
 });
 
 it('saldo inicial negativo conta como limite usado', function () {

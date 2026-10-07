@@ -29,6 +29,10 @@ use Illuminate\Support\Facades\Log;
  * são gravados); numa fatura nova, adota a fatura local mais próxima em vez
  * de inserir fora de ordem, ou, sem nenhuma candidata, ignora com log — nunca
  * insere uma fatura que quebre a ordenação do cartão.
+ *
+ * Por fim, a fatura mais recente deste lote (maior fechamento) define
+ * closing_day/due_day do cartão para os próximos ciclos ainda não criados
+ * (ver syncCardDays()) — nunca reescreve uma fatura já gravada.
  */
 final class SyncBills
 {
@@ -38,21 +42,123 @@ final class SyncBills
 
     /**
      * @param  list<ProviderBill>  $bills
+     * @return int quantas faturas foram de fato gravadas (criadas ou atualizadas) — para App\Domain\Banking\Jobs\SyncConnection alimentar `bills_count` do histórico de sincronização (App\Domain\Banking\Models\BankSyncRun); uma fatura ignorada por não caber na ordem local (ver createOrAdopt()) não conta
      *
      * @throws NotACreditCard
      */
-    public function handle(Account $card, array $bills): void
+    public function handle(Account $card, array $bills): int
     {
         if (! $card->isCreditCard() || $card->closing_day === null || $card->due_day === null) {
             throw new NotACreditCard;
         }
 
+        $applied = 0;
+
         foreach ($bills as $bill) {
-            $this->applyBill($card, $bill);
+            if ($this->applyBill($card, $bill)) {
+                $applied++;
+            }
+        }
+
+        $this->syncCardDays($card, $bills);
+
+        return $applied;
+    }
+
+    /**
+     * As até 3 faturas mais recentes informadas pelo banco (maior fechamento,
+     * calculado como em applyBill()) definem os dias usados para os ciclos
+     * futuros do cartão (closing_day/due_day) — nunca reescreve faturas já
+     * gravadas, só o dia usado por App\Domain\Cards\Support\StatementResolver/InvoiceCycle
+     * para resolver a próxima fatura ainda não criada. Usa closing_day/due_day
+     * atuais (lidos antes de qualquer atualização aqui) para calcular o
+     * fechamento de uma fatura sem billClosingDate, igual a applyBill().
+     *
+     * O dia usado é o mais comum entre essas faturas (ver mostCommonDay()),
+     * não só o da mais recente: um fechamento/vencimento que cai num fim de
+     * semana ou feriado às vezes antecipa ou atrasa um dia só naquele ciclo
+     * — usar a maioria recente evita o cartão "piscar" o dia por causa de um
+     * desvio pontual desses.
+     *
+     * @param  list<ProviderBill>  $bills
+     */
+    private function syncCardDays(Account $card, array $bills): void
+    {
+        if ($bills === []) {
+            return;
+        }
+
+        /** @var list<array{closing: CarbonImmutable, due: CarbonImmutable}> $cycles */
+        $cycles = array_map(function (ProviderBill $bill) use ($card): array {
+            $due = CarbonImmutable::parse($bill->dueDate)->startOfDay();
+            $closing = $bill->closingDate !== null
+                ? CarbonImmutable::parse($bill->closingDate)->startOfDay()
+                : InvoiceCycle::closingForDueDate($due, (int) $card->closing_day, (int) $card->due_day);
+
+            return ['closing' => $closing, 'due' => $due];
+        }, $bills);
+
+        usort($cycles, fn (array $a, array $b): int => $b['closing'] <=> $a['closing']);
+        $recent = array_slice($cycles, 0, 3);
+
+        $newClosingDay = $this->mostCommonDay($recent, 'closing', (int) $card->closing_day);
+        $newDueDay = $this->mostCommonDay($recent, 'due', (int) $card->due_day);
+
+        if ($newClosingDay !== (int) $card->closing_day || $newDueDay !== (int) $card->due_day) {
+            $card->update(['closing_day' => $newClosingDay, 'due_day' => $newDueDay]);
         }
     }
 
-    private function applyBill(Account $card, ProviderBill $bill): void
+    /**
+     * Dia mais comum entre as faturas recentes para 'closing' ou 'due';
+     * empate decidido pela ocorrência mais recente (a lista já vem ordenada
+     * da mais nova para a mais antiga). Ignora uma data que cai exatamente
+     * no último dia de um mês curto quando o dia atual do cartão é maior —
+     * isso é só o mês não ter esse dia (ex.: fechamento nominal 31, fatura de
+     * fevereiro fecha em 28), não uma mudança real do dia de fechamento.
+     *
+     * @param  list<array{closing: CarbonImmutable, due: CarbonImmutable}>  $recent
+     */
+    private function mostCommonDay(array $recent, string $key, int $currentDay): int
+    {
+        /** @var array<int, int> $counts */
+        $counts = [];
+        /** @var array<int, int> $firstIndex */
+        $firstIndex = [];
+
+        foreach ($recent as $index => $cycle) {
+            $date = $cycle[$key];
+
+            if ($date->day === $date->daysInMonth && $currentDay > $date->day) {
+                continue;
+            }
+
+            $counts[$date->day] = ($counts[$date->day] ?? 0) + 1;
+            $firstIndex[$date->day] ??= $index;
+        }
+
+        if ($counts === []) {
+            return $currentDay;
+        }
+
+        $bestDay = $currentDay;
+        $bestCount = -1;
+        $bestIndex = PHP_INT_MAX;
+
+        foreach ($counts as $day => $count) {
+            $index = $firstIndex[$day];
+
+            if ($count > $bestCount || ($count === $bestCount && $index < $bestIndex)) {
+                $bestDay = $day;
+                $bestCount = $count;
+                $bestIndex = $index;
+            }
+        }
+
+        return $bestDay;
+    }
+
+    private function applyBill(Account $card, ProviderBill $bill): bool
     {
         $due = CarbonImmutable::parse($bill->dueDate)->startOfDay();
         $closing = $bill->closingDate !== null
@@ -67,15 +173,15 @@ final class SyncBills
         $statement ??= $this->findAdoptionCandidate($card, $due, $closing, $bill->id);
 
         if ($statement === null) {
-            $this->createOrAdopt($card, $bill, $due, $closing);
-
-            return;
+            return $this->createOrAdopt($card, $bill, $due, $closing);
         }
 
         $this->applyToExisting($statement, $bill, $due, $closing);
+
+        return true;
     }
 
-    private function createOrAdopt(Account $card, ProviderBill $bill, CarbonImmutable $due, CarbonImmutable $closing): void
+    private function createOrAdopt(Account $card, ProviderBill $bill, CarbonImmutable $due, CarbonImmutable $closing): bool
     {
         ['previous' => $previous, 'next' => $next] = StatementOrdering::neighborsForAccount($card->id, $closing);
 
@@ -89,7 +195,7 @@ final class SyncBills
                 'reported_total' => $bill->totalCents,
             ]);
 
-            return;
+            return true;
         }
 
         // Não cabe na ordem — uma fatura local vizinha está no caminho (ex.:
@@ -105,7 +211,7 @@ final class SyncBills
         if ($nearest !== null) {
             $this->applyToExisting($nearest, $bill, $nearest->due_date, $nearest->closing_date);
 
-            return;
+            return true;
         }
 
         Log::warning('Pluggy: fatura nova do banco não cabe na ordem das faturas locais e nenhuma fatura próxima pôde ser adotada; ignorando.', [
@@ -114,6 +220,8 @@ final class SyncBills
             'due_date' => $due->toDateString(),
             'closing_date' => $closing->toDateString(),
         ]);
+
+        return false;
     }
 
     private function applyToExisting(CardStatement $statement, ProviderBill $bill, CarbonImmutable $due, CarbonImmutable $closing): void

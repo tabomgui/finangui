@@ -25,6 +25,7 @@ use LogicException;
  * @property AccountType $type
  * @property Money $opening_balance
  * @property Money|null $credit_limit
+ * @property Money|null $available_credit_limit
  * @property int|null $closing_day
  * @property int|null $due_day
  * @property string|null $last_four
@@ -45,7 +46,7 @@ class Account extends Model
 
     protected $fillable = [
         'user_id', 'name', 'type', 'currency', 'opening_balance', 'color', 'icon', 'is_archived',
-        'credit_limit', 'closing_day', 'due_day', 'last_four',
+        'credit_limit', 'available_credit_limit', 'closing_day', 'due_day', 'last_four',
         'connection_id', 'external_id', 'provider_balance', 'provider_synced_at',
         'provider_sync_from', 'provider_opening_set_at', 'provider_history_synced_at',
     ];
@@ -72,6 +73,7 @@ class Account extends Model
             'opening_balance' => MoneyCast::class,
             'is_archived' => 'boolean',
             'credit_limit' => MoneyCast::class,
+            'available_credit_limit' => MoneyCast::class,
             'closing_day' => 'integer',
             'due_day' => 'integer',
             'provider_balance' => MoneyCast::class,

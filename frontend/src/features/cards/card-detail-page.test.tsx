@@ -58,6 +58,7 @@ function statement(id: number, overrides: Partial<CardStatement> = {}): CardStat
     due_date: '2026-09-17',
     reported_total: null,
     total: 10000 * id,
+    computed_total: 10000 * id,
     paid: 1,
     remaining: 10000 * id - 1,
     status: 'open',
@@ -81,6 +82,8 @@ const nubank: Card = {
   due_day: 17,
   balance: -120000,
   limit: { used: 150000, projected: 0, available: 350000 },
+  used_limit: 150000,
+  available_limit: 350000,
   current_statement: null,
 }
 

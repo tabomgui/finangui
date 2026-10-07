@@ -33,6 +33,7 @@ function revertRow(array $overrides = []): ParsedRow
         externalId: $overrides['externalId'] ?? ('h:'.Str::random(12)),
         installment: $overrides['installment'] ?? null,
         pending: $overrides['pending'] ?? false,
+        meta: $overrides['meta'] ?? [],
     );
 }
 
@@ -197,36 +198,44 @@ it('reverter uma prevista adotada cujo modelo de recorrência foi excluído no m
 
 it('revert recalcula a fatura via AssignStatement quando a fatura salva no undo foi excluída (ex.: prune)', function () {
     $card = Account::factory()->creditCard()->create(['user_id' => $this->user->id]);
-    // Fechamento bem antigo, sem relação com a data da transação: garante que
-    // AssignStatement, ao reatribuir pela nova data, cria/acha uma fatura
-    // diferente desta, deixando-a órfã (sem isso o teste não provaria nada,
-    // já que ela continuaria em uso e não poderia ter sido excluída).
+    // Fechamento bem antigo, sem relação com a data da linha importada:
+    // garante que AssignStatement, ao reatribuir pela nova data (a adoção
+    // de uma prevista de recorrência ainda move a fatura pela data — ver
+    // MatchedTransactionOutcomes::adopt()), cria/acha uma fatura diferente
+    // desta, deixando-a órfã (sem isso o teste não provaria nada, já que
+    // ela continuaria em uso e não poderia ter sido excluída).
     $oldStatement = CardStatement::factory()->create(['account_id' => $card->id, 'closing_date' => '2020-01-03', 'due_date' => '2020-01-10']);
-    $pendingExisting = Transaction::factory()->create([
-        'account_id' => $card->id, 'external_id' => 'pend-1', 'status' => 'pending',
-        'date' => '2026-01-20', 'amount' => 3000, 'direction' => Direction::Out,
-        'description' => 'Compra Cartao', 'original_description' => 'Compra Cartao',
+    $recurrence = Recurrence::factory()->create([
+        'account_id' => $card->id, 'user_id' => $this->user->id,
+        'description' => 'Assinatura', 'amount' => 3000, 'direction' => Direction::Out,
+    ]);
+    $prevista = Transaction::factory()->create([
+        'account_id' => $card->id, 'user_id' => $this->user->id,
+        'status' => 'projected', 'source' => 'recurrence', 'recurrence_id' => $recurrence->id,
+        'recurrence_date' => '2026-01-20', 'date' => '2026-01-20',
+        'description' => 'Assinatura', 'original_description' => 'Assinatura',
+        'amount' => 3000, 'direction' => Direction::Out,
         'statement_id' => $oldStatement->id,
     ]);
 
     $batch = $this->ingest->handle(
         ImportBatch::factory()->create(['account_id' => $card->id, 'user_id' => $this->user->id, 'format' => ImportFormat::NubankCard]),
-        [revertRow(['description' => 'Compra Cartao', 'amount' => 3000, 'date' => '2026-01-25', 'externalId' => 'pend-1'])],
+        [revertRow(['description' => 'Assinatura', 'amount' => 3000, 'date' => '2026-01-25', 'externalId' => 'rec-card-1'])],
     );
 
-    $pendingExisting->refresh();
-    expect($pendingExisting->status->value)->toBe('posted')
-        ->and($pendingExisting->statement_id)->not->toBe($oldStatement->id);
+    $prevista->refresh();
+    expect($prevista->status->value)->toBe('posted')
+        ->and($prevista->statement_id)->not->toBe($oldStatement->id);
 
     // Simula a fatura antiga (agora vazia) tendo sido excluída depois da importação.
     CardStatement::whereKey($oldStatement->id)->delete();
 
     $this->revert->handle($batch);
 
-    $pendingExisting->refresh();
-    expect($pendingExisting->status->value)->toBe('pending')
-        ->and($pendingExisting->date->toDateString())->toBe('2026-01-20')
-        ->and($pendingExisting->statement_id)->not->toBeNull()
+    $prevista->refresh();
+    expect($prevista->status->value)->toBe('projected')
+        ->and($prevista->date->toDateString())->toBe('2026-01-20')
+        ->and($prevista->statement_id)->not->toBeNull()
         ->and(CardStatement::whereKey($oldStatement->id)->exists())->toBeFalse();
 });
 

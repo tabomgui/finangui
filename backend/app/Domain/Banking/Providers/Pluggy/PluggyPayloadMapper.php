@@ -4,6 +4,7 @@ namespace App\Domain\Banking\Providers\Pluggy;
 
 use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Data\ProviderBill;
+use App\Domain\Banking\Data\ProviderBillPayment;
 use App\Domain\Banking\Data\ProviderItem;
 use App\Domain\Banking\Data\ProviderTransaction;
 use App\Domain\Transactions\Enums\Direction;
@@ -93,6 +94,7 @@ final class PluggyPayloadMapper
             currency: (string) $data['currencyCode'],
             balanceCents: self::toCents((float) $data['balance']),
             creditLimitCents: isset($creditData['creditLimit']) ? self::toCents((float) $creditData['creditLimit']) : null,
+            availableCreditLimitCents: isset($creditData['availableCreditLimit']) ? self::toCents((float) $creditData['availableCreditLimit']) : null,
             closingDay: isset($creditData['balanceCloseDate']) ? self::dayOf((string) $creditData['balanceCloseDate']) : null,
             dueDay: isset($creditData['balanceDueDate']) ? self::dayOf((string) $creditData['balanceDueDate']) : null,
         );
@@ -177,11 +179,43 @@ final class PluggyPayloadMapper
      */
     public static function bill(array $data): ProviderBill
     {
+        /** @var list<array<string, mixed>> $payments */
+        $payments = (array) ($data['payments'] ?? []);
+
         return new ProviderBill(
             id: (string) $data['id'],
             dueDate: self::calendarDate((string) $data['dueDate']),
             closingDate: isset($data['billClosingDate']) ? self::calendarDate((string) $data['billClosingDate']) : null,
             totalCents: self::toCents((float) $data['totalAmount']),
+            payments: array_values(array_filter(array_map(self::billPayment(...), $payments))),
+        );
+    }
+
+    /**
+     * Sem `id` ou `paymentDate` o pagamento é descartado (null) em vez de
+     * mapeado com dado incompleto — dado corrompido/parcial não deveria
+     * acontecer, mas é melhor ignorar este pagamento do que deixar
+     * App\Domain\Banking\Support\CardPaymentMatcher casar por um id vazio.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private static function billPayment(array $data): ?ProviderBillPayment
+    {
+        $id = $data['id'] ?? null;
+        $paymentDate = $data['paymentDate'] ?? null;
+
+        if (! is_string($id) && ! is_int($id)) {
+            return null;
+        }
+
+        if (! is_string($paymentDate) || $paymentDate === '') {
+            return null;
+        }
+
+        return new ProviderBillPayment(
+            id: (string) $id,
+            date: self::calendarDate($paymentDate),
+            amountCents: self::toCents((float) ($data['amount'] ?? 0)),
         );
     }
 

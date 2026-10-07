@@ -59,10 +59,15 @@ final class CardOverview
             ->whereIn('card_statements.account_id', $accountIds);
 
         // DISTINCT ON (Postgres): uma linha por conta, a de menor closing_date
-        // entre as fechadas que ainda devem dinheiro (charges_net > payments_sum).
+        // entre as fechadas que ainda devem dinheiro — pelo total exibido
+        // (App\Domain\Cards\Models\CardStatement::total(): reported_total
+        // quando informado, senão charges_net), nunca pelo calculado puro:
+        // uma fatura fechada com reported_total menor que o calculado (ou
+        // já quitada pelo banco) não pode continuar aparecendo como "atual"
+        // só porque o cálculo local ainda mostra saldo.
         $closedWithDebt = DB::query()->fromSub($base(), 'cs')
             ->where('cs.closing_date', '<=', $today->toDateString())
-            ->whereRaw('(cs.charges_net - cs.payments_sum) > 0')
+            ->whereRaw('(COALESCE(cs.reported_total, cs.charges_net) - cs.payments_sum) > 0')
             ->orderBy('cs.account_id')
             ->orderBy('cs.closing_date')
             ->distinct(['cs.account_id'])

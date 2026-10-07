@@ -4,6 +4,7 @@ namespace App\Domain\Banking\Actions;
 
 use App\Domain\Banking\Enums\BankProviderName;
 use App\Domain\Banking\Enums\ConnectionStatus;
+use App\Domain\Banking\Enums\SyncTrigger;
 use App\Domain\Banking\Errors\BankCredentialsInUse;
 use App\Domain\Banking\Errors\ConnectionSyncInProgress;
 use App\Domain\Banking\Errors\ProviderAuthFailed;
@@ -126,7 +127,7 @@ final class SaveBankCredentials
 
         foreach ($connections as $connection) {
             try {
-                $this->queueConnectionSync->handle($connection);
+                $this->queueConnectionSync->handle($connection, SyncTrigger::Credentials);
             } catch (ConnectionSyncInProgress) {
                 // Nada a fazer: um sync já está enfileirado ou rodando.
             }

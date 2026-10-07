@@ -51,6 +51,7 @@ function statement(overrides: Partial<CardStatement> = {}): CardStatement {
     due_date: '2026-10-17',
     reported_total: null,
     total: 120000,
+    computed_total: 120000,
     paid: 0,
     remaining: 120000,
     status: 'open',
@@ -98,6 +99,7 @@ const transaction = {
   is_ignored: false,
   transfer_id: null,
   statement_id: null,
+  is_card_payment: false,
   installment: null,
 } as Transaction
 

@@ -57,10 +57,22 @@ function hasPendingSync(queryClient: QueryClient, connections: BankConnection[] 
 
     if (expired || changed) {
       pendingSyncs.delete(connectionId)
-      if (changed) invalidateLedger(queryClient)
+      if (changed) {
+        invalidateLedger(queryClient)
+        // A run criada por este sync (agendado, "Sincronizar agora" ou qualquer outro gatilho)
+        // já deve estar success/partial/error a essa altura — refaz a lista do histórico
+        // (sync-history-page.tsx) mesmo que ela não esteja aberta: sem isso, quem já estava na
+        // tela só saberia da run nova no próximo polling dela mesma, que só liga quando já há
+        // uma run `running` carregada (ver useBankSyncRuns).
+        void queryClient.invalidateQueries({ queryKey: queryKeys.bankSyncRuns(connectionId) })
+      }
       continue
     }
 
+    // Ainda pendente: a run pode ter sido criada só depois da última leitura de
+    // GET /bank-connections/{id}/sync-runs (fila/worker com atraso) — refazer aqui, a cada
+    // tique deste polling, garante que ela apareça sem esperar um reload manual.
+    void queryClient.invalidateQueries({ queryKey: queryKeys.bankSyncRuns(connectionId) })
     pending = true
   }
 
@@ -136,6 +148,10 @@ export function useSyncConnection() {
       const current = connections?.find((connection) => connection.id === id)
       markSyncRequested(queryClient, id, current)
       invalidateBankConnections(queryClient)
+      // Reseta a lista para a primeira página: a run criada pelo disparo manual entra no topo
+      // (mais recente primeiro) e começa `running` — a tela de histórico (`sync-history-page.tsx`)
+      // precisa vê-la sem esperar o polling de 3s do `useBankSyncRuns`.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bankSyncRuns(id) })
     },
   })
 }

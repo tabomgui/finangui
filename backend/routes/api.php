@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\Auth\RegisterController;
 use App\Http\Controllers\Api\V1\Auth\SessionController;
 use App\Http\Controllers\Api\V1\BankConnectionController;
 use App\Http\Controllers\Api\V1\BankCredentialController;
+use App\Http\Controllers\Api\V1\BankSyncRunController;
 use App\Http\Controllers\Api\V1\BudgetController;
 use App\Http\Controllers\Api\V1\CardController;
 use App\Http\Controllers\Api\V1\CardStatementController;
@@ -146,6 +147,13 @@ Route::prefix('v1')->group(function () {
         // credenciais da Pluggy cadastradas por este usuário.
         Route::get('bank-connections', [BankConnectionController::class, 'index']);
         Route::delete('bank-connections/{connection}', [BankConnectionController::class, 'destroy'])->whereNumber('connection');
+
+        // Histórico de sincronização: ver runs já gravadas também não
+        // depende de credenciais continuarem válidas agora — fora do
+        // EnsureBankingEnabled de propósito, mesmo raciocínio das duas rotas
+        // acima.
+        Route::get('bank-connections/{connection}/sync-runs', [BankSyncRunController::class, 'index'])->whereNumber('connection');
+        Route::get('bank-sync-runs/{run}', [BankSyncRunController::class, 'show'])->whereNumber('run');
 
         // EnsureBankingEnabled antes de qualquer FormRequest: sem credenciais
         // verificadas cadastradas por este usuário, a rota responde 409

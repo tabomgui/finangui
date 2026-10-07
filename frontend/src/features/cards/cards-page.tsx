@@ -115,7 +115,13 @@ function CardTile({ card }: { card: CardData }) {
         ) : (
           <p className="text-sm text-muted-foreground">Sem fatura em aberto</p>
         )}
-        <CardLimitBar credit_limit={card.credit_limit} limit={card.limit} currency={card.currency} />
+        <CardLimitBar
+          credit_limit={card.credit_limit}
+          used_limit={card.used_limit}
+          available_limit={card.available_limit}
+          limit={card.limit}
+          currency={card.currency}
+        />
       </Card>
     </Link>
   )

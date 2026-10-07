@@ -252,16 +252,32 @@ final class PluggyProvider implements BankProvider
         return null;
     }
 
+    /**
+     * GET /bills — paginada como /categories (`page`/`totalPages`): uma
+     * resposta sem essas chaves (visto nas respostas reais até agora) ainda
+     * funciona, já que o default de `totalPages` é 1 e o laço para depois
+     * da primeira página.
+     */
     public function bills(string $accountId): array
     {
-        $response = $this->request('GET', '/bills', ['query' => ['accountId' => $accountId]]);
-
         $bills = [];
+        $page = 1;
+        $totalPages = 1;
 
-        /** @var array<string, mixed> $raw */
-        foreach ((array) $response->json('results', []) as $raw) {
-            $bills[] = PluggyPayloadMapper::bill($raw);
-        }
+        do {
+            $response = $this->request('GET', '/bills', ['query' => ['accountId' => $accountId, 'page' => $page]]);
+
+            /** @var array<string, mixed> $data */
+            $data = $response->json();
+
+            /** @var array<string, mixed> $raw */
+            foreach ((array) ($data['results'] ?? []) as $raw) {
+                $bills[] = PluggyPayloadMapper::bill($raw);
+            }
+
+            $totalPages = max(1, (int) ($data['totalPages'] ?? 1));
+            $page++;
+        } while ($page <= $totalPages);
 
         return $bills;
     }

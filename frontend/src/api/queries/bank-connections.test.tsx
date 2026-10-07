@@ -141,6 +141,59 @@ describe('useBankConnections', () => {
     expect(optionsB.refetchInterval({ state: { data: [connection({ id: 42, last_synced_at: null })] } })).toBe(false)
   })
 
+  it('a cada tique pendente, invalida o histórico de sync da conexão (a run criada pode ter aparecido só agora)', async () => {
+    GET.mockResolvedValue({ data: { data: [connection({ id: 42, last_synced_at: null })] }, error: undefined, response: { ok: true } })
+    POST.mockResolvedValue({ data: undefined, error: undefined, response: { ok: true } })
+    const client = new QueryClient()
+    client.setQueryData(queryKeys.bankSyncRuns(42), { pages: [], pageParams: [] })
+
+    const { result: sync } = renderHook(() => useSyncConnection(), { wrapper: wrapper(client) })
+    const { result: list } = renderHook(() => useBankConnections(), { wrapper: wrapper(client) })
+    await act(async () => {
+      await vi.waitFor(() => expect(list.current.data).toHaveLength(1))
+    })
+
+    await act(async () => {
+      await sync.current.mutateAsync(42)
+    })
+    // onSuccess do próprio useSyncConnection já invalida uma vez; zera para provar que o
+    // predicado do polling de useBankConnections invalida de novo, por conta própria.
+    client.getQueryCache().find({ queryKey: queryKeys.bankSyncRuns(42) })?.setState({ isInvalidated: false })
+
+    const options = client.getQueryCache().find({ queryKey: queryKeys.bankConnections() })?.options as unknown as {
+      refetchInterval: (query: { state: { data: unknown } }) => number | false
+    }
+
+    expect(options.refetchInterval({ state: { data: [connection({ id: 42, last_synced_at: null })] } })).toBe(5_000)
+    expect(client.getQueryState(queryKeys.bankSyncRuns(42))?.isInvalidated).toBe(true)
+  })
+
+  it('quando o sync pendente termina (last_synced_at muda), também invalida o histórico de sync da conexão', async () => {
+    GET.mockResolvedValue({ data: { data: [connection({ id: 42, last_synced_at: null })] }, error: undefined, response: { ok: true } })
+    POST.mockResolvedValue({ data: undefined, error: undefined, response: { ok: true } })
+    const client = new QueryClient()
+    client.setQueryData(queryKeys.bankSyncRuns(42), { pages: [], pageParams: [] })
+
+    const { result: sync } = renderHook(() => useSyncConnection(), { wrapper: wrapper(client) })
+    const { result: list } = renderHook(() => useBankConnections(), { wrapper: wrapper(client) })
+    await act(async () => {
+      await vi.waitFor(() => expect(list.current.data).toHaveLength(1))
+    })
+
+    await act(async () => {
+      await sync.current.mutateAsync(42)
+    })
+    client.getQueryCache().find({ queryKey: queryKeys.bankSyncRuns(42) })?.setState({ isInvalidated: false })
+
+    const options = client.getQueryCache().find({ queryKey: queryKeys.bankConnections() })?.options as unknown as {
+      refetchInterval: (query: { state: { data: unknown } }) => number | false
+    }
+
+    options.refetchInterval({ state: { data: [connection({ id: 42, last_synced_at: '2026-10-03T12:00:00Z' })] } })
+
+    expect(client.getQueryState(queryKeys.bankSyncRuns(42))?.isInvalidated).toBe(true)
+  })
+
   it('para de pedir depois de 2 minutos mesmo sem mudança (expiração)', async () => {
     vi.useFakeTimers()
     try {

@@ -2,11 +2,15 @@
 
 Gerenciador financeiro pessoal, self-hosted. Backend Laravel 13 + Postgres; frontend React em `frontend/`.
 
-Telas disponíveis: Início (dashboard do mês, com saldo real num dia escolhido — soma só contas corrente/poupança/dinheiro, sem cartão de crédito —, distribuição de gastos por categoria e pendências de recorrência atrasada), Transações (com filtros e edição em massa), Recorrências (lançamentos que se repetem — aluguel, salário, assinaturas — com ocorrências previstas geradas automaticamente e reconhecidas quando o lançamento real chega), Regras (condições e grupos para categorizar automaticamente, com prévia ao vivo, aplicação retroativa às transações já existentes e sugestão por histórico quando nenhuma regra casa), Cartões (faturas com datas reais e editáveis, pagamento como transferência, parcelamentos e limite disponível), Importar extrato (CSV do Inter, Nubank conta e cartão e C6, ou OFX genérico; prévia mostra novas, duplicadas, adoção de lançamento manual e parcelas antes de confirmar; lote importado pode ser revertido), Orçamento (limite mensal por categoria de despesa, com exceção pontual por mês e gasto/restante/progresso calculados), Metas (por conta vinculada ou por aportes manuais, com progresso, data alvo e ritmo mensal necessário), Relatórios (evolução mensal de receita × despesa e comparação de gastos por categoria entre dois períodos, pela data da compra ou pelo vencimento da fatura), Contas, Categorias, Tags e Configurações.
+Telas disponíveis: Início (dashboard do mês, com saldo real num dia escolhido — soma só contas corrente/poupança/dinheiro, sem cartão de crédito —, distribuição de gastos por categoria e pendências de recorrência atrasada), Transações (com filtros e edição em massa), Recorrências (lançamentos que se repetem — aluguel, salário, assinaturas — com ocorrências previstas geradas automaticamente e reconhecidas quando o lançamento real chega), Regras (condições e grupos para categorizar automaticamente, com prévia ao vivo, aplicação retroativa às transações já existentes e sugestão por histórico quando nenhuma regra casa), Cartões (faturas com datas de fechamento/vencimento que se ajustam sozinhas pelo banco, total e limite usado/disponível informados pelo banco quando a conta está sincronizada, pagamento como transferência sem abater o total da fatura, parcelamentos), Importar extrato (CSV do Inter, Nubank conta e cartão e C6, ou OFX genérico; prévia mostra novas, duplicadas, adoção de lançamento manual e parcelas antes de confirmar; lote importado pode ser revertido), Orçamento (limite mensal por categoria de despesa, com exceção pontual por mês e gasto/restante/progresso calculados), Metas (por conta vinculada ou por aportes manuais, com progresso, data alvo e ritmo mensal necessário), Relatórios (evolução mensal de receita × despesa e comparação de gastos por categoria entre dois períodos, pela data da compra ou pelo vencimento da fatura), Contas, Categorias, Tags e Configurações.
 
 Notificações (sino no cabeçalho/barra lateral) avisam fatura vencendo, orçamento estourado, lançamento previsto não confirmado e banco pedindo reconexão.
 
 Transferências entre contas próprias são detectadas automaticamente ao final de cada importação de extrato ou sincronização bancária: quando as duas pernas (saída numa conta, entrada noutra, de qualquer origem — inclusive um lançamento manual já existente) formam um par, o sistema liga as duas sozinho quando é inequívoco ou sugere quando é ambíguo; também dá para buscar sob demanda. Sugestões ficam disponíveis para aceitar ou descartar, e também é possível juntar duas transações à mão ou desfazer uma transferência já ligada.
+
+Um pagamento de fatura (perna de transferência, pagamento informado pela fatura do banco, ou descrição que bate com um padrão conhecido como "pagamento recebido") nunca abate o total da fatura: ele conta só em "Pago" da fatura que quita, e aparece na lista de lançamentos com o rótulo "Pagamento" em vez de uma categoria. Um pagamento duplicado (o mesmo pagamento relatado duas vezes pelo banco) fica marcado como ignorado, com o motivo visível.
+
+Cada sincronização bancária fica registrada num histórico, em "Histórico" no card da conexão (`/conexoes/:id/sincronizacoes`): data e gatilho (agendada, manual, conexão, credenciais), status (sucesso, parcial ou erro), quantos lançamentos foram adicionados e eventuais avisos; o detalhe de cada execução mostra os lançamentos que ela trouxe. Dá para disparar uma sincronização na hora a partir dali.
 
 ## Desenvolvimento
 
@@ -96,7 +100,20 @@ Trocar o `APP_KEY` da instância (rotação de chave) também afeta as credencia
 
 Depois de conectar, cada conexão sincroniza automaticamente a cada 6 horas (contas, saldo, faturas e transações) e também pode ser sincronizada na hora pelo botão "Sincronizar agora". Essa sincronização roda em fila (job) e depende do **worker e do scheduler estarem no ar** — ambos já sobem com `make up` em desenvolvimento. `DB_QUEUE_RETRY_AFTER=660` e o `--timeout=600` do worker (já configurados em `docker-compose.yml`/`docker-compose.prod.yml`) cobrem o pior caso desse job; não reduza um sem o outro.
 
+Cada sincronização pede dados novos ao banco só quando os que ele tem estão velhos: 12 horas na sincronização automática, 30 minutos na manual — a Pluggy já atualiza o item sozinha uma vez por dia. Além dos lançamentos novos, toda sincronização confere de novo por data os últimos 40 dias, para captar uma alteração num lançamento já existente (confirmação de pendente, correção de descrição, fatura de uma compra que ainda não tinha fatura) sem perder uma edição manual. O histórico de sincronização de cada conexão guarda sempre as 20 execuções mais recentes, e descarta as com mais de 90 dias.
+
 Em produção, o nginx do serviço `web` já libera `frame-src https://connect.pluggy.ai` na Content-Security-Policy, necessário para o widget da Pluggy abrir o iframe de login do banco.
+
+### Após atualizar
+
+Esta versão passou a reconhecer pagamento de fatura (perna de transferência, pagamento informado pela fatura do banco ou descrição batendo com um padrão conhecido) em vez de contar como estorno, o que corrige o total de faturas já sincronizadas antes. A primeira sincronização de cada conexão depois de atualizar já aplica essa reconciliação sozinha, mas só dentro da janela normal de resync (últimos 40 dias por data); para aplicar ao histórico anterior a isso, rode, depois de atualizar:
+
+```bash
+make art c="cards:reconcile-payments --dry-run"   # mostra o que mudaria, sem gravar nada
+make art c="cards:reconcile-payments"              # aplica
+```
+
+Rodar sem `--user` reconcilia todos os usuários. Para um cartão conectado a um banco, o comando busca de novo as faturas do provedor e nunca reconsidera (nem reseta) nada anterior ao fechamento da fatura mais antiga que essa busca trouxe — não necessariamente todo o histórico do cartão; um cartão sem conexão (ou sem credenciais no momento) é reconciliado sem essa restrição, só pelas regras que não dependem de fatura do banco (transferência já ligada, padrão de descrição). Em produção, troque `make art` por `docker compose -f docker-compose.prod.yml --env-file backend/.env exec backend php artisan`.
 
 ## Importar categorias do finangui-js
 
@@ -181,12 +198,15 @@ Pontos de atenção específicos de produção:
 - **Scheduler**: `schedule:work`, igual ao Compose de dev — não precisa de cron do sistema.
   Ele roda diariamente às 00:10 o `PostDueInstallments`, que vira parcela projetada em lançada
   quando a data chega, às 00:20 o `GenerateRecurrences`, que gera as ocorrências previstas de
-  cada recorrência ativa, e às 07:00 o `SendAlerts`, que cria as notificações de fatura
-  vencendo, orçamento estourado e lançamentos previstos não confirmados, além de apagar
+  cada recorrência ativa, às 03:10 o `PruneSyncRuns`, que apaga o histórico de sincronização
+  bancária com mais de 90 dias (mantendo sempre as 20 execuções mais recentes de cada conexão) e
+  fecha qualquer execução presa em `running`, e às 07:00 o `SendAlerts`, que cria as notificações
+  de fatura vencendo, orçamento estourado e lançamentos previstos não confirmados, além de apagar
   notificações lidas com mais de 90 dias; sem o scheduler no ar, parcelas projetadas nunca são
   lançadas, recorrências não geram previstas novas (criar ou editar uma recorrência ainda gera
-  na hora, pela própria API) e essas notificações diárias não são criadas (a de banco pedindo
-  reconexão continua chegando na hora, fora do scheduler).
+  na hora, pela própria API), o histórico de sincronização bancária cresce sem limite e essas
+  notificações diárias não são criadas (a de banco pedindo reconexão continua chegando na hora,
+  fora do scheduler).
 
 ## Dados bancários
 

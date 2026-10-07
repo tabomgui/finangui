@@ -80,9 +80,7 @@ final class IngestionPlanner
 
             if ($existing !== null) {
                 $usedIds[$existing->id] = true;
-                $decisions[$index] = $this->isStillOpen($existing) && ! $row->pending
-                    ? new RowDecision($row, RowOutcome::Update, $existing->id, $existing)
-                    : new RowDecision($row, RowOutcome::Duplicate, $existing->id, $existing);
+                $decisions[$index] = $this->decisionForExisting($existing, $row, $format);
 
                 continue;
             }
@@ -217,6 +215,61 @@ final class IngestionPlanner
     }
 
     /**
+     * Mesmo `external_id`: a transição pending/projected → posted sempre vira
+     * Update (como antes de existir a sincronização bancária), em qualquer
+     * fonte (CSV, OFX ou Pluggy) — status, data e (fora de perna de
+     * transferência ou parcela de plano) valor acompanham o que a linha
+     * relata (ver MatchedTransactionOutcomes::update()). Uma transação já
+     * fechada (posted) só vira Update de novo quando o lote é da
+     * sincronização bancária (`format = Pluggy`) e o banco está relatando
+     * algo diferente do que já temos, dentro do que a sincronização
+     * atualiza de verdade nesse caso (original_description, e a fatura só
+     * numa compra comum de cartão — ver bankDataChanged(); nunca data/valor,
+     * que já estão fechados). Fora disso (CSV/OFX numa linha já posted, ou
+     * nada mudou), continua Duplicate.
+     */
+    private function decisionForExisting(Transaction $existing, ParsedRow $row, ?ImportFormat $format): RowDecision
+    {
+        if ($this->isStillOpen($existing) && ! $row->pending) {
+            return new RowDecision($row, RowOutcome::Update, $existing->id, $existing);
+        }
+
+        if ($format === ImportFormat::Pluggy && $this->bankDataChanged($existing, $row)) {
+            return new RowDecision($row, RowOutcome::Update, $existing->id, $existing);
+        }
+
+        return new RowDecision($row, RowOutcome::Duplicate, $existing->id, $existing);
+    }
+
+    /**
+     * Compara o que já temos com o que o banco relata agora, só nos campos
+     * que a sincronização de fato atualiza em MatchedTransactionOutcomes::update()
+     * (nunca data/valor — ver o comentário lá sobre por quê): o texto
+     * original do banco (`original_description`, sempre) e, só numa compra
+     * comum de cartão (Transaction::isPlainCardPurchase() — nunca
+     * transferência, parcela, pagamento de fatura ou fatura já escolhida à
+     * mão), a fatura via `meta.bill_id` (pela fatura local já ligada a esta
+     * transação — `statement()` precisa vir carregada, ver loadCandidates()).
+     * Categoria e `description` (o rótulo exibido, distinto de
+     * `original_description`) nunca entram aqui: quem decide se `description`
+     * acompanha é o próprio update(), não esta checagem.
+     */
+    private function bankDataChanged(Transaction $existing, ParsedRow $row): bool
+    {
+        if ($existing->original_description !== $row->description) {
+            return true;
+        }
+
+        if (! $existing->isPlainCardPurchase()) {
+            return false;
+        }
+
+        $billId = $row->meta['bill_id'] ?? null;
+
+        return is_string($billId) && $existing->statement?->external_id !== $billId;
+    }
+
+    /**
      * Todo candidato possível a alguma das cascatas: pela janela de datas
      * ou pelo external_id exato (pode estar fora da janela), e parcelas de
      * plano sem external_id numa janela mais larga (35 dias, ou perto da
@@ -262,7 +315,9 @@ final class IngestionPlanner
             ->get();
 
         $candidates = $windowed->concat($installmentCandidates)->unique('id')->values();
-        $candidates->load(['installmentPlan', 'tags', 'recurrence']);
+        // 'statement' só para decisionForExisting()/bankDataChanged() casar
+        // o bill_id do banco com a fatura local já ligada, sem N+1 por linha.
+        $candidates->load(['installmentPlan', 'tags', 'recurrence', 'statement']);
 
         return $candidates;
     }

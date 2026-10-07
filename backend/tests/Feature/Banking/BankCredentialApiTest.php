@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Banking\Enums\ConnectionStatus;
+use App\Domain\Banking\Enums\SyncTrigger;
 use App\Domain\Banking\Jobs\SyncConnection;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Models\BankCredential;
@@ -480,7 +481,8 @@ describe('PUT /bank-credentials', function () {
             'client_secret' => 'new-secret',
         ])->assertOk();
 
-        Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $errored->id);
+        Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $errored->id
+            && $job->trigger === SyncTrigger::Credentials);
         Queue::assertNotPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $active->id);
     });
 
