@@ -26,7 +26,6 @@ describe('rootViewEntries', () => {
         count: 3,
         direct: false,
         hasChildren: true,
-        percent: 75,
         percentLabel: '75%',
       },
       {
@@ -40,7 +39,6 @@ describe('rootViewEntries', () => {
         count: 3,
         direct: false,
         hasChildren: false,
-        percent: 25,
         percentLabel: '25%',
       },
     ])
@@ -75,7 +73,6 @@ describe('childViewEntries', () => {
 
     expect(entries.map((e) => e.key)).toEqual(['2', '1-direct'])
     expect(entries.every((e) => e.hasChildren === false)).toBe(true)
-    expect(entries[1].percent).toBe(25)
     expect(entries[1].percentLabel).toBe('25%')
   })
 })

@@ -22,12 +22,11 @@ export type SpendingViewEntry = {
   count: number
   direct: boolean
   hasChildren: boolean
-  percent: number
   /** Percentual pronto para exibir: "<1%" para fatia pequena mas não nula, nunca "0%" com gasto real. */
   percentLabel: string
 }
 
-type RawEntry = Omit<SpendingViewEntry, 'percent' | 'percentLabel' | 'displayColor'>
+type RawEntry = Omit<SpendingViewEntry, 'percentLabel' | 'displayColor'>
 
 function formatPercentLabel(amount: number, total: number): string {
   if (total <= 0 || amount <= 0) return '0%'
@@ -39,7 +38,6 @@ function finalize(entries: RawEntry[], total: number): SpendingViewEntry[] {
   const colors = assignEntryColors(entries)
   return entries.map((entry) => ({
     ...entry,
-    percent: total > 0 ? Math.round((entry.amount / total) * 100) : 0,
     percentLabel: formatPercentLabel(entry.amount, total),
     displayColor: colors.get(entry.key) ?? entry.color ?? '#6b7280',
   }))

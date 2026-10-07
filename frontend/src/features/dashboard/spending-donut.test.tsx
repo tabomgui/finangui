@@ -15,7 +15,6 @@ const payload = {
   count: 3,
   direct: false,
   hasChildren: false,
-  percent: 60,
   percentLabel: '60%',
   amountLabel: 'R$ 300,00',
 }
