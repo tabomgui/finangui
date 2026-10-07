@@ -134,6 +134,7 @@ function CardDetailContent({ cardId }: { cardId: number }) {
                 <StatementSummary
                   statement={selected}
                   currency={card.currency}
+                  limit={card}
                   onPay={() => setPaying(true)}
                   onEditDates={() => setEditingDates(true)}
                 />

@@ -1217,7 +1217,7 @@ export interface components {
                 projected: number;
                 available: number;
             };
-            used_limit: unknown;
+            used_limit: number;
             available_limit?: number;
             current_statement: components["schemas"]["CardStatementResource"] | null;
         };

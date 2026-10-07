@@ -1,4 +1,4 @@
-import { ArrowLeftRight } from 'lucide-react'
+import { ArrowLeftRight, Banknote } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import type { Transaction } from '@/api/types'
 import { CategoryIcon } from '@/components/shared/category-icon'
@@ -26,7 +26,11 @@ export function TransactionRow({ transaction, selectable = false, selected = fal
 
   const content = (
     <>
-      {isTransfer ? (
+      {transaction.is_card_payment ? (
+        <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <Banknote className="h-5 w-5" />
+        </span>
+      ) : isTransfer ? (
         <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
           <ArrowLeftRight className="h-5 w-5" />
         </span>
@@ -43,6 +47,9 @@ export function TransactionRow({ transaction, selectable = false, selected = fal
           {transaction.status === 'pending' && <Badge variant="outline">Pendente</Badge>}
           {transaction.status === 'projected' && <Badge variant="outline">Prevista</Badge>}
           {transaction.is_ignored && <Badge variant="secondary">Ignorada</Badge>}
+          {transaction.is_ignored && transaction.ignored_reason && (
+            <span className="min-w-0 truncate">{transaction.ignored_reason}</span>
+          )}
           {(transaction.tags ?? []).map((tag) => (
             <Badge key={tag.id} variant="secondary">
               #{tag.name}

@@ -29,8 +29,9 @@ final class CardResource extends JsonResource
 
         // max(0, ...): um saldo credor do cartão (provider_balance positivo,
         // ou mais pago do que usado no cálculo local) nunca é "limite usado"
-        // negativo.
-        $usedLimitCents = max(0, $hasBankData ? $this->resource->provider_balance->negated()->cents : $usage['used']->cents);
+        // negativo. Cast (int) só para o Scramble conseguir inferir o tipo do
+        // array (max() devolve int|float para ele).
+        $usedLimitCents = (int) max(0, $hasBankData ? $this->resource->provider_balance->negated()->cents : $usage['used']->cents);
 
         $availableLimitCents = match (true) {
             $hasBankData && $this->resource->available_credit_limit !== null => $this->resource->available_credit_limit->cents,

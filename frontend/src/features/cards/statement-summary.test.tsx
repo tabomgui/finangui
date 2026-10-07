@@ -1,7 +1,9 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { CardStatement } from '@/api/types'
+import type { Card, CardStatement } from '@/api/types'
 import { StatementSummary } from './statement-summary'
+
+type LimitProps = Pick<Card, 'used_limit' | 'available_limit' | 'credit_limit'>
 
 function statement(overrides: Partial<CardStatement> = {}): CardStatement {
   return {
@@ -22,8 +24,8 @@ function statement(overrides: Partial<CardStatement> = {}): CardStatement {
   }
 }
 
-function renderSummary(target: CardStatement) {
-  return render(<StatementSummary statement={target} currency="BRL" onPay={vi.fn()} onEditDates={vi.fn()} />)
+function renderSummary(target: CardStatement, limit: LimitProps = { used_limit: 0, available_limit: undefined, credit_limit: 0 }) {
+  return render(<StatementSummary statement={target} currency="BRL" limit={limit} onPay={vi.fn()} onEditDates={vi.fn()} />)
 }
 
 describe('StatementSummary', () => {
@@ -54,5 +56,17 @@ describe('StatementSummary', () => {
 
     expect(screen.getByText(/O banco informou/)).toHaveTextContent('R$ 1.500,00')
     expect(screen.getByText(/O banco informou/)).toHaveTextContent('R$ 1.420,00')
+  })
+
+  it('mostra o limite usado do cartão ao lado do total', () => {
+    renderSummary(statement(), { used_limit: 52000, available_limit: 748000, credit_limit: 800000 })
+
+    expect(screen.getByText('Limite usado R$ 520,00 de R$ 8.000,00')).toBeInTheDocument()
+  })
+
+  it('sem nenhum limite cadastrado ou do banco, o bloco de limite não aparece', () => {
+    renderSummary(statement(), { used_limit: 0, available_limit: undefined, credit_limit: 0 })
+
+    expect(screen.queryByText(/Limite usado/)).not.toBeInTheDocument()
   })
 })

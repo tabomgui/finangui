@@ -73,6 +73,18 @@ describe('transactionSubtitle', () => {
     expect(transactionSubtitle(transaction({}))).toBe('Sem categoria')
   })
 
+  it('pagamento de fatura reconhecido: "Pagamento", mesmo quando ligado a uma transferência', () => {
+    expect(
+      transactionSubtitle(
+        transaction({
+          is_card_payment: true,
+          transfer_id: 'uuid',
+          account: { id: 2, name: 'Nubank', type: 'credit_card', color: null, icon: null },
+        }),
+      ),
+    ).toBe('Pagamento · Nubank')
+  })
+
   it('recorrente', () => {
     expect(
       transactionSubtitle(

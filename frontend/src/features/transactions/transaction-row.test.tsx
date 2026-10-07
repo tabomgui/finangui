@@ -103,4 +103,24 @@ describe('TransactionRow', () => {
 
     expect(screen.queryByLabelText(/Categorizada|Categoria informada/)).not.toBeInTheDocument()
   })
+
+  it('pagamento de fatura: rótulo "Pagamento" no subtítulo, distinto de uma compra', () => {
+    renderRow(transaction({ is_card_payment: true, account: { id: 2, name: 'Nubank', type: 'credit_card', color: null, icon: null } }))
+
+    expect(screen.getByText('Pagamento', { exact: false })).toBeInTheDocument()
+  })
+
+  it('pagamento duplicado ignorado aparece esmaecido com o motivo', () => {
+    renderRow(
+      transaction({
+        is_card_payment: true,
+        is_ignored: true,
+        ignored_reason: 'Pagamento duplicado: já contabilizado em outro lançamento do cartão.',
+        account: { id: 2, name: 'Nubank', type: 'credit_card', color: null, icon: null },
+      }),
+    )
+
+    expect(screen.getByText('Ignorada')).toBeInTheDocument()
+    expect(screen.getByText('Pagamento duplicado: já contabilizado em outro lançamento do cartão.')).toBeInTheDocument()
+  })
 })
