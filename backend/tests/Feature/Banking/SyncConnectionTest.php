@@ -11,6 +11,7 @@ use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Banking\Jobs\SyncConnection;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Models\BankCredential;
+use App\Domain\Banking\Models\BankSyncRun;
 use App\Domain\Banking\Providers\FakeBankProvider;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Transactions\Enums\Direction;
@@ -127,6 +128,33 @@ it('sincroniza contas, faturas e transações, e marca a conexão como sincroniz
     expect(CardStatement::query()->where('account_id', $card->id)->where('external_id', 'bill-1')->exists())->toBeTrue();
     expect(Transaction::query()->where('account_id', $checking->id)->where('external_id', 'tx-1')->first()->source)
         ->toBe(TransactionSource::Pluggy);
+});
+
+it('job serializado antes deste deploy (sem trigger/jobUuid no payload) ainda sincroniza, caindo para trigger scheduled', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId]);
+    $this->fake->accountsByItem[$this->itemId] = [];
+
+    // Simula exatamente o que unserialize() faz com um payload antigo, de
+    // antes de $trigger/$jobUuid existirem na classe: nunca passa pelo
+    // construtor, então as duas propriedades ficam sem inicializar —
+    // diferente de `new SyncConnection($id)`, que já aplicaria os defaults
+    // do próprio construtor.
+    $job = (new ReflectionClass(SyncConnection::class))->newInstanceWithoutConstructor();
+    (new ReflectionProperty(SyncConnection::class, 'connectionId'))->setValue($job, $connection->id);
+
+    expect((new ReflectionProperty(SyncConnection::class, 'trigger'))->isInitialized($job))->toBeFalse()
+        ->and((new ReflectionProperty(SyncConnection::class, 'jobUuid'))->isInitialized($job))->toBeFalse();
+
+    app()->call([$job, 'handle']);
+
+    $connection->refresh();
+    expect($connection->status)->toBe(ConnectionStatus::Active)
+        ->and($connection->last_synced_at)->not->toBeNull();
+
+    $run = BankSyncRun::query()->where('connection_id', $connection->id)->firstOrFail();
+    expect($run->trigger)->toBe(SyncTrigger::Scheduled);
 });
 
 it('sync agendado: item com mais de 12h dispara refresh e espera a atualização a cada 3s, até o máximo de 90s', function () {

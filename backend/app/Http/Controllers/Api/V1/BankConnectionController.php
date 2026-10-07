@@ -8,6 +8,7 @@ use App\Domain\Banking\Actions\LinkAccounts;
 use App\Domain\Banking\Actions\MarkReconnected;
 use App\Domain\Banking\Actions\QueueConnectionSync;
 use App\Domain\Banking\Contracts\BankProviderFactory;
+use App\Domain\Banking\Enums\SyncTrigger;
 use App\Domain\Banking\Errors\ConnectionItemMismatch;
 use App\Domain\Banking\Errors\ConnectionSyncInProgress;
 use App\Domain\Banking\Models\BankConnection;
@@ -134,7 +135,7 @@ final class BankConnectionController extends Controller
 
     public function sync(BankConnection $connection, QueueConnectionSync $queueConnectionSync): JsonResponse
     {
-        $queueConnectionSync->handle($connection);
+        $queueConnectionSync->handle($connection, SyncTrigger::Manual);
 
         return response()->json(['data' => ['queued' => true]], 202);
     }
@@ -155,12 +156,14 @@ final class BankConnectionController extends Controller
      * Vincular e reconectar sempre tentam puxar um sync na hora, mas não é
      * um erro pra quem chamou se já tiver um a caminho (ex.: o agendador
      * pegou esta conexão entre o vínculo/reconexão e esta chamada) — só o
-     * botão "Sincronizar" explícito (`sync()`) precisa do 409.
+     * botão "Sincronizar" explícito (`sync()`) precisa do 409. As duas
+     * sempre passam pelo fluxo do widget da Pluggy (conectar/reconectar) —
+     * trigger `connect` no histórico de sincronização.
      */
     private function queueSyncIgnoringInProgress(QueueConnectionSync $queueConnectionSync, BankConnection $connection): void
     {
         try {
-            $queueConnectionSync->handle($connection);
+            $queueConnectionSync->handle($connection, SyncTrigger::Connect);
         } catch (ConnectionSyncInProgress) {
             // Nada a fazer: um sync já está enfileirado ou rodando.
         }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Domain\Banking\Enums\SyncTrigger;
 use App\Domain\Banking\Jobs\SyncConnection;
 use App\Domain\Banking\Jobs\SyncStaleConnections;
 use App\Domain\Banking\Models\BankConnection;
@@ -25,6 +26,7 @@ it('despacha SyncConnection só para conexões active/error vencidas (nunca sinc
     (new SyncStaleConnections)->handle();
 
     Queue::assertPushed(SyncConnection::class, 3);
+    Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->trigger === SyncTrigger::Scheduled);
     Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $neverSynced->id);
     Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $stale->id);
     Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $staleError->id);

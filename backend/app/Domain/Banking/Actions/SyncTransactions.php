@@ -203,9 +203,22 @@ final class SyncTransactions
         // IngestTransactions::insertNew()) — nunca em Update/Adopt/Replace/Swap
         // de uma transação já existente, então esta consulta devolve
         // exatamente o que este lote inseriu, sem precisar que
-        // IngestTransactions exponha isso no retorno.
-        $insertedIds = Transaction::query()->where('import_batch_id', $completed->id)->pluck('id')->all();
-        $updatedCount = (int) ($completed->stats['updated'] ?? 0);
+        // IngestTransactions exponha isso no retorno. source != installment
+        // exclui as parcelas futuras que App\Domain\Imports\Actions\ProjectInstallments::projectRemaining()
+        // projeta na mesma linha da parcela semente (mesmo import_batch_id):
+        // são projeção local, não algo que o banco relatou neste sync — não
+        // contam como "adicionado" no histórico de sincronização.
+        $insertedIds = Transaction::query()
+            ->where('import_batch_id', $completed->id)
+            ->where('source', '!=', TransactionSource::Installment->value)
+            ->pluck('id')
+            ->all();
+        // swapped/replaced também são "o banco relatou diferente" para uma
+        // transação que já existia (troca de id de uma pending, confirmação
+        // de parcela) — contam como atualização, igual a updated.
+        $updatedCount = (int) ($completed->stats['updated'] ?? 0)
+            + (int) ($completed->stats['swapped'] ?? 0)
+            + (int) ($completed->stats['replaced'] ?? 0);
 
         return new SyncTransactionsResult($insertedIds, $updatedCount);
     }

@@ -164,6 +164,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bank-connections/{connection}/sync-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["bankSyncRun.index"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/bank-sync-runs/{run}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["bankSyncRun.show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/budgets": {
         parameters: {
             query?: never;
@@ -1117,6 +1149,56 @@ export interface components {
          * @enum {string}
          */
         BankProviderName: "pluggy";
+        /** BankSyncRunDetailResource */
+        BankSyncRunDetailResource: {
+            id: number;
+            connection_id: number;
+            trigger: components["schemas"]["SyncTrigger"];
+            status: components["schemas"]["SyncRunStatus"];
+            started_at: string;
+            finished_at?: string;
+            refresh_requested: boolean;
+            provider_updated_at?: string;
+            added_count: number;
+            updated_count: number;
+            bills_count: number;
+            warnings: string[];
+            stats?: {
+                [key: string]: unknown;
+            } | null;
+            error?: string | null;
+            items: components["schemas"]["BankSyncRunItemResource"][];
+            items_truncated: boolean;
+        };
+        /** BankSyncRunItemResource */
+        BankSyncRunItemResource: {
+            id: number;
+            transaction_id?: number | null;
+            account_name: string;
+            date: string;
+            description: string;
+            amount: number;
+            direction: components["schemas"]["Direction"];
+        };
+        /** BankSyncRunResource */
+        BankSyncRunResource: {
+            id: number;
+            connection_id: number;
+            trigger: components["schemas"]["SyncTrigger"];
+            status: components["schemas"]["SyncRunStatus"];
+            started_at: string;
+            finished_at?: string;
+            refresh_requested: boolean;
+            provider_updated_at?: string;
+            added_count: number;
+            updated_count: number;
+            bills_count: number;
+            warnings: string[];
+            stats?: {
+                [key: string]: unknown;
+            } | null;
+            error?: string | null;
+        };
         /** CardResource */
         CardResource: {
             id: number;
@@ -1898,6 +1980,18 @@ export interface components {
             description: string;
             notes?: string | null;
         };
+        /**
+         * SyncRunStatus
+         * @description Status de uma linha de App\Domain\Banking\Models\BankSyncRun. `Partial` é terminou com avisos (`warnings` não vazio) — não um erro, mas algo que vale o usuário conferir.
+         * @enum {string}
+         */
+        SyncRunStatus: "running" | "success" | "partial" | "error";
+        /**
+         * SyncTrigger
+         * @description O que disparou uma execução de App\Domain\Banking\Jobs\SyncConnection, registrado em App\Domain\Banking\Models\BankSyncRun. Vem sempre de quem despacha o job (nunca decidido dentro dele): - Scheduled: App\Domain\Banking\Jobs\SyncStaleConnections (agendador, a   cada 6h); - Manual: botão "Sincronizar agora" (`POST /bank-connections/{id}/sync`,   App\Http\Controllers\Api\V1\BankConnectionController::sync()); - Connect: fluxo do widget da Pluggy — vínculo inicial de contas   (App\Domain\Banking\Actions\LinkAccounts) ou reconexão   (App\Domain\Banking\Actions\MarkReconnected) — e a própria conexão nova   (App\Domain\Banking\Actions\CreateConnection não dispara sync nenhum   antes do vínculo, mas conceitualmente é o mesmo fluxo); - Credentials: resync automático depois de salvar credenciais   (App\Domain\Banking\Actions\SaveBankCredentials), para conexões que   estavam em erro por falta/erro de credencial.
+         * @enum {string}
+         */
+        SyncTrigger: "scheduled" | "manual" | "connect" | "credentials";
         /** TagResource */
         TagResource: {
             id: number;
@@ -2716,6 +2810,80 @@ export interface operations {
                     };
                 };
             };
+        };
+    };
+    "bankSyncRun.index": {
+        parameters: {
+            query?: {
+                per_page?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The connection ID */
+                connection: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Paginated set of `BankSyncRunResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BankSyncRunResource"][];
+                        links: {
+                            first: string | null;
+                            last: string | null;
+                            prev: string | null;
+                            next: string | null;
+                        };
+                        meta: {
+                            /** @description Base path for paginator generated URLs. */
+                            path: string | null;
+                            /** @description Number of items shown per page. */
+                            per_page: number;
+                            /** @description The "cursor" that points to the next set of items. */
+                            next_cursor: string | null;
+                            /** @description The "cursor" that points to the previous set of items. */
+                            prev_cursor: string | null;
+                        };
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "bankSyncRun.show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The run ID */
+                run: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `BankSyncRunDetailResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["BankSyncRunDetailResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
         };
     };
     "budget.index": {

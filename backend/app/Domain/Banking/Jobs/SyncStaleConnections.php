@@ -3,6 +3,7 @@
 namespace App\Domain\Banking\Jobs;
 
 use App\Domain\Banking\Enums\ConnectionStatus;
+use App\Domain\Banking\Enums\SyncTrigger;
 use App\Domain\Banking\Models\BankConnection;
 use App\Models\User;
 use App\Support\UserContext;
@@ -45,7 +46,7 @@ final class SyncStaleConnections implements ShouldQueue
                 $connections = $stale(BankConnection::query())->get()->all();
 
                 foreach ($connections as $connection) {
-                    SyncConnection::dispatch($connection->id);
+                    SyncConnection::dispatch($connection->id, SyncTrigger::Scheduled);
                 }
             }),
         );

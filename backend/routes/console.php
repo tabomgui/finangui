@@ -1,5 +1,6 @@
 <?php
 
+use App\Domain\Banking\Jobs\PruneSyncRuns;
 use App\Domain\Banking\Jobs\SyncStaleConnections;
 use App\Domain\Cards\Jobs\PostDueInstallments;
 use App\Domain\Notifications\Jobs\SendAlerts;
@@ -14,5 +15,6 @@ Artisan::command('inspire', function () {
 
 Schedule::job(new PostDueInstallments)->dailyAt('00:10');
 Schedule::job(new SyncStaleConnections)->everySixHours();
+Schedule::job(new PruneSyncRuns)->dailyAt('03:10');
 Schedule::job(new GenerateRecurrences)->dailyAt('00:20');
 Schedule::job(new SendAlerts)->dailyAt('07:00');

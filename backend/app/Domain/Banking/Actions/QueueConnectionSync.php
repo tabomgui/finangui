@@ -3,6 +3,7 @@
 namespace App\Domain\Banking\Actions;
 
 use App\Domain\Banking\Enums\ConnectionStatus;
+use App\Domain\Banking\Enums\SyncTrigger;
 use App\Domain\Banking\Errors\ConnectionNeedsReauth;
 use App\Domain\Banking\Errors\ConnectionNotLinked;
 use App\Domain\Banking\Errors\ConnectionSyncInProgress;
@@ -21,10 +22,14 @@ use Illuminate\Support\Facades\Cache;
  * App\Domain\Rules\Actions\QueueRuleApplication; ver o comentário lá para
  * o porquê de usar Illuminate\Bus\UniqueLock::getKey() em vez de montar a
  * chave do lock à mão).
+ *
+ * $trigger vem de quem chama (ver App\Domain\Banking\Enums\SyncTrigger) e
+ * só importa se o job de fato chegar a rodar — vira o `trigger` do histórico
+ * de sincronização (App\Domain\Banking\Models\BankSyncRun).
  */
 final class QueueConnectionSync
 {
-    public function handle(BankConnection $connection): void
+    public function handle(BankConnection $connection, SyncTrigger $trigger): void
     {
         if ($connection->status === ConnectionStatus::PendingLink) {
             throw new ConnectionNotLinked;
@@ -34,7 +39,7 @@ final class QueueConnectionSync
             throw new ConnectionNeedsReauth;
         }
 
-        $probe = new SyncConnection($connection->id);
+        $probe = new SyncConnection($connection->id, $trigger);
         $lock = Cache::lock(UniqueLock::getKey($probe));
 
         if (! $lock->get()) {
@@ -43,6 +48,6 @@ final class QueueConnectionSync
 
         $lock->release();
 
-        SyncConnection::dispatch($connection->id);
+        SyncConnection::dispatch($connection->id, $trigger);
     }
 }

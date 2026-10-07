@@ -6,6 +6,7 @@ use App\Domain\Banking\Actions\LinkAccounts;
 use App\Domain\Banking\Data\ProviderAccount;
 use App\Domain\Banking\Data\ProviderItem;
 use App\Domain\Banking\Enums\ConnectionStatus;
+use App\Domain\Banking\Enums\SyncTrigger;
 use App\Domain\Banking\Errors\AccountNoLongerLinkable;
 use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Banking\Jobs\SyncConnection;
@@ -396,7 +397,8 @@ describe('vincular contas', function () {
 
         expect(BankConnection::find($this->connectionId)->settings)->toBeNull();
 
-        Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $this->connectionId);
+        Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $this->connectionId
+            && $job->trigger === SyncTrigger::Connect);
     });
 
     it('vincula a uma conta existente sem mudar nome, cor ou ícone', function () {
@@ -593,7 +595,8 @@ describe('sincronizar manualmente', function () {
             ->assertStatus(202)
             ->assertJsonPath('data.queued', true);
 
-        Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $connection->id);
+        Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $connection->id
+            && $job->trigger === SyncTrigger::Manual);
     });
 
     it('já na fila/rodando → 409 connection_sync_in_progress', function () {
@@ -643,7 +646,8 @@ describe('reconectado', function () {
         expect($connection->refresh()->status)->toBe(ConnectionStatus::Active)
             ->and($connection->last_error)->toBeNull();
 
-        Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $connection->id);
+        Queue::assertPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $connection->id
+            && $job->trigger === SyncTrigger::Connect);
     });
 
     it('sem item_id → 422', function () {

@@ -14,6 +14,7 @@ use App\Domain\Banking\Data\ProviderBill;
 use App\Domain\Banking\Data\ProviderCategory;
 use App\Domain\Banking\Data\ProviderTransaction;
 use App\Domain\Banking\Enums\ConnectionStatus;
+use App\Domain\Banking\Enums\SyncRunStatus;
 use App\Domain\Banking\Enums\SyncTrigger;
 use App\Domain\Banking\Errors\BankingDisabled;
 use App\Domain\Banking\Errors\ProviderAuthFailed;
@@ -21,10 +22,13 @@ use App\Domain\Banking\Errors\ProviderRequestFailed;
 use App\Domain\Banking\Errors\ProviderUnavailable;
 use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Banking\Models\BankCredential;
+use App\Domain\Banking\Models\BankSyncRun;
+use App\Domain\Banking\Models\BankSyncRunItem;
 use App\Domain\Banking\Support\AccountMapper;
 use App\Domain\Banking\Support\ItemRefresher;
 use App\Domain\Notifications\Notifications\ConnectionNeedsReauthNotification;
 use App\Domain\Notifications\Support\NotificationDeduper;
+use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
 use App\Support\UserContext;
 use Carbon\CarbonImmutable;
@@ -33,6 +37,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -72,6 +77,16 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
      */
     private const RESYNC_WINDOW_DAYS = 40;
 
+    /** Itens de BankSyncRun com snapshot; acima disso, só a contagem (added_count). */
+    private const MAX_RUN_ITEMS = 500;
+
+    /**
+     * uniqueFor() (1h) — público para App\Domain\Banking\Jobs\PruneSyncRuns
+     * calcular o limiar de "run presa" (started_at mais antigo que isso, com
+     * uma margem) sem duplicar o número.
+     */
+    public const UNIQUE_FOR_SECONDS = 3600;
+
     /** @var list<int> */
     public array $backoff = [60, 300, 900];
 
@@ -87,19 +102,93 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
     private ?ConnectionStatus $startStatus = null;
 
     /**
-     * $trigger tem default só para não quebrar quem despacha/instancia este
-     * job sem se importar com a origem (ex.: testes antigos, ou o probe de
-     * App\Domain\Banking\Actions\QueueConnectionSync, que nunca chega a
-     * chamar handle()); todo dispatch "de verdade" informa o valor certo
-     * (ver App\Domain\Banking\Jobs\SyncStaleConnections e
+     * Linha do histórico de sincronização desta execução — criada (ou
+     * reaproveitada de um retry, ver startOrResumeRun()) em lockedConnection(),
+     * sob a mesma trava; permanece null quando a conexão nem chega a ser
+     * elegível para sincronizar (ver o comentário de ShouldBeUnique na classe:
+     * uma run só existe quando o job de fato começou). `added_count`/
+     * `updated_count`/`bills_count`/os itens são gravados direto no banco a
+     * cada conta sincronizada (ver persistAccountProgress()), não acumulados
+     * aqui em memória — sem isso, um crash no meio do job perderia o
+     * progresso das contas já sincronizadas nesta tentativa. Os contadores
+     * abaixo (reconciliação, aviso, refresh) são a exceção: só fazem sentido
+     * como resultado do job inteiro, então ficam em memória e são gravados
+     * de uma vez em finishRun().
+     */
+    private ?BankSyncRun $syncRun = null;
+
+    /** @var list<string> */
+    private array $warnings = [];
+
+    private int $paymentsRecognized = 0;
+
+    private int $duplicatesIgnored = 0;
+
+    private int $transfersLinked = 0;
+
+    private bool $refreshRequested = false;
+
+    private ?CarbonImmutable $providerUpdatedAt = null;
+
+    /**
+     * $trigger e $jobUuid têm default só para não quebrar quem despacha/
+     * instancia este job sem se importar com a origem (ex.: testes antigos,
+     * ou o probe de App\Domain\Banking\Actions\QueueConnectionSync, que
+     * nunca chega a chamar handle()); todo dispatch "de verdade" informa o
+     * trigger certo (ver App\Domain\Banking\Jobs\SyncStaleConnections e
      * App\Domain\Banking\Actions\QueueConnectionSync) — fica registrado em
      * App\Domain\Banking\Models\BankSyncRun e também decide o limiar de
-     * "item velho" em App\Domain\Banking\Support\ItemRefresher.
+     * "item velho" em App\Domain\Banking\Support\ItemRefresher (ver trigger()
+     * — acessor defensivo contra um job serializado antes deste deploy).
+     *
+     * $jobUuid identifica esta execução lógica (o mesmo em todo retry —
+     * release() ou o retry automático do Laravel —, porque é gerado uma
+     * única vez aqui no construtor e sobrevive à serialização/deserialização
+     * do job entre tentativas; diferente em qualquer dispatch novo, mesmo
+     * desta mesma conexão) — ver startOrResumeRun()/jobUuid().
      */
     public function __construct(
         public int $connectionId,
         public SyncTrigger $trigger = SyncTrigger::Scheduled,
-    ) {}
+        public string $jobUuid = '',
+    ) {
+        if ($this->jobUuid === '') {
+            $this->jobUuid = (string) Str::uuid();
+        }
+    }
+
+    /**
+     * Acessor defensivo para $trigger: um job enfileirado antes deste deploy
+     * foi serializado sem esta propriedade (ela não existia ainda na
+     * classe) — unserialize() nunca preenche o default da classe para uma
+     * propriedade ausente no payload antigo, então ler $this->trigger direto
+     * nesse caso lançaria "must not be accessed before initialization".
+     * Usado em todo lugar interno que precisa do trigger; a propriedade
+     * pública continua existindo, para quem despacha/inspeciona um job
+     * recém-criado (nunca deserializado de antes deste deploy).
+     */
+    private function trigger(): SyncTrigger
+    {
+        // @phpstan-ignore isset.property (falso positivo: phpstan não modela unserialize() de um payload antigo sem esta propriedade — isset() é seguro e necessário aqui, ver o docblock acima)
+        return isset($this->trigger) ? $this->trigger : SyncTrigger::Scheduled;
+    }
+
+    /**
+     * Mesmo raciocínio de trigger(): um job de antes deste deploy não tem
+     * $jobUuid serializado. Sem um valor estável vindo do payload original,
+     * gera um novo (memoizado nesta instância) — na prática, trata um job
+     * assim como um dispatch novo em vez de tentar (e falhar) casar com uma
+     * run antiga.
+     */
+    private function jobUuid(): string
+    {
+        // @phpstan-ignore isset.property (falso positivo: mesmo motivo de trigger() acima)
+        if (! isset($this->jobUuid) || $this->jobUuid === '') {
+            $this->jobUuid = (string) Str::uuid();
+        }
+
+        return $this->jobUuid;
+    }
 
     public function uniqueId(): string
     {
@@ -108,7 +197,7 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
 
     public function uniqueFor(): int
     {
-        return 3600;
+        return self::UNIQUE_FOR_SECONDS;
     }
 
     public function handle(
@@ -170,13 +259,33 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             $credentialFingerprint = BankCredential::currentFingerprintFor($user);
 
             $item = $provider->item($connection->external_id);
-            $item = $itemRefresher->refreshAndWait($provider, $connection, $item, $syncStartedAt, $this->trigger)->item;
+            $refreshOutcome = $itemRefresher->refreshAndWait($provider, $connection, $item, $syncStartedAt, $this->trigger());
+            $item = $refreshOutcome->item;
+            // Um refresh pedido mas que falhou (warning preenchido) não
+            // conta como "pedimos atualização" do ponto de vista do
+            // histórico — é um pedido que não chegou a acontecer de verdade.
+            $this->refreshRequested = $refreshOutcome->refreshRequested && $refreshOutcome->warning === null;
+            $this->providerUpdatedAt = $item->lastUpdatedAt;
+
+            if ($refreshOutcome->warning !== null) {
+                $this->warnings[] = $refreshOutcome->warning;
+            }
 
             if ($item->needsReauth()) {
-                $this->writeStatus(
-                    ConnectionStatus::NeedsReauth,
-                    $item->errorMessage ?? 'O banco pediu para reconectar.',
-                );
+                // O texto do provedor (livre, pode variar) continua indo
+                // para a conexão (last_error, mostrado na tela) e para o
+                // log — a run guarda só a mensagem fixa em português, para o
+                // histórico de sincronização nunca expor texto arbitrário do
+                // banco.
+                $providerMessage = $item->errorMessage ?? 'O banco pediu para reconectar.';
+                $this->writeStatus(ConnectionStatus::NeedsReauth, $providerMessage);
+
+                Log::info('Pluggy: item pediu reconexão.', [
+                    'connection_id' => $connection->id,
+                    'provider_message' => $providerMessage,
+                ]);
+
+                $this->finishRun(SyncRunStatus::Error, 'O banco pediu para reconectar.');
 
                 return;
             }
@@ -219,7 +328,10 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             }
 
             foreach ($cardsToReconcile as [$card, $bills]) {
-                $reconcileCardPayments->handle($card, $bills, $this->reconciliationWindowFrom($bills));
+                $reconciliation = $reconcileCardPayments->handle($card, $bills, $this->reconciliationWindowFrom($bills));
+                $this->paymentsRecognized += $reconciliation['payments'];
+                $this->duplicatesIgnored += $reconciliation['duplicates'];
+                $this->transfersLinked += $reconciliation['transfers_linked'];
             }
         } catch (BankingDisabled $e) {
             // Acontece para conexões criadas sob as credenciais globais
@@ -232,6 +344,7 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             // PluggyProviderFactory). Falha permanente: não insiste.
             // $e->getMessage() já é a mensagem voltada ao usuário de BankingDisabled.
             $this->writeStatus(ConnectionStatus::Error, $e->getMessage());
+            $this->finishRun(SyncRunStatus::Error, $e->getMessage());
 
             return;
         } catch (ProviderAuthFailed) {
@@ -239,13 +352,17 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             // insiste — nenhuma tentativa seguinte mudaria o resultado.
             // Sem rethrow: o job termina "com sucesso" para a fila (sem
             // retry), o estado de erro é que carrega a notícia.
-            $this->writeStatus(ConnectionStatus::Error, 'A Pluggy recusou suas credenciais. Atualize em Configurações.');
+            $message = 'A Pluggy recusou suas credenciais. Atualize em Configurações.';
+            $this->writeStatus(ConnectionStatus::Error, $message);
+            $this->finishRun(SyncRunStatus::Error, $message);
 
             return;
         } catch (ProviderRequestFailed $e) {
             // Também permanente (4xx inesperado fora da autenticação): sem
             // rethrow, mesmo raciocínio do catch acima.
-            $this->writeStatus(ConnectionStatus::Error, $this->messageFor($e));
+            $message = $this->messageFor($e);
+            $this->writeStatus(ConnectionStatus::Error, $message);
+            $this->finishRun(SyncRunStatus::Error, $message);
 
             return;
         } catch (ProviderUnavailable $e) {
@@ -254,7 +371,9 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             // "estourar" o job — failed() só existe para exceção/timeout
             // inesperado, não para esta falha transitória já identificada.
             if ($this->attempts() >= $this->tries) {
-                $this->writeStatus(ConnectionStatus::Error, 'Não foi possível falar com o banco. Tentaremos de novo.');
+                $message = 'Não foi possível falar com o banco. Tentaremos de novo.';
+                $this->writeStatus(ConnectionStatus::Error, $message);
+                $this->finishRun(SyncRunStatus::Error, $message);
 
                 return;
             }
@@ -264,6 +383,10 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             // informada — mais precisa do que o backoff fixo padrão. Nunca
             // mais que 15 minutos: um Retry-After absurdamente alto não
             // pode travar o retry além do que $backoff já prevê no pior caso.
+            // A run NUNCA é fechada aqui: a próxima tentativa (release() ou
+            // o retry automático do rethrow abaixo) reaproveita a mesma linha
+            // (ver startOrResumeRun()) — só a tentativa que de fato termina
+            // grava o resultado final.
             $retryAfter = $e->retryAfter !== null ? min($e->retryAfter, 900) : null;
 
             if ($retryAfter !== null) {
@@ -276,6 +399,19 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
         }
 
         $this->writeStatus(ConnectionStatus::Active, null, $syncStartedAt, $credentialFingerprint);
+
+        if ($this->duplicatesIgnored > 0) {
+            // Reconciliação de pagamentos duplicados (ver
+            // App\Domain\Banking\Actions\ReconcileCardPayments): vale o
+            // aviso porque, embora automático, é algo que o usuário pode
+            // querer confirmar na lista de lançamentos da fatura. Pagamentos
+            // reconhecidos e transferências ligadas, por outro lado, são o
+            // resultado esperado de cada sync — ficam só em `stats`
+            // (ver reconcileStatsPayload()), sem gerar aviso.
+            $this->warnings[] = "{$this->duplicatesIgnored} pagamento(s) duplicado(s) de fatura foram ignorados automaticamente nesta sincronização.";
+        }
+
+        $this->finishRun($this->warnings === [] ? SyncRunStatus::Success : SyncRunStatus::Partial, null);
     }
 
     /**
@@ -328,10 +464,11 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
         }
 
         $bills = [];
+        $billsApplied = 0;
 
         if ($fresh->isCreditCard()) {
             $bills = $provider->bills($fresh->external_id);
-            $syncBills->handle($fresh, $bills);
+            $billsApplied = $syncBills->handle($fresh, $bills);
         }
 
         $usesFullHistory = $fresh->provider_history_synced_at === null;
@@ -339,7 +476,8 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             ? $provider->transactions($fresh->external_id, $fresh->isCreditCard(), $this->firstSyncFloor($fresh), null)
             : $this->recentWindowTransactions($provider, $fresh, $connection);
 
-        $syncTransactions->handle($provider, $fresh, $transactions, $syncStartedAt, $categoriesById);
+        $result = $syncTransactions->handle($provider, $fresh, $transactions, $syncStartedAt, $categoriesById);
+        $this->persistAccountProgress($fresh, count($result->insertedIds), $result->updatedCount, $billsApplied, $result->insertedIds);
 
         if ($usesFullHistory) {
             $accountMapper->markHistorySynced($fresh);
@@ -348,6 +486,85 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
         $accountMapper->settleOpeningBalance($fresh);
 
         return $fresh->isCreditCard() ? [$fresh, $bills] : null;
+    }
+
+    /**
+     * Grava `added_count`/`updated_count`/`bills_count` e os itens desta
+     * conta direto no banco, assim que ela termina — nunca acumulado em
+     * memória para gravar tudo de uma vez no fim do job: se o job
+     * cair no meio do caminho (conta 2 de 3, por exemplo), o progresso das
+     * contas já sincronizadas nesta tentativa fica gravado mesmo assim, e um
+     * retry (que reaproveita a mesma run — ver startOrResumeRun()) só
+     * adiciona o que ainda faltava, em vez de recontar do zero.
+     *
+     * @param  list<int>  $insertedIds
+     */
+    private function persistAccountProgress(Account $account, int $added, int $updated, int $bills, array $insertedIds): void
+    {
+        if ($this->syncRun === null) {
+            return;
+        }
+
+        BankSyncRun::query()->whereKey($this->syncRun->id)->incrementEach([
+            'added_count' => $added,
+            'updated_count' => $updated,
+            'bills_count' => $bills,
+        ]);
+
+        $this->persistAddedItems($account, $insertedIds);
+    }
+
+    /**
+     * Snapshot (`account_name`, `date`, `description`, `amount`, `direction`)
+     * do que foi de fato inserido nesta conta, para o histórico de
+     * sincronização (App\Domain\Banking\Models\BankSyncRunItem) continuar
+     * legível mesmo que a transação seja apagada depois. O limite de
+     * MAX_RUN_ITEMS é sempre lido do banco (contagem já gravada por contas
+     * anteriores desta execução, ou por tentativas anteriores do mesmo
+     * retry), nunca de um contador em memória, que reiniciaria do
+     * zero a cada tentativa e deixaria passar mais do que o limite depois
+     * de um retry.
+     *
+     * @param  list<int>  $insertedIds
+     */
+    private function persistAddedItems(Account $account, array $insertedIds): void
+    {
+        if ($this->syncRun === null || $insertedIds === []) {
+            return;
+        }
+
+        $alreadyStored = BankSyncRunItem::query()->where('run_id', $this->syncRun->id)->count();
+        $remaining = self::MAX_RUN_ITEMS - $alreadyStored;
+
+        if ($remaining <= 0) {
+            return;
+        }
+
+        $ids = array_slice($insertedIds, 0, $remaining);
+        $transactions = Transaction::query()->whereIn('id', $ids)->get();
+
+        if ($transactions->isEmpty()) {
+            return;
+        }
+
+        $now = CarbonImmutable::now();
+        $userId = $this->syncRun->user_id;
+        $runId = $this->syncRun->id;
+
+        $rows = $transactions->map(fn (Transaction $transaction) => [
+            'user_id' => $userId,
+            'run_id' => $runId,
+            'transaction_id' => $transaction->id,
+            'account_name' => $account->name,
+            'date' => $transaction->date->toDateString(),
+            'description' => $transaction->description,
+            'amount' => $transaction->amount->cents,
+            'direction' => $transaction->direction->value,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ])->all();
+
+        BankSyncRunItem::query()->insert($rows);
     }
 
     /**
@@ -465,15 +682,144 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
                 return $locked;
             }
 
+            $this->syncRun = $this->startOrResumeRun($locked);
+
             $settings = $locked->settings ?? [];
             $settings['sync_meta'] = [
                 'sync_started_at' => CarbonImmutable::now()->toIso8601String(),
                 'start_status' => $locked->status->value,
+                'sync_run_id' => $this->syncRun->id,
             ];
             $locked->update(['settings' => $settings]);
 
             return $locked;
         });
+    }
+
+    /**
+     * Reaproveita a BankSyncRun `running` desta conexão cujo `job_uuid` bate
+     * com $this->jobUuid() — um retry do próprio job (release() ou o
+     * rethrow de ProviderUnavailable, que o Laravel tenta de novo depois do
+     * backoff: o mesmo job, mesmo payload, mesmo jobUuid) — em vez de criar
+     * outra linha para a mesma sincronização lógica. Nunca casa só por
+     * estar `running`: qualquer outra `running` desta conexão (de um
+     * job_uuid diferente, ou sem nenhum — travou antes de existir esta
+     * coluna) é uma run presa (ex.: processo morto sem nunca chamar
+     * failed()) e é fechada como erro por closeStuckRuns(), nunca
+     * reaproveitada. Sem nenhuma `running` com este jobUuid, cria uma nova.
+     */
+    private function startOrResumeRun(BankConnection $connection): BankSyncRun
+    {
+        $jobUuid = $this->jobUuid();
+
+        $existing = BankSyncRun::query()
+            ->where('connection_id', $connection->id)
+            ->where('status', SyncRunStatus::Running)
+            ->where('job_uuid', $jobUuid)
+            ->first();
+
+        $this->closeStuckRuns($connection, $existing?->id);
+
+        return $existing ?? BankSyncRun::create([
+            'connection_id' => $connection->id,
+            'trigger' => $this->trigger(),
+            'job_uuid' => $jobUuid,
+            'status' => SyncRunStatus::Running,
+            'started_at' => CarbonImmutable::now(),
+        ]);
+    }
+
+    /**
+     * Fecha como erro ("Sincronização interrompida") toda run `running`
+     * desta conexão que não seja $exceptId — a run que este dispatch está
+     * mesmo reaproveitando (ou nenhuma, quando esta é uma primeira
+     * tentativa/novo dispatch). Protege contra uma run presa: um
+     * processo morto no meio de um sync nunca chama finishRun()/failed(),
+     * então sem isso ela ficaria `running` para sempre, bloqueando qualquer
+     * leitura futura que espere "não tem sync rodando" — o próximo dispatch
+     * desta conexão (agendado, manual, o que for) sempre limpa isso.
+     */
+    private function closeStuckRuns(BankConnection $connection, ?int $exceptId): void
+    {
+        BankSyncRun::query()
+            ->where('connection_id', $connection->id)
+            ->where('status', SyncRunStatus::Running)
+            ->when($exceptId !== null, fn ($q) => $q->where('id', '!=', $exceptId))
+            ->update([
+                'status' => SyncRunStatus::Error,
+                'finished_at' => CarbonImmutable::now(),
+                'error' => 'Sincronização interrompida',
+            ]);
+    }
+
+    /**
+     * Fecha $this->syncRun com o resultado final desta tentativa — chamado
+     * de todo caminho terminal de sync() (sucesso, needs_reauth, erro
+     * permanente, última tentativa de ProviderUnavailable) e de failed()
+     * (via finalizeRunIfRunning(), numa instância nova que nunca passou por
+     * aqui). Nunca chamado na saída transitória (release()/rethrow para
+     * retry): a run continua `running` para a próxima tentativa reaproveitar.
+     *
+     * `added_count`/`updated_count`/`bills_count`/os itens não entram aqui:
+     * já foram gravados direto no banco, conta por conta, por
+     * persistAccountProgress() — regravá-los aqui com o que esta
+     * instância acumulou em memória sobrescreveria (perderia) o que uma
+     * tentativa anterior do mesmo retry já tinha persistido.
+     *
+     * Protegido contra corrida (lockForUpdate + checar status === Running):
+     * se outra coisa já fechou esta run (não deveria acontecer, já que
+     * ShouldBeUnique impede duas execuções desta conexão ao mesmo tempo),
+     * não sobrescreve.
+     */
+    private function finishRun(SyncRunStatus $status, ?string $error): void
+    {
+        if ($this->syncRun === null) {
+            return;
+        }
+
+        $runId = $this->syncRun->id;
+        $attributes = [
+            'status' => $status,
+            'finished_at' => CarbonImmutable::now(),
+            'refresh_requested' => $this->refreshRequested,
+            'provider_updated_at' => $this->providerUpdatedAt,
+            'warnings' => $this->warnings,
+            'stats' => $this->reconcileStatsPayload(),
+            'error' => $error,
+        ];
+
+        DB::transaction(function () use ($runId, $attributes) {
+            $run = BankSyncRun::query()->whereKey($runId)->lockForUpdate()->first();
+
+            if ($run === null || $run->status !== SyncRunStatus::Running) {
+                return;
+            }
+
+            $run->update($attributes);
+        });
+    }
+
+    /**
+     * Resultado da reconciliação de pagamentos de fatura
+     * (App\Domain\Banking\Actions\ReconcileCardPayments) desta execução, em
+     * `stats` — pagamentos reconhecidos e transferências ligadas nunca geram
+     * aviso (ver sync()); duplicatas ignoradas também entram em `warnings`.
+     * Null quando não há nada de cartão nesta conexão (mais barato do que
+     * gravar zeros sempre).
+     *
+     * @return array{payments_recognized: int, duplicates_ignored: int, transfers_linked: int}|null
+     */
+    private function reconcileStatsPayload(): ?array
+    {
+        if ($this->paymentsRecognized === 0 && $this->duplicatesIgnored === 0 && $this->transfersLinked === 0) {
+            return null;
+        }
+
+        return [
+            'payments_recognized' => $this->paymentsRecognized,
+            'duplicates_ignored' => $this->duplicatesIgnored,
+            'transfers_linked' => $this->transfersLinked,
+        ];
     }
 
     /**
@@ -580,12 +926,21 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
      *
      * Lê settings.sync_meta (gravado por lockedConnection() na tentativa que
      * está terminando agora) direto do banco, porque esta é uma instância
-     * nova, sem $this->startStatus: pula a gravação quando a conexão já
-     * está `needs_reauth`/`pending_link` (outra coisa já decidiu o destino
-     * dela) ou quando ela está `active` e ficou assim depois que esta
-     * tentativa começou (reconectada, ou já sincronizada de novo com
-     * sucesso) — não regride um estado mais novo e melhor com um erro de
-     * uma tentativa velha.
+     * nova, sem $this->startStatus: pula a gravação do STATUS DA CONEXÃO
+     * quando ela já está `needs_reauth`/`pending_link` (outra coisa já
+     * decidiu o destino dela) ou quando ela está `active` e ficou assim
+     * depois que esta tentativa começou (reconectada, ou já sincronizada de
+     * novo com sucesso) — não regride um estado mais novo e melhor com um
+     * erro de uma tentativa velha.
+     *
+     * A run, ao contrário, é SEMPRE finalizada aqui,
+     * antes de qualquer um desses retornos antecipados: finalizeRunIfRunning()
+     * já só toca a run se ela ainda estiver `running`, então nunca sobrescreve
+     * nada — mas sem fechar antes dos retornos, uma run ficaria presa em
+     * `running` para sempre exatamente nesses casos (conexão virou
+     * needs_reauth/pending_link ou foi superada por um sync mais novo
+     * enquanto esta tentativa, sem nunca ter chegado a chamar
+     * finishRun(), ainda estava "em voo").
      */
     public function failed(Throwable $exception): void
     {
@@ -611,8 +966,14 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             DB::transaction(function () {
                 $locked = BankConnection::query()->whereKey($this->connectionId)->lockForUpdate()->first();
 
-                if ($locked === null
-                    || in_array($locked->status, [ConnectionStatus::NeedsReauth, ConnectionStatus::PendingLink], true)) {
+                if ($locked === null) {
+                    return;
+                }
+
+                $message = 'Não foi possível falar com o banco. Tentaremos de novo.';
+                $this->finalizeRunIfRunning($this->syncMeta($locked)['sync_run_id'], $message);
+
+                if (in_array($locked->status, [ConnectionStatus::NeedsReauth, ConnectionStatus::PendingLink], true)) {
                     return;
                 }
 
@@ -620,29 +981,51 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
                     return;
                 }
 
-                $locked->update(['status' => ConnectionStatus::Error, 'last_error' => 'Não foi possível falar com o banco. Tentaremos de novo.']);
+                $locked->update(['status' => ConnectionStatus::Error, 'last_error' => $message]);
             });
         });
     }
 
     /**
-     * @return array{sync_started_at: ?CarbonImmutable, start_status: ?ConnectionStatus}
+     * @return array{sync_started_at: ?CarbonImmutable, start_status: ?ConnectionStatus, sync_run_id: ?int}
      */
     private function syncMeta(BankConnection $connection): array
     {
         $meta = $connection->settings['sync_meta'] ?? null;
 
         if (! is_array($meta)) {
-            return ['sync_started_at' => null, 'start_status' => null];
+            return ['sync_started_at' => null, 'start_status' => null, 'sync_run_id' => null];
         }
 
         $startedAt = $meta['sync_started_at'] ?? null;
         $startStatus = $meta['start_status'] ?? null;
+        $syncRunId = $meta['sync_run_id'] ?? null;
 
         return [
             'sync_started_at' => is_string($startedAt) ? CarbonImmutable::parse($startedAt) : null,
             'start_status' => is_string($startStatus) ? ConnectionStatus::tryFrom($startStatus) : null,
+            'sync_run_id' => is_int($syncRunId) ? $syncRunId : null,
         ];
+    }
+
+    /**
+     * Fecha, direto no banco (sem passar por $this->syncRun — failed() roda
+     * numa instância recém-deserializada que nunca chamou lockedConnection()),
+     * a run desta execução quando ela ainda estiver `running`. $runId vem de
+     * settings.sync_meta (gravado por lockedConnection() na tentativa que
+     * está terminando agora); null quando o job nem chegou a rodar handle()
+     * desta vez (nada a fechar).
+     */
+    private function finalizeRunIfRunning(?int $runId, string $error): void
+    {
+        if ($runId === null) {
+            return;
+        }
+
+        BankSyncRun::query()
+            ->where('id', $runId)
+            ->where('status', SyncRunStatus::Running)
+            ->update(['status' => SyncRunStatus::Error, 'finished_at' => CarbonImmutable::now(), 'error' => $error]);
     }
 
     /**
