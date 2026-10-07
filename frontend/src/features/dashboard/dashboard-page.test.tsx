@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardSummary } from '@/api/types'
@@ -70,6 +70,7 @@ function dashboardData(overrides: Partial<DashboardSummary> = {}): DashboardSumm
     currency: 'BRL',
     total_balance: 100000,
     balance_date: '2026-10-06',
+    today: '2026-10-06',
     accounts: [],
     income: 0,
     expense: 0,
@@ -106,20 +107,20 @@ beforeEach(() => {
 })
 
 describe('DashboardPage: seletor de dia do saldo', () => {
-  it('sem ?dia na URL, o dia do saldo é hoje', () => {
+  it('sem ?dia na URL, não manda date (o backend já usa hoje como padrão)', () => {
     mockDashboard(dashboardData())
 
     renderPage('/?mes=2026-10')
 
-    expect(useDashboard).toHaveBeenCalledWith('2026-10', '2026-10-06')
+    expect(useDashboard).toHaveBeenCalledWith('2026-10', undefined)
   })
 
-  it('sem ?dia na URL, o dia do saldo é hoje mesmo num mês passado (mês e dia são independentes)', () => {
+  it('sem ?dia na URL, não manda date mesmo num mês passado (mês e dia são independentes)', () => {
     mockDashboard(dashboardData({ balance_date: '2026-10-06' }))
 
     renderPage('/?mes=2026-09')
 
-    expect(useDashboard).toHaveBeenCalledWith('2026-09', '2026-10-06')
+    expect(useDashboard).toHaveBeenCalledWith('2026-09', undefined)
   })
 
   it('com ?dia na URL, passa o dia pro hook', () => {
@@ -130,12 +131,13 @@ describe('DashboardPage: seletor de dia do saldo', () => {
     expect(useDashboard).toHaveBeenCalledWith('2026-10', '2026-09-15')
   })
 
-  it.each(['2099-01-01', '2026-02-30'])('?dia=%s é inválido: cai no padrão (hoje)', (invalidDay) => {
+  it.each(['2099-01-01', '2026-02-30'])('?dia=%s é inválido: ignora (não manda date) e tira da URL', async (invalidDay) => {
     mockDashboard(dashboardData())
 
     renderPage(`/?mes=2026-10&dia=${invalidDay}`)
 
-    expect(useDashboard).toHaveBeenCalledWith('2026-10', '2026-10-06')
+    expect(useDashboard).toHaveBeenCalledWith('2026-10', undefined)
+    await waitFor(() => expect(screen.getByTestId('location')).not.toHaveTextContent('dia='))
   })
 
   it('escolher um dia no calendário grava ?dia na URL e refaz a query com o novo dia', async () => {

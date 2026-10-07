@@ -21,6 +21,8 @@ type BalanceHeroProps = {
   totalBalance: number
   currency: string
   balanceDate: string
+  /** Hoje no fuso do app, vindo de `data.today` (ver `dashboard-page.tsx`) — repassado ao calendário sem recalcular. */
+  today: string
   onSelectDay: (day: string) => void
   onBackToToday: () => void
   isPlaceholderData?: boolean
@@ -30,6 +32,7 @@ export function BalanceHero({
   totalBalance,
   currency,
   balanceDate,
+  today,
   onSelectDay,
   onBackToToday,
   isPlaceholderData = false,
@@ -61,6 +64,7 @@ export function BalanceHero({
           <Suspense fallback={<Skeleton className="h-[300px] w-[272px]" />}>
             <BalanceDayPicker
               selected={balanceDate}
+              today={today}
               onSelect={(day) => {
                 onSelectDay(day)
                 setOpen(false)

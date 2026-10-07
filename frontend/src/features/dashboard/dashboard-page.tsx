@@ -1,5 +1,5 @@
 import { Landmark, TriangleAlert } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useBankConnections } from '@/api/queries/bank-connections'
 import { useMe } from '@/api/queries/auth'
@@ -31,9 +31,13 @@ export function DashboardPage() {
   // não do navegador — ver `dayFromParam`/`appToday` em `shares.ts`/`lib/date.ts`.
   const [currentMonth] = useState(() => appToday().slice(0, 7))
   const month = monthFromParam(params.get('mes'), currentMonth)
-  // Mês e dia são independentes (a seta de mês nunca muda o dia): o dia do saldo é sempre
-  // explícito, `?dia` se válido, senão hoje — nunca um "padrão" que dependa do mês exibido.
-  const day = dayFromParam(params.get('dia')) ?? appToday()
+  // Mês e dia são independentes (a seta de mês nunca muda o dia): `date` só vai pro servidor
+  // quando `?dia` é explícito e válido — sem ele, o backend já usa hoje como padrão, para
+  // qualquer mês (ver DashboardRequest::balanceDate()). `appToday()` aqui é só o fallback de
+  // validação antes da primeira carga (rejeitar um `?dia` futuro pelo relógio do navegador);
+  // depois de carregado, "hoje" de verdade vem de `data.today` (ver `today` abaixo).
+  const rawDay = params.get('dia')
+  const day = dayFromParam(rawDay)
   const { data, isPending, isError, isPlaceholderData, refetch } = useDashboard(month, day)
   const { data: connections } = useBankConnections()
   const { data: me } = useMe()
@@ -41,6 +45,23 @@ export function DashboardPage() {
   // Dono aqui, não dentro de `PendingCard`: resolver a última pendência zera a contagem e o card
   // pode desmontar (ex.: sem sugestão também) — o diálogo aberto não pode ir junto nesse momento.
   const [overdueOpen, setOverdueOpen] = useState(false)
+  // Hoje "de verdade" (fuso do app, servidor): só cai no fallback do navegador antes da
+  // primeira resposta, quando ainda não há `data.today` nenhum pra usar.
+  const today = data?.today ?? appToday()
+
+  // `?dia` inválido ou futuro (relógio do navegador na pior hipótese, ou link velho
+  // compartilhado) nunca fica preso na URL: sai por `replace`, sem entrar no histórico.
+  useEffect(() => {
+    if (!rawDay || day !== undefined) return
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('dia')
+        return next
+      },
+      { replace: true },
+    )
+  }, [rawDay, day, setParams])
 
   // A seta de mês não muda o dia escolhido: só atualiza `mes`, preservando `dia` se já estiver na URL.
   const setMonth = (next: string) => {
@@ -52,7 +73,7 @@ export function DashboardPage() {
   // Escolher hoje tira `?dia` da URL (mantém ela limpa); qualquer outro dia grava `?dia` explicitamente.
   const setDay = (next: string) => {
     const nextParams = new URLSearchParams(params)
-    if (next === appToday()) {
+    if (next === today) {
       nextParams.delete('dia')
     } else {
       nextParams.set('dia', next)
@@ -61,7 +82,7 @@ export function DashboardPage() {
   }
 
   // "Voltar para hoje" é só escolher hoje: sempre tira `?dia`, mesmo vindo de um mês passado.
-  const backToToday = () => setDay(appToday())
+  const backToToday = () => setDay(today)
 
   return (
     <>
@@ -74,6 +95,7 @@ export function DashboardPage() {
                 totalBalance={data.total_balance}
                 currency={data.currency}
                 balanceDate={data.balance_date}
+                today={today}
                 onSelectDay={setDay}
                 onBackToToday={backToToday}
                 isPlaceholderData={isPlaceholderData}

@@ -34,6 +34,7 @@ function renderHero(overrides: Partial<Parameters<typeof BalanceHero>[0]> = {}) 
       totalBalance={100000}
       currency="BRL"
       balanceDate="2026-10-04"
+      today="2026-10-06"
       onSelectDay={onSelectDay}
       onBackToToday={onBackToToday}
       {...overrides}
