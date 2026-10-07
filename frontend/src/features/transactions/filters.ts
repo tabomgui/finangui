@@ -29,6 +29,7 @@ const PARAM_NAMES: Record<keyof Omit<TransactionFilters, 'statement_id'>, string
 const EXCLUDED_FROM_COUNT = new Set(['search', 'category_exact'])
 
 const DATE_ONLY = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/
+const CURRENCY_CODE = /^[A-Z]{3}$/
 
 function positiveInt(value: string | null): number | undefined {
   if (value === null || !/^\d+$/.test(value)) return undefined
@@ -64,7 +65,7 @@ export function filtersFromParams(params: URLSearchParams): TransactionFilters {
     from: from && DATE_ONLY.test(from) ? from : undefined,
     to: to && DATE_ONLY.test(to) ? to : undefined,
     direction: direction === 'in' || direction === 'out' ? (direction as Direction) : undefined,
-    currency: currency ? currency : undefined,
+    currency: currency && CURRENCY_CODE.test(currency) ? currency : undefined,
     reportable: boolFlag(params.get(PARAM_NAMES.reportable)),
     search: search ? search : undefined,
   }

@@ -48,6 +48,14 @@ describe('filtros na URL', () => {
     expect(activeFilterCount(filtersFromParams(params))).toBe(4) // categoria + tipo + relatorio + moeda; exata não conta (modificador de categoria)
   })
 
+  it('ignora moeda que não tem o formato de código ISO (3 letras maiúsculas)', () => {
+    expect(filtersFromParams(new URLSearchParams('moeda=brl')).currency).toBeUndefined()
+    expect(filtersFromParams(new URLSearchParams('moeda=BR')).currency).toBeUndefined()
+    expect(filtersFromParams(new URLSearchParams('moeda=BRLL')).currency).toBeUndefined()
+    expect(filtersFromParams(new URLSearchParams('moeda=<script>')).currency).toBeUndefined()
+    expect(filtersFromParams(new URLSearchParams('moeda=USD')).currency).toBe('USD')
+  })
+
   it('lê sem_categoria=1 como no_category', () => {
     expect(filtersFromParams(new URLSearchParams('sem_categoria=1'))).toEqual({ no_category: true })
   })
