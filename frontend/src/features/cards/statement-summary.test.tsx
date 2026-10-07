@@ -11,6 +11,7 @@ function statement(overrides: Partial<CardStatement> = {}): CardStatement {
     due_date: '2026-10-17',
     reported_total: null,
     total: 120000,
+    computed_total: 120000,
     paid: 0,
     remaining: 0,
     status: 'open',
@@ -44,5 +45,14 @@ describe('StatementSummary', () => {
     renderSummary(statement({ status: 'partial', remaining: 5000 }))
 
     expect(screen.getByRole('button', { name: 'Pagar fatura' })).toBeEnabled()
+  })
+
+  it('aviso de divergência mostra o total calculado (computed_total), não o exibido', () => {
+    renderSummary(
+      statement({ status: 'closed', reported_total: 150000, total: 150000, computed_total: 142000, has_divergence: true }),
+    )
+
+    expect(screen.getByText(/O banco informou/)).toHaveTextContent('R$ 1.500,00')
+    expect(screen.getByText(/O banco informou/)).toHaveTextContent('R$ 1.420,00')
   })
 })

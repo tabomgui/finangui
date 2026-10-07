@@ -48,7 +48,7 @@ export function StatementSummary({ statement, currency, onPay, onEditDates }: St
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
             O banco informou {formatMoney(statement.reported_total, currency)}; o total calculado aqui é{' '}
-            {formatMoney(statement.total, currency)}.
+            {formatMoney(statement.computed_total, currency)}.
           </p>
         </div>
       )}

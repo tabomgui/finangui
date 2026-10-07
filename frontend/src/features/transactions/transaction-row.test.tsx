@@ -31,6 +31,7 @@ const transaction = (overrides: Partial<Transaction>): Transaction => ({
   is_ignored: false,
   transfer_id: null,
   statement_id: null,
+  is_card_payment: false,
   installment: null,
   ...overrides,
 })

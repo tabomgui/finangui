@@ -1135,6 +1135,8 @@ export interface components {
                 projected: number;
                 available: number;
             };
+            used_limit: unknown;
+            available_limit?: number;
             current_statement: components["schemas"]["CardStatementResource"] | null;
         };
         /** CardStatementResource */
@@ -1145,6 +1147,7 @@ export interface components {
             due_date: string;
             reported_total: number | null;
             total: number;
+            computed_total: number;
             paid: number;
             remaining: number;
             status: components["schemas"]["StatementStatus"];
@@ -1950,8 +1953,15 @@ export interface components {
                 rule_id: number;
             } | null;
             is_ignored: boolean;
+            ignored_reason?: string | null;
             transfer_id: string | null;
             statement_id: number | null;
+            /**
+             * @description Pagamento de fatura reconhecido (App\Domain\Cards\Actions\AssignStatement,
+             *     App\Domain\Banking\Actions\ReconcileCardPayments): nunca é cobrança/estorno
+             *     da fatura, mesmo sendo uma entrada no cartão.
+             */
+            is_card_payment: boolean;
             installment: {
                 plan_id: number;
                 number: number;
