@@ -41,7 +41,8 @@ class Transaction extends Model
         'user_id', 'account_id', 'date', 'amount', 'direction', 'currency',
         'description', 'original_description', 'description_locked', 'notes',
         'category_id', 'payee', 'status', 'source', 'external_id', 'categorized_by',
-        'is_ignored', 'transfer_id', 'raw', 'statement_id',
+        'is_ignored', 'ignored_reason', 'card_payment_locked', 'transfer_id', 'raw', 'statement_id',
+        'card_payment_statement_id',
         'installment_plan_id', 'installment_number', 'import_batch_id',
         'recurrence_id', 'recurrence_date',
     ];
@@ -57,6 +58,7 @@ class Transaction extends Model
         'status' => 'posted',
         'source' => 'manual',
         'is_ignored' => false,
+        'card_payment_locked' => false,
         'description_key' => '',
     ];
 
@@ -73,6 +75,7 @@ class Transaction extends Model
             'source' => TransactionSource::class,
             'description_locked' => 'boolean',
             'is_ignored' => 'boolean',
+            'card_payment_locked' => 'boolean',
             'raw' => 'array',
             'installment_number' => 'integer',
             'recurrence_date' => 'immutable_date',
@@ -147,6 +150,17 @@ class Transaction extends Model
         return $this->transfer_id !== null;
     }
 
+    /**
+     * Pagamento de fatura reconhecido (App\Domain\Cards\Actions\AssignStatement,
+     * App\Domain\Banking\Actions\ReconcileCardPayments): entrada no cartão que
+     * quita uma fatura, nunca contada como cobrança/estorno — ver
+     * App\Domain\Cards\Models\CardStatement::scopeWithTotals.
+     */
+    public function isCardPayment(): bool
+    {
+        return $this->card_payment_statement_id !== null;
+    }
+
     public function isInstallment(): bool
     {
         return $this->installment_plan_id !== null;
@@ -190,6 +204,10 @@ class Transaction extends Model
         $query->where('transactions.status', TransactionStatus::Posted->value)
             ->where('transactions.is_ignored', false)
             ->whereNull('transactions.transfer_id')
+            // Pagamento de fatura reconhecido sem perna de transferência
+            // (ver App\Domain\Banking\Actions\ReconcileCardPayments) é uma
+            // entrada no cartão, mas nunca é receita.
+            ->whereNull('transactions.card_payment_statement_id')
             ->where(fn (Builder $q) => $q->whereNull('transactions.category_id')
                 ->orWhereHas('category', fn (Builder $c) => $c->where('is_transfer', false)
                     ->where(fn (Builder $c2) => $c2->whereNull('parent_id')

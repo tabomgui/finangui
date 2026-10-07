@@ -3,8 +3,11 @@
 namespace App\Domain\Transactions\Actions;
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Banking\Support\CardPaymentDescriptionPatterns;
 use App\Domain\Cards\Actions\AssignStatement;
 use App\Domain\Cards\Errors\InstallmentLocked;
+use App\Domain\Cards\Support\StatementResolver;
+use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Errors\TransactionCurrencyMismatch;
 use App\Domain\Transactions\Models\Transaction;
 use App\Domain\Transfers\Errors\TransferLegLocked;
@@ -19,7 +22,10 @@ final class UpdateTransaction
     /** Campos que, numa parcela, seguem o parcelamento. */
     private const INSTALLMENT_LOCKED = ['account_id', 'date', 'amount', 'direction'];
 
-    public function __construct(private readonly AssignStatement $assignStatement) {}
+    public function __construct(
+        private readonly AssignStatement $assignStatement,
+        private readonly StatementResolver $statementResolver,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $input  dados já validados (parciais)
@@ -60,10 +66,43 @@ final class UpdateTransaction
             if ($transaction->isDirty('category_id')) {
                 $transaction->categorized_by = $transaction->category_id !== null ? 'manual' : null;
             }
+            // card_payment_locked só é relevante para App\Domain\Banking\Actions\ReconcileCardPayments,
+            // que só processa entradas (direction in) de contas de cartão — gravar a trava numa
+            // saída, ou numa conta comum, nunca seria lido por ela e só poluiria o dado.
+            if (array_key_exists('is_ignored', $input) && $transaction->isDirty('is_ignored') && $transaction->direction === Direction::In) {
+                $account = Account::query()->find($transaction->account_id);
+
+                if ($account !== null && $account->isCreditCard()) {
+                    $wasAutoIgnored = $transaction->ignored_reason !== null;
+
+                    // O usuário decidiu isso de propósito: o motivo automático
+                    // (ex.: pagamento duplicado) não se aplica mais, e
+                    // App\Domain\Banking\Actions\ReconcileCardPayments nunca
+                    // mais reconsidera este lançamento — ver card_payment_locked.
+                    $transaction->ignored_reason = null;
+                    $transaction->card_payment_locked = true;
+
+                    // Deixou de ignorar algo que tinha sido ignorado
+                    // automaticamente (ex.: duplicata) — se a descrição ainda
+                    // bate com um pagamento de fatura, reconhece na hora: a
+                    // reconciliação nunca mais vai tocar nisso de novo.
+                    if ($wasAutoIgnored && ! $transaction->is_ignored) {
+                        $this->remarkAsPaymentIfStillMatches($transaction, $account);
+                    }
+                }
+            }
 
             if ($statementId !== null) {
                 $this->assignStatement->handle($transaction, (int) $statementId);
-            } elseif ($transaction->isDirty(['account_id', 'date'])) {
+            } elseif ($transaction->isDirty(['account_id', 'date', 'direction'])) {
+                // Pagamento reconhecido virando saída (ex.: estava marcado
+                // como pagamento por engano): deixa de ser pagamento antes
+                // de recalcular, senão AssignStatement manteria a fatura
+                // antiga por ainda ver card_payment_statement_id preenchido.
+                if ($transaction->isDirty('direction') && $transaction->direction === Direction::Out && $transaction->isCardPayment()) {
+                    $transaction->card_payment_statement_id = null;
+                }
+
                 $this->assignStatement->handle($transaction);
             }
 
@@ -75,6 +114,34 @@ final class UpdateTransaction
 
             return $transaction->load(['account', 'category.parent', 'tags', 'installmentPlan', 'recurrence']);
         });
+    }
+
+    /**
+     * Reconhece na hora um crédito de cartão que o usuário acabou de deixar
+     * de ignorar: sem isso, ele ficaria "comum" (fatura pela data, contando
+     * como estorno) até a próxima reconciliação — que nunca mais vai rodar
+     * sobre ele, porque card_payment_locked já foi marcado acima. Só a
+     * descrição decide aqui (sem dado de fatura do banco disponível neste
+     * fluxo) — mesmo critério de App\Domain\Banking\Support\CardPaymentDescriptionPatterns
+     * usado por App\Domain\Banking\Actions\ReconcileCardPayments quando não
+     * há `payments[]`. Sem bater o padrão, ou sem dias de fechamento/vencimento
+     * ainda cadastrados, fica como um lançamento comum — a decisão do
+     * usuário já foi respeitada. $account já é um cartão (ver chamador).
+     */
+    private function remarkAsPaymentIfStillMatches(Transaction $transaction, Account $account): void
+    {
+        if (! CardPaymentDescriptionPatterns::matches($transaction->description)) {
+            return;
+        }
+
+        if ($account->closing_day === null || $account->due_day === null) {
+            return;
+        }
+
+        $statement = $this->statementResolver->forPayment($account, $transaction->date);
+
+        $transaction->statement_id = $statement->id;
+        $transaction->card_payment_statement_id = $statement->id;
     }
 
     /**

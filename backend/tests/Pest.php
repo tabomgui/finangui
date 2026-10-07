@@ -7,6 +7,7 @@ use App\Domain\Banking\Providers\FakeBankProvider;
 use App\Domain\Banking\Providers\FakeBankProviderFactory;
 use App\Domain\Imports\Support\Content;
 use App\Models\User;
+use Illuminate\Database\Migrations\Migration;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +23,20 @@ function actingAsUser(array $attributes = []): User
     test()->actingAs($user);
 
     return $user;
+}
+
+/**
+ * Instância nova de uma migration pelo nome do arquivo (sem a extensão), para
+ * testar up()/down() diretamente — ex.: o backfill de uma coluna nova, sem
+ * depender de migrate:fresh. `require` (não require_once): cada chamada
+ * devolve uma instância nova da classe anônima do arquivo.
+ */
+function migrationInstance(string $fileName): Migration
+{
+    /** @var Migration $migration */
+    $migration = require base_path("database/migrations/{$fileName}.php");
+
+    return $migration;
 }
 
 /** Conteúdo normalizado de um arquivo em tests/Fixtures/imports. */

@@ -536,6 +536,41 @@ it('mapeia faturas com closingDate opcional', function () {
         ->and($withoutClosing->totalCents)->toBe(98765);
 });
 
+it('busca faturas paginadas, juntando todas as páginas', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/bills*' => Http::sequence()
+            ->push(pluggyFixture('bills-page-1.json'))
+            ->push(pluggyFixture('bills-page-2.json')),
+    ]);
+
+    $bills = $this->provider->bills('00000000-0000-0000-0000-0000000000a3');
+
+    expect($bills)->toHaveCount(2)
+        ->and($bills[0]->id)->toBe('00000000-0000-0000-0000-0000000000d1')
+        ->and($bills[1]->id)->toBe('00000000-0000-0000-0000-0000000000d2');
+
+    $billRequests = Http::recorded(fn ($request) => str_contains($request->url(), '/bills'));
+    expect($billRequests)->toHaveCount(2);
+});
+
+it('mapeia os pagamentos informados dentro de uma fatura', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/bills*' => Http::response(pluggyFixture('bills.json')),
+    ]);
+
+    $bills = $this->provider->bills('00000000-0000-0000-0000-0000000000a3');
+
+    [$withPayment, $withoutPayment] = $bills;
+
+    expect($withPayment->payments)->toHaveCount(1)
+        ->and($withPayment->payments[0]->id)->toBe('00000000-0000-0000-0000-0000000000p1')
+        ->and($withPayment->payments[0]->date)->toBe('2026-09-20')
+        ->and($withPayment->payments[0]->amountCents)->toBe(99999)
+        ->and($withoutPayment->payments)->toBe([]);
+});
+
 it('calendarDate: hora UTC exatamente meia-noite usa a mesma data, sem converter de fuso', function () {
     Http::fake([
         'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),

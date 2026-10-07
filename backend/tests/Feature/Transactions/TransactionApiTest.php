@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Recurrences\Models\Recurrence;
 use App\Domain\Rules\Models\Rule;
@@ -285,6 +286,62 @@ it('bloqueia ignorar uma perna de transferência pelo endpoint de transações',
     $this->patchJson("/api/v1/transactions/{$leg->id}", ['is_ignored' => false])
         ->assertOk()
         ->assertJsonPath('data.is_ignored', false);
+});
+
+it('reenviar is_ignored com o mesmo valor não trava card_payment_locked', function () {
+    actingAsUser();
+    $transaction = Transaction::factory()->create(['is_ignored' => false]);
+
+    $this->patchJson("/api/v1/transactions/{$transaction->id}", ['is_ignored' => false])->assertOk();
+
+    expect($transaction->refresh()->card_payment_locked)->toBeFalse();
+});
+
+it('mudar is_ignored de verdade, numa entrada de cartão, trava card_payment_locked e limpa o motivo automático', function () {
+    $user = actingAsUser();
+    $card = Account::factory()->creditCard()->create(['user_id' => $user->id]);
+    $transaction = Transaction::factory()->create([
+        'account_id' => $card->id, 'direction' => 'in',
+        'is_ignored' => true, 'ignored_reason' => 'Pagamento duplicado: já contabilizado em outro lançamento do cartão.',
+    ]);
+
+    $this->patchJson("/api/v1/transactions/{$transaction->id}", ['is_ignored' => false])->assertOk();
+
+    $transaction->refresh();
+    expect($transaction->card_payment_locked)->toBeTrue()
+        ->and($transaction->ignored_reason)->toBeNull();
+});
+
+it('mudar is_ignored numa saída de cartão, ou em conta comum, nunca trava card_payment_locked (ReconcileCardPayments nunca lê isso fora de uma entrada de cartão)', function () {
+    $user = actingAsUser();
+    $card = Account::factory()->creditCard()->create(['user_id' => $user->id]);
+    $checking = Account::factory()->create(['user_id' => $user->id]);
+    $cardExpense = Transaction::factory()->create(['account_id' => $card->id, 'direction' => 'out', 'is_ignored' => false]);
+    $checkingCredit = Transaction::factory()->create(['account_id' => $checking->id, 'direction' => 'in', 'is_ignored' => false]);
+
+    $this->patchJson("/api/v1/transactions/{$cardExpense->id}", ['is_ignored' => true])->assertOk();
+    $this->patchJson("/api/v1/transactions/{$checkingCredit->id}", ['is_ignored' => true])->assertOk();
+
+    expect($cardExpense->refresh()->card_payment_locked)->toBeFalse()
+        ->and($checkingCredit->refresh()->card_payment_locked)->toBeFalse();
+});
+
+it('deixar de ignorar um crédito de cartão marcado automaticamente como duplicata reconhece de novo se a descrição ainda bate com um padrão de pagamento', function () {
+    $user = actingAsUser();
+    $card = Account::factory()->creditCard(closingDay: 5, dueDay: 12)->create(['user_id' => $user->id]);
+    $statement = CardStatement::factory()->create(['account_id' => $card->id, 'closing_date' => '2026-04-05', 'due_date' => '2026-04-12']);
+    $duplicate = Transaction::factory()->create([
+        'account_id' => $card->id, 'direction' => 'in', 'amount' => 12000, 'date' => '2026-04-14',
+        'description' => 'Pagamento recebido', 'is_ignored' => true,
+        'ignored_reason' => 'Pagamento duplicado: já contabilizado em outro lançamento do cartão.',
+    ]);
+
+    $this->patchJson("/api/v1/transactions/{$duplicate->id}", ['is_ignored' => false])->assertOk();
+
+    $duplicate->refresh();
+    expect($duplicate->card_payment_locked)->toBeTrue()
+        ->and($duplicate->card_payment_statement_id)->toBe($statement->id)
+        ->and($duplicate->statement_id)->toBe($statement->id);
 });
 
 it('não move transação para conta com moeda diferente', function () {

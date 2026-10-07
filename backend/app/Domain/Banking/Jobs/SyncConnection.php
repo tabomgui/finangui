@@ -3,12 +3,14 @@
 namespace App\Domain\Banking\Jobs;
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Banking\Actions\ReconcileCardPayments;
 use App\Domain\Banking\Actions\SyncAccounts;
 use App\Domain\Banking\Actions\SyncBills;
 use App\Domain\Banking\Actions\SyncTransactions;
 use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Contracts\BankProviderFactory;
 use App\Domain\Banking\Data\ProviderAccount;
+use App\Domain\Banking\Data\ProviderBill;
 use App\Domain\Banking\Data\ProviderCategory;
 use App\Domain\Banking\Enums\ConnectionStatus;
 use App\Domain\Banking\Errors\BankingDisabled;
@@ -33,7 +35,10 @@ use Throwable;
 
 /**
  * Sincroniza uma conexão bancária (item, contas, saldos, faturas,
- * transações, limpeza de pendentes antigos). Único por conexão: duas
+ * transações, limpeza de pendentes antigos, reconciliação de pagamentos de
+ * fatura — ver App\Domain\Banking\Actions\ReconcileCardPayments, chamada com
+ * os mesmos bills já buscados para App\Domain\Banking\Actions\SyncBills).
+ * Único por conexão: duas
  * sincronizações da mesma conexão em paralelo não fazem sentido —
  * App\Domain\Banking\Actions\QueueConnectionSync confere o lock antes de
  * despachar (mesmo padrão de App\Domain\Rules\Actions\QueueRuleApplication),
@@ -94,6 +99,7 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
         SyncAccounts $syncAccounts,
         SyncBills $syncBills,
         SyncTransactions $syncTransactions,
+        ReconcileCardPayments $reconcileCardPayments,
     ): void {
         // withoutGlobalScopes: não há usuário autenticado ainda (é
         // justamente o que este find serve para descobrir).
@@ -109,7 +115,7 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        UserContext::run($user, fn () => $this->sync($providerFactory, $user, $accountMapper, $itemRefresher, $syncAccounts, $syncBills, $syncTransactions));
+        UserContext::run($user, fn () => $this->sync($providerFactory, $user, $accountMapper, $itemRefresher, $syncAccounts, $syncBills, $syncTransactions, $reconcileCardPayments));
     }
 
     private function sync(
@@ -120,6 +126,7 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
         SyncAccounts $syncAccounts,
         SyncBills $syncBills,
         SyncTransactions $syncTransactions,
+        ReconcileCardPayments $reconcileCardPayments,
     ): void {
         $connection = $this->lockedConnection();
 
@@ -164,8 +171,18 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             /** @var list<string> $providerExternalIds */
             $providerExternalIds = array_map(fn (ProviderAccount $a): string => $a->id, $providerAccounts);
 
+            // Faturas de cada cartão sincronizado, guardadas aqui (em vez de reconciliar já
+            // dentro de syncAccount()) para a reconciliação de pagamentos rodar só depois que
+            // TODAS as contas desta conexão já estiverem sincronizadas: um pagamento cuja perna
+            // de débito está numa conta corrente sincronizada DEPOIS do cartão neste mesmo loop
+            // (ordem de App\Domain\Banking\Models\BankConnection::accounts(), não garantida)
+            // senão nunca acharia a outra perna a tempo de ligar a transferência neste sync —
+            // só no próximo.
+            /** @var list<array{0: Account, 1: list<ProviderBill>}> $cardsToReconcile */
+            $cardsToReconcile = [];
+
             foreach ($connection->accounts()->get() as $account) {
-                $this->syncAccount(
+                $cardSync = $this->syncAccount(
                     $account,
                     $connection,
                     $providerExternalIds,
@@ -176,6 +193,14 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
                     $syncTransactions,
                     $categoriesById,
                 );
+
+                if ($cardSync !== null) {
+                    $cardsToReconcile[] = $cardSync;
+                }
+            }
+
+            foreach ($cardsToReconcile as [$card, $bills]) {
+                $reconcileCardPayments->handle($card, $bills, $this->reconciliationWindowFrom($bills));
             }
         } catch (BankingDisabled $e) {
             // Acontece para conexões criadas sob as credenciais globais
@@ -235,8 +260,14 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
     }
 
     /**
+     * Sincroniza uma conta e devolve, só para um cartão, o par (conta, faturas) para a
+     * reconciliação de pagamentos (ver sync() acima) — nunca reconcilia aqui: isso rodaria antes
+     * de outras contas desta conexão (ex.: a conta corrente do débito de um pagamento) ainda
+     * terem sido sincronizadas nesta mesma execução.
+     *
      * @param  list<string>  $providerExternalIds
      * @param  array<string, ProviderCategory>  $categoriesById
+     * @return array{0: Account, 1: list<ProviderBill>}|null
      */
     private function syncAccount(
         Account $account,
@@ -248,9 +279,9 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
         SyncBills $syncBills,
         SyncTransactions $syncTransactions,
         array $categoriesById,
-    ): void {
+    ): ?array {
         if ($account->external_id === null) {
-            return;
+            return null;
         }
 
         if (! in_array($account->external_id, $providerExternalIds, true)) {
@@ -261,7 +292,7 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
                 'connection_id' => $connection->id, 'account_id' => $account->id,
             ]);
 
-            return;
+            return null;
         }
 
         // Relido: entre o início deste job e aqui, a conta pode ter sido
@@ -274,8 +305,10 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
                 'connection_id' => $connection->id, 'account_id' => $account->id,
             ]);
 
-            return;
+            return null;
         }
+
+        $bills = [];
 
         if ($fresh->isCreditCard()) {
             $bills = $provider->bills($fresh->external_id);
@@ -301,6 +334,29 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
         }
 
         $accountMapper->settleOpeningBalance($fresh);
+
+        return $fresh->isCreditCard() ? [$fresh, $bills] : null;
+    }
+
+    /**
+     * Janela re-sincronizada que a reconciliação de pagamentos reconsidera
+     * neste sync: os últimos 40 dias, ou desde o fechamento da fatura mais
+     * antiga buscada agora (App\Domain\Banking\Actions\ReconcileCardPayments::earliestBillClosing(),
+     * a mesma usada pelo comando `cards:reconcile-payments`), o que for mais
+     * distante no passado — uma fatura ainda sem pagamento à vista pode ter
+     * fechado há mais de 40 dias e ainda assim ser a mais antiga que
+     * acabamos de buscar. Fora dessa janela, ReconcileCardPayments nunca
+     * reconsidera nada neste sync (histórico mais antigo fica para o
+     * comando).
+     *
+     * @param  list<ProviderBill>  $bills
+     */
+    private function reconciliationWindowFrom(array $bills): CarbonImmutable
+    {
+        $floor = CarbonImmutable::now()->subDays(40);
+        $earliestBillClosing = ReconcileCardPayments::earliestBillClosing($bills);
+
+        return $earliestBillClosing !== null && $earliestBillClosing->lessThan($floor) ? $earliestBillClosing : $floor;
     }
 
     /**

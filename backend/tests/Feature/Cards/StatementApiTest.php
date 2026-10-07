@@ -17,10 +17,38 @@ it('mostra a fatura com totais e divergência', function () {
     $this->statement->update(['reported_total' => 1500]);
 
     $this->getJson("/api/v1/card-statements/{$this->statement->id}")->assertOk()
-        ->assertJsonPath('data.total', 1000)
+        ->assertJsonPath('data.total', 1500)
+        ->assertJsonPath('data.computed_total', 1000)
         ->assertJsonPath('data.reported_total', 1500)
         ->assertJsonPath('data.has_divergence', true)
         ->assertJsonPath('data.status', 'closed');
+});
+
+it('fatura parcialmente paga com total do banco: status partial, paid e remaining pelo total exibido', function () {
+    Transaction::factory()->create(['account_id' => $this->card->id, 'statement_id' => $this->statement->id, 'amount' => 10000]);
+    Transaction::factory()->create([
+        'account_id' => $this->card->id, 'statement_id' => $this->statement->id, 'card_payment_statement_id' => $this->statement->id,
+        'amount' => 4000, 'direction' => 'in',
+    ]);
+    $this->statement->update(['reported_total' => 10000]);
+
+    $this->getJson("/api/v1/card-statements/{$this->statement->id}")->assertOk()
+        ->assertJsonPath('data.status', 'partial')
+        ->assertJsonPath('data.paid', 4000)
+        ->assertJsonPath('data.remaining', 6000)
+        ->assertJsonPath('data.is_overdue', false);
+});
+
+it('fatura fechada com total do banco e vencimento já passado aparece como atrasada (is_overdue)', function () {
+    Transaction::factory()->create(['account_id' => $this->card->id, 'statement_id' => $this->statement->id, 'amount' => 8000]);
+    $this->statement->update(['reported_total' => 8000]);
+
+    $this->travelTo(now()->setDate(2026, 3, 25)->startOfDay());
+
+    $this->getJson("/api/v1/card-statements/{$this->statement->id}")->assertOk()
+        ->assertJsonPath('data.status', 'closed')
+        ->assertJsonPath('data.remaining', 8000)
+        ->assertJsonPath('data.is_overdue', true);
 });
 
 it('edita datas e total informado', function () {

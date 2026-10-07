@@ -69,8 +69,13 @@ final class TransactionResource extends JsonResource
             'categorized_by' => $this->categorized_by,
             'categorization' => $this->categorization(),
             'is_ignored' => $this->is_ignored,
+            'ignored_reason' => $this->when($this->ignored_reason !== null, fn () => $this->ignored_reason),
             'transfer_id' => $this->transfer_id,
             'statement_id' => $this->statement_id,
+            // Pagamento de fatura reconhecido (App\Domain\Cards\Actions\AssignStatement,
+            // App\Domain\Banking\Actions\ReconcileCardPayments): nunca é cobrança/estorno
+            // da fatura, mesmo sendo uma entrada no cartão.
+            'is_card_payment' => $this->card_payment_statement_id !== null,
             'installment' => $this->relationLoaded('installmentPlan') && $this->installmentPlan ? [
                 'plan_id' => $this->installmentPlan->id,
                 'number' => (int) $this->installment_number,

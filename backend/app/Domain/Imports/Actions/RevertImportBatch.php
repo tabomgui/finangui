@@ -146,7 +146,14 @@ final class RevertImportBatch
 
                 if ($hasStatement) {
                     if ($savedStatementId !== null && CardStatement::query()->whereKey($savedStatementId)->exists()) {
+                        // card_payment_statement_id só pode ser null ou igual
+                        // a statement_id (ver a migration de transactions):
+                        // uma transação já rastreada como pagamento continua
+                        // apontando para a fatura restaurada; as demais ficam
+                        // null, igual já estavam.
+                        $wasPayment = $transaction->isTransferLeg() || $transaction->card_payment_statement_id !== null;
                         $transaction->statement_id = $savedStatementId;
+                        $transaction->card_payment_statement_id = $wasPayment ? $savedStatementId : null;
                     } else {
                         // A fatura salva no undo não existe mais (ex.: prunada
                         // por ter ficado vazia depois da importação): a data

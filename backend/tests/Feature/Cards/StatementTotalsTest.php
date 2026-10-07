@@ -33,13 +33,38 @@ it('total = saídas − estornos; pagamentos contam à parte; ignoradas ficam fo
     linked(['amount' => 5000, 'direction' => Direction::Out, 'status' => TransactionStatus::Projected]);
     linked(['amount' => 3000, 'direction' => Direction::In]);
     linked(['amount' => 99900, 'direction' => Direction::Out, 'is_ignored' => true]);
-    linked(['amount' => 5000, 'direction' => Direction::In, 'transfer_id' => (string) Str::uuid()]);
+    linked([
+        'amount' => 5000, 'direction' => Direction::In, 'transfer_id' => (string) Str::uuid(),
+        'card_payment_statement_id' => test()->statement->id,
+    ]);
 
     $statement = loaded();
 
     expect($statement->total()->cents)->toBe(12000)
         ->and($statement->paid()->cents)->toBe(5000)
         ->and($statement->remaining()->cents)->toBe(7000);
+});
+
+it('transfer_id sozinho (sem card_payment_statement_id) não conta como pagamento: abate o total como estorno', function () {
+    linked(['amount' => 10000, 'direction' => Direction::Out]);
+    linked(['amount' => 4000, 'direction' => Direction::In, 'transfer_id' => (string) Str::uuid()]);
+
+    $statement = loaded();
+
+    expect($statement->total()->cents)->toBe(6000)
+        ->and($statement->paid()->cents)->toBe(0);
+});
+
+it('total exibido é o do banco quando a fatura está fechada e reported_total foi informado; computed_total continua o calculado', function () {
+    linked(['amount' => 10000, 'direction' => Direction::Out]);
+    test()->statement->update(['reported_total' => 12000]);
+
+    $closed = CarbonImmutable::parse('2026-03-05');
+    $open = CarbonImmutable::parse('2026-03-01');
+
+    expect(loaded()->total($closed)->cents)->toBe(12000)
+        ->and(loaded()->computedTotal()->cents)->toBe(10000)
+        ->and(loaded()->total($open)->cents)->toBe(10000);
 });
 
 it('saída de transferência a partir do cartão (saque) entra no total', function () {
@@ -56,10 +81,16 @@ it('status por data e pagamento', function () {
     expect(loaded()->status($before))->toBe(StatementStatus::Open)
         ->and(loaded()->status($after))->toBe(StatementStatus::Closed);
 
-    linked(['amount' => 4000, 'direction' => Direction::In, 'transfer_id' => (string) Str::uuid()]);
+    linked([
+        'amount' => 4000, 'direction' => Direction::In, 'transfer_id' => (string) Str::uuid(),
+        'card_payment_statement_id' => test()->statement->id,
+    ]);
     expect(loaded()->status($after))->toBe(StatementStatus::Partial);
 
-    linked(['amount' => 6000, 'direction' => Direction::In, 'transfer_id' => (string) Str::uuid()]);
+    linked([
+        'amount' => 6000, 'direction' => Direction::In, 'transfer_id' => (string) Str::uuid(),
+        'card_payment_statement_id' => test()->statement->id,
+    ]);
     expect(loaded()->status($after))->toBe(StatementStatus::Paid);
 });
 

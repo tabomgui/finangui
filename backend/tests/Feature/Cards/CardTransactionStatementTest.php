@@ -2,6 +2,7 @@
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Cards\Models\CardStatement;
+use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
 
 beforeEach(function () {
@@ -233,4 +234,33 @@ it('filtrar por fatura de outro usuário não retorna nada', function () {
     $otherStatement = CardStatement::factory()->create(['account_id' => $otherCard->id]);
 
     $this->getJson("/api/v1/transactions?statement_id={$otherStatement->id}")->assertOk()->assertJsonCount(0, 'data');
+});
+
+it('mover um pagamento reconhecido para outro cartão recalcula a fatura, não mantém a do cartão antigo', function () {
+    $otherCard = Account::factory()->creditCard(closingDay: 5, dueDay: 15)->create(['user_id' => $this->user->id]);
+    $oldStatement = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-03-10', 'due_date' => '2026-03-20']);
+    $transaction = Transaction::factory()->create([
+        'user_id' => $this->user->id, 'account_id' => $this->card->id, 'direction' => 'in', 'amount' => 5000,
+        'date' => '2026-03-05', 'statement_id' => $oldStatement->id, 'card_payment_statement_id' => $oldStatement->id,
+    ]);
+
+    $response = $this->patchJson("/api/v1/transactions/{$transaction->id}", ['account_id' => $otherCard->id])->assertOk();
+
+    $newStatementId = $response->json('data.statement_id');
+    expect($newStatementId)->not->toBe($oldStatement->id)
+        ->and(CardStatement::query()->findOrFail($newStatementId)->account_id)->toBe($otherCard->id)
+        ->and($response->json('data.is_card_payment'))->toBeTrue();
+});
+
+it('virar a direção de um pagamento reconhecido para saída limpa a marca de pagamento e recalcula a fatura pela data', function () {
+    $statement = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-03-10', 'due_date' => '2026-03-20']);
+    $transaction = Transaction::factory()->create([
+        'user_id' => $this->user->id, 'account_id' => $this->card->id, 'direction' => 'in', 'amount' => 5000,
+        'date' => '2026-03-05', 'statement_id' => $statement->id, 'card_payment_statement_id' => $statement->id,
+    ]);
+
+    $response = $this->patchJson("/api/v1/transactions/{$transaction->id}", ['direction' => 'out'])->assertOk();
+
+    expect($response->json('data.is_card_payment'))->toBeFalse()
+        ->and($response->json('data.statement_id'))->toBe($statement->id);
 });
