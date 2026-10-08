@@ -60,6 +60,13 @@ beforeEach(() => {
 })
 
 describe('GoalsPage', () => {
+  it('mostra o subtítulo do cabeçalho', () => {
+    goalsState = { data: [], isPending: false, isError: false }
+    renderPage()
+
+    expect(screen.getByText('Objetivos, progresso e aportes')).toBeInTheDocument()
+  })
+
   it('mostra esqueletos de carregamento', () => {
     renderPage()
 

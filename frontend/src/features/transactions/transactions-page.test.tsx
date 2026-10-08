@@ -37,6 +37,23 @@ function renderPage(initialEntry = '/transacoes') {
 }
 
 describe('TransactionsPage', () => {
+  it('mostra o subtítulo do cabeçalho', () => {
+    useTransactions.mockReturnValue({
+      data: { pages: [{ data: [] }] },
+      isPending: false,
+      isError: false,
+      isPlaceholderData: false,
+      isFetchingNextPage: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch,
+    })
+
+    renderPage()
+
+    expect(screen.getByText('Receitas, despesas e transferências')).toBeInTheDocument()
+  })
+
   it('mostra erro com opção de tentar de novo quando a busca falha', () => {
     useTransactions.mockReturnValue({
       data: undefined,

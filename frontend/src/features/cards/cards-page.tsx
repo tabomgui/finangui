@@ -33,7 +33,7 @@ export function CardsPage() {
         actions={
           <Button className={headerButton} onClick={() => setFormOpen(true)}>
             <Plus className="h-4 w-4" />
-            Novo cartão
+            <span className="sr-only sm:not-sr-only">Novo cartão</span>
           </Button>
         }
       />
