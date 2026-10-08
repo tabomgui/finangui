@@ -10,6 +10,7 @@ use App\Domain\Banking\Support\CardPaymentDryRunAborted;
 use App\Domain\Banking\Support\CardPaymentMatcher;
 use App\Domain\Cards\Actions\AssignStatement;
 use App\Domain\Cards\Models\CardStatement;
+use App\Domain\Cards\Support\StatementOrdering;
 use App\Domain\Cards\Support\StatementResolver;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Enums\TransactionSource;
@@ -45,6 +46,11 @@ use Illuminate\Support\Facades\DB;
  * fora da janela, nada é tocado. Uma transação com card_payment_locked (o
  * usuário editou is_ignored à mão) nunca é alterada, mas, se hoje vale como
  * pagamento, ainda entra na combinação como referência fixa — ver pool().
+ * `statement_locked` (o usuário escolheu a fatura à mão) é mais restrita:
+ * ainda reconhece o crédito como pagamento normalmente (sai de is_ignored,
+ * conta em paid()), mas nunca move statement_id — nem para a fatura que o
+ * próprio banco relata (ver statementFor()) nem ao perder o reconhecimento
+ * (ver resetUnrecognized()).
  */
 final class ReconcileCardPayments
 {
@@ -152,11 +158,32 @@ final class ReconcileCardPayments
     }
 
     /**
-     * Fechamento mais antigo entre as faturas informadas, ou null sem
+     * Referência mais antiga entre as faturas informadas, ou null sem
      * nenhuma — usada tanto por App\Domain\Banking\Jobs\SyncConnection
      * quanto pelo comando `cards:reconcile-payments` para nunca reconsiderar
      * (nem resetar) nada fora do período que as próprias faturas buscadas
      * agora cobrem.
+     *
+     * Para cada fatura, a referência é o menor entre dois pisos:
+     *
+     * - o fechamento, quando o banco o informa; sem isso (comum em faturas
+     *   antigas, de antes do cartão ter os dias atuais — ver
+     *   App\Domain\Banking\Actions\SyncBills), o próprio vencimento menos 40
+     *   dias (o vão máximo entre fechamento e vencimento — ver
+     *   App\Domain\Cards\Support\StatementOrdering::MAX_SPAN_DAYS —, a
+     *   estimativa mais cedo possível sem nenhum fechamento real);
+     * - cada data de payments[] desta fatura menos WINDOW_DAYS (a mesma
+     *   janela de App\Domain\Banking\Support\CardPaymentMatcher): um
+     *   pagamento informado antes mesmo do piso acima (não deveria
+     *   acontecer, mas o banco já mandou payments[] com datas estranhas)
+     *   não pode ficar fora da janela reconsiderada.
+     *
+     * NUNCA pula uma fatura por falta de fechamento: pular faria a janela
+     * calculada aqui começar tarde demais sempre que houver, entre as
+     * faturas buscadas, uma mais antiga sem fechamento e outra mais recente
+     * com fechamento — excluindo do pool() de handle() créditos de pagamento
+     * de faturas antigas que, de outra forma, casariam normalmente com os
+     * `payments[]` dessas mesmas faturas (ou com o padrão de descrição).
      *
      * @param  list<ProviderBill>  $bills
      */
@@ -165,14 +192,24 @@ final class ReconcileCardPayments
         $earliest = null;
 
         foreach ($bills as $bill) {
-            if ($bill->closingDate === null) {
-                continue;
+            $reference = $bill->closingDate !== null
+                ? CarbonImmutable::parse($bill->closingDate)
+                : CarbonImmutable::parse($bill->dueDate)->subDays(StatementOrdering::MAX_SPAN_DAYS);
+
+            foreach ($bill->payments as $payment) {
+                if ($payment->date === '') {
+                    continue;
+                }
+
+                $paymentFloor = CarbonImmutable::parse($payment->date)->subDays(CardPaymentMatcher::WINDOW_DAYS);
+
+                if ($paymentFloor->lessThan($reference)) {
+                    $reference = $paymentFloor;
+                }
             }
 
-            $closing = CarbonImmutable::parse($bill->closingDate);
-
-            if ($earliest === null || $closing->lessThan($earliest)) {
-                $earliest = $closing;
+            if ($earliest === null || $reference->lessThan($earliest)) {
+                $earliest = $reference;
             }
         }
 
@@ -249,7 +286,12 @@ final class ReconcileCardPayments
      * passagem; sem isso, mantém a fatura já escolhida numa reconciliação
      * anterior (nenhum dado novo do banco para justificar mudar); só na
      * primeira vez que este crédito é reconhecido é que cai para
-     * StatementResolver::forPayment().
+     * StatementResolver::forPayment(). Trava em `statement_locked` (o
+     * usuário escolheu a fatura à mão, ver
+     * App\Domain\Transactions\Actions\UpdateTransaction): a fatura nunca
+     * muda, nem para a do banco — statementFor() cai direto para
+     * CardStatement::query()->find($transaction->statement_id), ignorando
+     * $bankStatement.
      *
      * @return bool true quando algo de fato mudou
      */
@@ -259,14 +301,7 @@ final class ReconcileCardPayments
             return $this->markChosenTransferLeg($card, $transaction, $billExternalId);
         }
 
-        $bankStatement = $this->bankStatementFor($card, $billExternalId);
-        $alreadyRecognized = $transaction->card_payment_statement_id !== null;
-
-        $statement = match (true) {
-            $bankStatement !== null => $bankStatement,
-            $alreadyRecognized => CardStatement::query()->find($transaction->statement_id) ?? $this->resolver->forPayment($card, $transaction->date),
-            default => $this->resolver->forPayment($card, $transaction->date),
-        };
+        $statement = $this->statementFor($card, $transaction, $billExternalId);
 
         $needsUpdate = $transaction->is_ignored
             || $transaction->ignored_reason !== null
@@ -288,14 +323,40 @@ final class ReconcileCardPayments
     }
 
     /**
+     * Fatura a quitar por este crédito (não perna de transferência): nunca
+     * chamada com statement_locked, ou chamada e a fatura já escolhida pelo
+     * usuário é respeitada acima de qualquer coisa — nem a fatura do banco
+     * move statement_id longe dela (o CHECK do banco exige
+     * card_payment_statement_id = statement_id, então "reconhecer sem
+     * mover" só é possível alinhando os dois na fatura já travada).
+     */
+    private function statementFor(Account $card, Transaction $transaction, ?string $billExternalId): CardStatement
+    {
+        if ($transaction->statement_locked) {
+            return CardStatement::query()->find($transaction->statement_id) ?? $this->resolver->forPayment($card, $transaction->date);
+        }
+
+        $bankStatement = $this->bankStatementFor($card, $billExternalId);
+        $alreadyRecognized = $transaction->card_payment_statement_id !== null;
+
+        return match (true) {
+            $bankStatement !== null => $bankStatement,
+            $alreadyRecognized => CardStatement::query()->find($transaction->statement_id) ?? $this->resolver->forPayment($card, $transaction->date),
+            default => $this->resolver->forPayment($card, $transaction->date),
+        };
+    }
+
+    /**
      * Crédito já em perna de transferência: nunca recalcula statement_id por
      * conta própria — só espelha o marcador, ou, quando uma fatura do banco
      * casa com este crédito e ele não veio de App\Domain\Cards\Actions\PayStatement
      * (sinal: source pluggy — um crédito criado por PayStatement é sempre
-     * source manual, com a fatura já escolhida de propósito), move para a
-     * fatura do banco através de AssignStatement — a mesma via que qualquer
-     * outra mudança de fatura usa, para statement_id e card_payment_statement_id
-     * nunca saírem de sincronia.
+     * source manual, com a fatura já escolhida de propósito) nem está
+     * `statement_locked` (o usuário escolheu a fatura à mão — nem a fatura
+     * do banco a move), move para a fatura do banco através de
+     * AssignStatement — a mesma via que qualquer outra mudança de fatura
+     * usa, para statement_id e card_payment_statement_id nunca saírem de
+     * sincronia.
      */
     private function markChosenTransferLeg(Account $card, Transaction $transaction, ?string $billExternalId): bool
     {
@@ -303,6 +364,7 @@ final class ReconcileCardPayments
 
         if ($bankStatement !== null
             && $transaction->source === TransactionSource::Pluggy
+            && ! $transaction->statement_locked
             && $bankStatement->id !== $transaction->statement_id) {
             $this->assignStatement->handle($transaction, $bankStatement->id);
             $transaction->save();
@@ -337,7 +399,12 @@ final class ReconcileCardPayments
      * tinha marca de pagamento ou estava ignorada por esta mesma rotina,
      * volta a ser um lançamento comum (fatura pela data, como qualquer
      * entrada sem pagamento reconhecido) — nunca por outro motivo de
-     * is_ignored, que não é nosso para desfazer.
+     * is_ignored, que não é nosso para desfazer. `statement_locked` é mais
+     * restrita, igual a markChosen()/statementFor(): só o marcador de
+     * pagamento (e o ignorado de duplicata) voltam ao neutro —
+     * `statement_id` nunca é recalculado por forDate(), a fatura que o
+     * usuário escolheu à mão não é nossa para mudar mesmo quando o crédito
+     * deixa de ser reconhecido como pagamento.
      */
     private function resetUnrecognized(Account $card, Transaction $transaction): void
     {
@@ -347,14 +414,17 @@ final class ReconcileCardPayments
             return;
         }
 
-        $statement = $this->resolver->forDate($card, $transaction->date);
-
-        $transaction->update([
+        $attributes = [
             'is_ignored' => $wasDuplicateIgnore ? false : $transaction->is_ignored,
             'ignored_reason' => $wasDuplicateIgnore ? null : $transaction->ignored_reason,
             'card_payment_statement_id' => null,
-            'statement_id' => $statement->id,
-        ]);
+        ];
+
+        if (! $transaction->statement_locked) {
+            $attributes['statement_id'] = $this->resolver->forDate($card, $transaction->date)->id;
+        }
+
+        $transaction->update($attributes);
     }
 
     /**

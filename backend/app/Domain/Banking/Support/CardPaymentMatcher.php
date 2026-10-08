@@ -35,7 +35,8 @@ use Carbon\CarbonImmutable;
  */
 final class CardPaymentMatcher
 {
-    private const WINDOW_DAYS = 3;
+    /** Também usada por App\Domain\Banking\Actions\ReconcileCardPayments::earliestBillClosing(). */
+    public const WINDOW_DAYS = 3;
 
     /**
      * @param  list<CardPaymentCandidate>  $candidates

@@ -213,6 +213,49 @@ it('o mesmo caso sem bill_id nenhum também resolve pela data, nunca pela fatura
     expect($current->paid()->cents)->toBe(0);
 });
 
+it('fatura antiga sem fechamento informado continua reconsiderada pela janela de SyncConnection::reconciliationWindowFrom, mesmo muito além dos 40 dias padrão (abril)', function () {
+    // "Hoje" bem depois de abril: o piso padrão de 40 dias (RESYNC_WINDOW_DAYS)
+    // por si só NUNCA alcançaria abril — só earliestBillClosing() (chamada
+    // por reconciliationWindowFrom()) caindo para o vencimento da fatura
+    // antiga sem closingDate estende a janela até lá.
+    $this->travelTo(CarbonImmutable::parse('2026-09-10'));
+
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+    $card = Account::factory()->creditCard(closingDay: 5, dueDay: 12)->create(['user_id' => $this->user->id, 'connection_id' => $connection->id, 'external_id' => 'cartao-abril']);
+
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId]);
+    $this->fake->accountsByItem[$this->itemId] = [
+        providerAccount(['id' => 'cartao-abril', 'kind' => 'credit_card', 'balanceCents' => 45000, 'creditLimitCents' => 300000]),
+    ];
+
+    $this->fake->billsByAccount['cartao-abril'] = [
+        providerBill([
+            'id' => 'fatura-antiga-abril', 'closingDate' => null, 'dueDate' => '2026-04-10', 'totalCents' => 45000,
+            'payments' => [new ProviderBillPayment('pagto-abril', '2026-04-11', 45000)],
+        ]),
+        providerBill(['id' => 'fatura-recente', 'closingDate' => '2026-08-05', 'dueDate' => '2026-08-12', 'totalCents' => 10000]),
+    ];
+
+    $this->fake->transactionsByAccount['cartao-abril'] = [
+        syncProviderTransaction(['id' => 'credito-abril-1', 'date' => '2026-04-11', 'amountCents' => 45000, 'direction' => Direction::In, 'description' => 'Pagamento recebido']),
+        syncProviderTransaction(['id' => 'credito-abril-2', 'date' => '2026-04-11', 'amountCents' => 45000, 'direction' => Direction::In, 'description' => 'Pagto debito automatico']),
+    ];
+
+    runConnectionSync($connection->id);
+
+    $statement = CardStatement::query()->withTotals()->where('account_id', $card->id)->where('external_id', 'fatura-antiga-abril')->firstOrFail();
+
+    $credits = Transaction::query()->where('account_id', $card->id)->where('direction', 'in')->get();
+    $ignored = $credits->filter(fn (Transaction $t) => $t->is_ignored)->values();
+    $chosen = $credits->filter(fn (Transaction $t) => ! $t->is_ignored)->values();
+
+    expect($ignored)->toHaveCount(1)
+        ->and($ignored[0]->ignored_reason)->not->toBeNull()
+        ->and($chosen)->toHaveCount(1)
+        ->and($chosen[0]->card_payment_statement_id)->toBe($statement->id)
+        ->and($statement->paid()->cents)->toBe(45000);
+});
+
 it('reconcilia só depois de sincronizar TODAS as contas da conexão: a conta corrente do débito sincronizada depois do cartão ainda liga a transferência neste mesmo sync', function () {
     $this->travelTo(CarbonImmutable::parse('2026-05-20'));
 
