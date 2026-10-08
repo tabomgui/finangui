@@ -44,6 +44,10 @@ final class BankConnectionResource extends JsonResource
             'institution_logo_url' => $this->institution_logo_url,
             'last_synced_at' => $this->last_synced_at?->toIso8601String(),
             'last_error' => $this->last_error,
+            // Conector (ex.: MeuPluggy) que a Pluggy nunca deixa atualizar
+            // sob pedido — ver App\Domain\Banking\Support\ItemRefresher.
+            // Omitido quando false: a tela só precisa saber quando é true.
+            'refresh_unsupported' => $this->when(($this->settings['refresh_unsupported'] ?? false) === true, true),
             'accounts' => $this->accounts->map(fn (Account $account) => [
                 'id' => $account->id,
                 'name' => $account->name,

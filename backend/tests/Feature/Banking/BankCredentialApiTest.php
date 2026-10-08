@@ -486,6 +486,34 @@ describe('PUT /bank-credentials', function () {
         Queue::assertNotPushed(SyncConnection::class, fn (SyncConnection $job) => $job->connectionId === $active->id);
     });
 
+    it('depois de salvar, limpa settings.refresh_unsupported e refresh_unsupported_connector de TODAS as conexões do usuário, não só as em error', function () {
+        Queue::fake();
+        $user = actingAsUser();
+        BankCredential::factory()->create(['user_id' => $user->id, 'client_id' => 'aa777777-7777-7777-7777-777777777777']);
+        $errored = BankConnection::factory()->create([
+            'user_id' => $user->id, 'status' => ConnectionStatus::Error,
+            'settings' => ['refresh_unsupported' => true, 'refresh_unsupported_connector' => 'MeuPluggy'],
+        ]);
+        $active = BankConnection::factory()->active()->create([
+            'user_id' => $user->id,
+            'settings' => ['refresh_unsupported' => true, 'refresh_unsupported_connector' => 'MeuPluggy'],
+        ]);
+
+        Http::fake(['api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-resync-3'])]);
+
+        $this->putJson('/api/v1/bank-credentials', [
+            'client_id' => 'aa777777-7777-7777-7777-777777777777',
+            'client_secret' => 'new-secret',
+        ])->assertOk();
+
+        $errored->refresh();
+        $active->refresh();
+        expect($errored->settings['refresh_unsupported'] ?? null)->not->toBeTrue()
+            ->and($errored->settings['refresh_unsupported_connector'] ?? null)->toBeNull()
+            ->and($active->settings['refresh_unsupported'] ?? null)->not->toBeTrue()
+            ->and($active->settings['refresh_unsupported_connector'] ?? null)->toBeNull();
+    });
+
     it('não falha quando a conexão em error já tem um sync em andamento (ConnectionSyncInProgress é engolido)', function () {
         $user = actingAsUser();
         BankCredential::factory()->create(['user_id' => $user->id, 'client_id' => 'ff666666-6666-6666-6666-666666666666']);

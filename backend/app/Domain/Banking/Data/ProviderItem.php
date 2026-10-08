@@ -29,4 +29,21 @@ final readonly class ProviderItem
     {
         return $this->status === 'UPDATING';
     }
+
+    /**
+     * Item de um conector que a Pluggy nunca consegue atualizar sob pedido
+     * (`PATCH /items/{id}` sempre recusa — ver
+     * App\Domain\Banking\Support\ItemRefresher): detectado só pelo nome do
+     * conector — hoje, "MeuPluggy", o agregador Open Finance deles mesmos.
+     * Deliberadamente estrito: um sinal mais genérico (ex.: isOpenFinance +
+     * oauth do payload do conector) pegaria falsos positivos de outros
+     * conectores OAuth que não têm essa limitação — melhor deixar passar um
+     * conector novo com o mesmo problema (cai no caminho de erro específico
+     * em ItemRefresher na primeira tentativa de refresh) do que bloquear o
+     * refresh de alguém que não devia.
+     */
+    public function refreshUnsupported(): bool
+    {
+        return $this->institutionName !== null && mb_strtolower($this->institutionName) === 'meupluggy';
+    }
 }

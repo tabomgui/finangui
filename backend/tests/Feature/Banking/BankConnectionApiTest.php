@@ -511,6 +511,23 @@ describe('vincular contas', function () {
     });
 });
 
+it('refresh_unsupported some da resposta quando a conexão não tem a flag', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id]);
+
+    $response = $this->getJson('/api/v1/bank-connections')->assertOk();
+
+    expect($response->json('data.0'))->not->toHaveKey('refresh_unsupported');
+    expect($response->json('data.0.id'))->toBe($connection->id);
+});
+
+it('refresh_unsupported aparece true quando a conexão foi marcada (conector que a Pluggy nunca deixa atualizar sob pedido)', function () {
+    BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'settings' => ['refresh_unsupported' => true]]);
+
+    $this->getJson('/api/v1/bank-connections')
+        ->assertOk()
+        ->assertJsonPath('data.0.refresh_unsupported', true);
+});
+
 describe('contas novas do banco numa conexão já active (unlinked_accounts)', function () {
     beforeEach(function () {
         $this->connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id]);
@@ -656,6 +673,20 @@ describe('reconectado', function () {
         $this->postJson("/api/v1/bank-connections/{$connection->id}/reconnected")
             ->assertStatus(422)
             ->assertJsonValidationErrors('item_id');
+    });
+
+    it('limpa settings.refresh_unsupported e refresh_unsupported_connector ao reconectar', function () {
+        $connection = BankConnection::factory()->needsReauth()->create([
+            'user_id' => $this->user->id,
+            'settings' => ['refresh_unsupported' => true, 'refresh_unsupported_connector' => 'MeuPluggy'],
+        ]);
+
+        $this->postJson("/api/v1/bank-connections/{$connection->id}/reconnected", ['item_id' => $connection->external_id])
+            ->assertOk();
+
+        $connection->refresh();
+        expect($connection->settings['refresh_unsupported'] ?? null)->not->toBeTrue()
+            ->and($connection->settings['refresh_unsupported_connector'] ?? null)->toBeNull();
     });
 
     it('item_id diferente do item da conexão → 409 connection_item_mismatch', function () {

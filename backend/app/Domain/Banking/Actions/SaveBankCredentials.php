@@ -106,6 +106,7 @@ final class SaveBankCredentials
             ]);
         });
 
+        $this->clearRefreshUnsupportedFlags($user);
         $this->queueErrorConnectionSyncs($user);
 
         return $credential;
@@ -131,6 +132,28 @@ final class SaveBankCredentials
             } catch (ConnectionSyncInProgress) {
                 // Nada a fazer: um sync já está enfileirado ou rodando.
             }
+        }
+    }
+
+    /**
+     * Credenciais novas podem ser de outra conta Pluggy inteira — vale a
+     * pena reconsiderar `settings.refresh_unsupported` (ver
+     * App\Domain\Banking\Support\ItemRefresher) de TODAS as conexões do
+     * usuário, não só as em `error`: o próximo sync detecta de novo, de
+     * antemão ou pelo erro específico, se ainda vale.
+     */
+    private function clearRefreshUnsupportedFlags(User $user): void
+    {
+        $connections = BankConnection::query()->where('user_id', $user->id)->get();
+
+        foreach ($connections as $connection) {
+            if (($connection->settings['refresh_unsupported'] ?? false) !== true) {
+                continue;
+            }
+
+            $settings = $connection->settings;
+            unset($settings['refresh_unsupported'], $settings['refresh_unsupported_connector']);
+            $connection->update(['settings' => $settings]);
         }
     }
 

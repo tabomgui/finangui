@@ -403,8 +403,13 @@ final class PluggyProvider implements BankProvider
         ]);
 
         $providerCode = $response->json('code');
+        $providerMessage = $response->json('message');
 
-        throw new ProviderRequestFailed($response->status(), is_string($providerCode) ? $providerCode : null);
+        throw new ProviderRequestFailed(
+            $response->status(),
+            is_string($providerCode) ? $providerCode : null,
+            is_string($providerMessage) ? $providerMessage : null,
+        );
     }
 
     private function retryAfterSeconds(Response $response): ?int
