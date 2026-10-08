@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Banking\Models\BankConnection;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
@@ -22,6 +23,73 @@ it('mostra a fatura com totais e divergência', function () {
         ->assertJsonPath('data.reported_total', 1500)
         ->assertJsonPath('data.has_divergence', true)
         ->assertJsonPath('data.status', 'closed');
+});
+
+it('fatura cujo ciclo começa antes do histórico compartilhado pelo banco expõe history_incomplete e nunca diverge', function () {
+    Transaction::factory()->create(['account_id' => $this->card->id, 'source' => 'pluggy', 'date' => '2026-03-08', 'amount' => 500]);
+    $this->statement->update(['reported_total' => 5000]);
+
+    $this->getJson("/api/v1/card-statements/{$this->statement->id}")->assertOk()
+        ->assertJsonPath('data.history_incomplete', true)
+        ->assertJsonPath('data.history_incomplete_since', '2026-03-08')
+        ->assertJsonPath('data.has_divergence', false);
+});
+
+it('fatura cujo ciclo começa dentro do histórico compartilhado não expõe history_incomplete e diverge normalmente', function () {
+    Transaction::factory()->create(['account_id' => $this->card->id, 'source' => 'pluggy', 'date' => '2026-01-01', 'amount' => 500]);
+    Transaction::factory()->create(['account_id' => $this->card->id, 'statement_id' => $this->statement->id, 'amount' => 1000]);
+    $this->statement->update(['reported_total' => 1500]);
+
+    $response = $this->getJson("/api/v1/card-statements/{$this->statement->id}")->assertOk()
+        ->assertJsonPath('data.has_divergence', true);
+
+    expect($response->json('data'))->not->toHaveKey('history_incomplete');
+});
+
+it('cartão manual (nunca sincronizado) nunca expõe history_incomplete, mesmo com reported_total divergente', function () {
+    Transaction::factory()->create(['account_id' => $this->card->id, 'statement_id' => $this->statement->id, 'amount' => 1000]);
+    $this->statement->update(['reported_total' => 1500]);
+
+    $response = $this->getJson("/api/v1/card-statements/{$this->statement->id}")->assertOk()
+        ->assertJsonPath('data.has_divergence', true);
+
+    expect($response->json('data'))->not->toHaveKey('history_incomplete');
+});
+
+it('history_incomplete também considera provider_sync_from, mesmo sem nenhuma transação pluggy ainda', function () {
+    $this->card->update(['connection_id' => BankConnection::factory()->create(['user_id' => $this->user->id])->id, 'provider_sync_from' => '2026-03-09']);
+    $this->statement->update(['reported_total' => 5000]);
+
+    $this->getJson("/api/v1/card-statements/{$this->statement->id}")->assertOk()
+        ->assertJsonPath('data.history_incomplete', true)
+        ->assertJsonPath('data.history_incomplete_since', '2026-03-09')
+        ->assertJsonPath('data.has_divergence', false);
+});
+
+it('history_incomplete usa a mais tardia entre provider_sync_from e a primeira transação pluggy, nunca só provider_sync_from quando ele é o mais antigo', function () {
+    $this->card->update(['connection_id' => BankConnection::factory()->create(['user_id' => $this->user->id])->id, 'provider_sync_from' => '2026-01-01']);
+    // Transação pluggy de verdade bem mais tardia que o piso — provider_sync_from
+    // só diz a partir de quando a importação RESPEITA, não garante que o
+    // banco relatou algo desde ali; a transação mais antiga de verdade é a
+    // referência mais segura quando ela é mais tardia que o piso.
+    Transaction::factory()->create(['account_id' => $this->card->id, 'source' => 'pluggy', 'date' => '2026-03-12', 'amount' => 500]);
+    $this->statement->update(['reported_total' => 5000]);
+
+    $this->getJson("/api/v1/card-statements/{$this->statement->id}")->assertOk()
+        ->assertJsonPath('data.history_incomplete', true)
+        ->assertJsonPath('data.history_incomplete_since', '2026-03-12')
+        ->assertJsonPath('data.has_divergence', false);
+});
+
+it('fatura com cobrança local de outra origem (não pluggy) nunca é history_incomplete, mesmo com ciclo antes do histórico', function () {
+    Transaction::factory()->create(['account_id' => $this->card->id, 'source' => 'pluggy', 'date' => '2026-03-08', 'amount' => 500]);
+    Transaction::factory()->create(['account_id' => $this->card->id, 'statement_id' => $this->statement->id, 'source' => 'csv', 'amount' => 1000]);
+    $this->statement->update(['reported_total' => 1500]);
+
+    $response = $this->getJson("/api/v1/card-statements/{$this->statement->id}")->assertOk()
+        ->assertJsonPath('data.has_divergence', true);
+
+    expect($response->json('data'))->not->toHaveKey('history_incomplete');
 });
 
 it('fatura parcialmente paga com total do banco: status partial, paid e remaining pelo total exibido', function () {

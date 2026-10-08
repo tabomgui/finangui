@@ -16,7 +16,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 final class CardStatementResource extends JsonResource
 {
     /**
-     * @return array{id: int, account_id: int, closing_date: string, due_date: string, reported_total: int|null, total: int, computed_total: int, paid: int, remaining: int, status: StatementStatus, days_until_due: int, is_overdue: bool, has_divergence: bool}
+     * @return array{id: int, account_id: int, closing_date: string, due_date: string, reported_total: int|null, total: int, computed_total: int, paid: int, remaining: int, status: StatementStatus, days_until_due: int, is_overdue: bool, has_divergence: bool, history_incomplete?: true, history_incomplete_since?: string}
      */
     public function toArray(Request $request): array
     {
@@ -25,6 +25,7 @@ final class CardStatementResource extends JsonResource
         $total = $this->resource->total($today)->cents;
         $status = $this->resource->status($today);
         $closed = $this->resource->isClosed($today);
+        $historyIncompleteSince = $this->resource->historyIncompleteSince();
 
         return [
             'id' => $this->id,
@@ -39,7 +40,14 @@ final class CardStatementResource extends JsonResource
             'status' => $status,
             'days_until_due' => (int) $today->diffInDays($this->due_date, false),
             'is_overdue' => (bool) (in_array($status, [StatementStatus::Closed, StatementStatus::Partial], true) && $this->due_date->lessThan($today)),
-            'has_divergence' => (bool) ($closed && $this->reported_total !== null && $this->reported_total->cents !== $computedTotal),
+            // Nunca é divergência quando os lançamentos desta fatura são de
+            // antes do histórico compartilhado pelo banco (ver
+            // CardStatement::historyIncompleteSince()): o calculado é 0 (ou
+            // bem menor) só por falta de lançamento local, não porque o
+            // banco e o app discordam de verdade.
+            'has_divergence' => (bool) ($closed && $historyIncompleteSince === null && $this->reported_total !== null && $this->reported_total->cents !== $computedTotal),
+            'history_incomplete' => $this->when($historyIncompleteSince !== null, true),
+            'history_incomplete_since' => $this->when($historyIncompleteSince !== null, fn (): string => $historyIncompleteSince->toDateString()),
         ];
     }
 }
