@@ -32,7 +32,7 @@ export function CardsPage() {
         subtitle="Faturas e limites"
         actions={
           <Button className={headerButton} onClick={() => setFormOpen(true)}>
-            <Plus className="h-4 w-4" />
+            <Plus className="h-4 w-4" aria-hidden="true" />
             <span className="sr-only sm:not-sr-only">Novo cartão</span>
           </Button>
         }

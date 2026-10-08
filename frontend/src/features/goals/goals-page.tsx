@@ -36,7 +36,7 @@ export function GoalsPage() {
         subtitle="Objetivos, progresso e aportes"
         actions={
           <Button className={headerButton} onClick={openCreate}>
-            <Target className="h-4 w-4" />
+            <Target className="h-4 w-4" aria-hidden="true" />
             <span className="sr-only sm:not-sr-only">Nova meta</span>
           </Button>
         }
