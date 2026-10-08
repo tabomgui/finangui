@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, EllipsisVertical, Pencil, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, EllipsisVertical, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useDeleteGoal } from '@/api/queries/goals'
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { formatDate } from '@/lib/date'
 import { cn } from '@/lib/utils'
+import { ContributionFormDialog } from './contribution-form-dialog'
 import { GoalContributions } from './goal-contributions'
 
 type GoalCardProps = { goal: Goal; currency: string; onEdit: () => void }
@@ -25,6 +26,7 @@ type GoalCardProps = { goal: Goal; currency: string; onEdit: () => void }
 export function GoalCard({ goal, currency, onEdit }: GoalCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [contributing, setContributing] = useState(false)
   const remove = useDeleteGoal()
 
   const achieved = goal.achieved_at !== null
@@ -94,18 +96,28 @@ export function GoalCard({ goal, currency, onEdit }: GoalCardProps) {
 
         {!hasAccount && (
           <div className="space-y-3">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-expanded={expanded}
-              aria-controls={`goal-contributions-${goal.id}`}
-              className="gap-1 px-0 text-muted-foreground hover:bg-transparent"
-              onClick={() => setExpanded((current) => !current)}
-            >
-              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              Aportes
-            </Button>
+            <div className="flex items-center justify-between gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-expanded={expanded}
+                aria-controls={`goal-contributions-${goal.id}`}
+                className="gap-1 px-0 text-muted-foreground hover:bg-transparent"
+                onClick={() => setExpanded((current) => !current)}
+              >
+                {expanded ? (
+                  <ChevronUp className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                )}
+                Aportes
+              </Button>
+              <Button type="button" variant="outline" size="sm" className="gap-1" onClick={() => setContributing(true)}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Novo aporte
+              </Button>
+            </div>
             {expanded && (
               <div id={`goal-contributions-${goal.id}`}>
                 <GoalContributions goalId={goal.id} currency={currency} />
@@ -114,6 +126,8 @@ export function GoalCard({ goal, currency, onEdit }: GoalCardProps) {
           </div>
         )}
       </CardContent>
+
+      {!hasAccount && <ContributionFormDialog open={contributing} onOpenChange={setContributing} goalId={goal.id} />}
 
       <ConfirmDialog
         open={deleting}

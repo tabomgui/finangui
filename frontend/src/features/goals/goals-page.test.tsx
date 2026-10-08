@@ -14,6 +14,9 @@ vi.mock('@/api/queries/goals', () => ({
   useDeleteGoal: () => ({ mutateAsync: deleteMutateAsync, isPending: false }),
   useCreateGoal: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateGoal: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateGoalContribution: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useGoalContributions: () => ({ data: [], isPending: false, isError: false, refetch: vi.fn() }),
+  useDeleteGoalContribution: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
 vi.mock('@/api/queries/auth', () => ({

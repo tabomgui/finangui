@@ -79,6 +79,23 @@ describe('GoalCard', () => {
 
     expect(screen.getByText('Saldo de Poupança')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Aportes' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Novo aporte/ })).not.toBeInTheDocument()
+  })
+
+  it('sem conta, mostra um botão de ação "Novo aporte" visível mesmo com a lista recolhida', () => {
+    render(<GoalCard goal={goal()} currency="BRL" onEdit={vi.fn()} />)
+
+    expect(screen.getByRole('button', { name: 'Aportes' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: /Novo aporte/ })).toBeInTheDocument()
+  })
+
+  it('clicar em "Novo aporte" abre o formulário de aporte sem precisar expandir "Aportes"', () => {
+    render(<GoalCard goal={goal()} currency="BRL" onEdit={vi.fn()} />)
+    expect(screen.queryByText('Registre quanto guardou ou retirou desta meta.')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Novo aporte/ }))
+
+    expect(screen.getByText('Registre quanto guardou ou retirou desta meta.')).toBeInTheDocument()
   })
 
   it('sem conta, expande a lista de aportes ao clicar em "Aportes"', () => {
