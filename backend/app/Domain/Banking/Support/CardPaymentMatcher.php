@@ -23,7 +23,12 @@ use Carbon\CarbonImmutable;
  * - Sem pagamento do banco disponível, a descrição bate com
  *   App\Domain\Banking\Support\CardPaymentDescriptionPatterns — só então um
  *   lançamento vindo do banco (não manual/CSV/OFX) pode ser candidato a
- *   duplicata.
+ *   duplicata. Um candidato assim só se torna uma âncora NOVA (sem casar
+ *   com nenhuma já existente — ver nearestAnchor()) quando nenhum payments[]
+ *   do lote cobre a data dele (ver hasReportedPaymentNear()): com algum
+ *   payments[] por perto, mas de outro valor, o banco já tem dado
+ *   específico sobre o período — melhor deixar sem decisão do que confiar
+ *   só na descrição contra um sinal conflitante.
  *
  * Deduplicação: o excedente de lançamentos reconhecidos pelo padrão de
  * descrição, além do que já foi consumido por um pagamento do banco, é
@@ -44,6 +49,25 @@ final class CardPaymentMatcher
      * @return list<CardPaymentDecision>
      */
     public static function match(array $candidates, array $bills): array
+    {
+        return self::matchDetailed($candidates, $bills)->decisions;
+    }
+
+    /**
+     * Como match(), mas também devolve os candidatos travados por
+     * hasReportedPaymentNear() (ver a classe) — reconhecidos pelo padrão de
+     * descrição, sem vaga/âncora do banco, mas com algum payments[] do lote
+     * cobrindo a mesma data, de outro valor. Usada por
+     * App\Domain\Banking\Actions\ReconcileCardPayments, que precisa saber
+     * quais ids ficaram deliberadamente sem decisão (para nunca resetá-los —
+     * eles não são "não reconhecidos", são "sem dado novo suficiente para
+     * decidir agora") — match() sozinho não distingue um candidato assim de
+     * um que realmente não bateu com nada.
+     *
+     * @param  list<CardPaymentCandidate>  $candidates
+     * @param  list<ProviderBill>  $bills
+     */
+    public static function matchDetailed(array $candidates, array $bills): CardPaymentMatchResult
     {
         /** @var array<int, CardPaymentCandidate> $byId */
         $byId = [];
@@ -100,12 +124,25 @@ final class CardPaymentMatcher
         /** @var array<int, true> $duplicateIds */
         $duplicateIds = [];
 
+        /** @var array<int, true> $gatedIds */
+        $gatedIds = [];
+
         foreach ($providerPatternLeftovers as $candidate) {
             $anchorId = self::nearestAnchor($candidate, $byId, array_keys($anchorBillId));
 
             if ($anchorId !== null) {
                 $duplicateIds[$candidate->id] = true;
+            } elseif (self::hasReportedPaymentNear($bills, $candidate->date)) {
+                // Sem âncora e com algum payments[] cobrindo esta data (mas
+                // de outro valor, já que senão teria virado uma vaga mais
+                // acima): o banco já tem dado específico sobre o período —
+                // mais seguro deixar este candidato sem decisão do que
+                // confiar só na descrição contra um sinal conflitante.
+                $gatedIds[$candidate->id] = true;
             } else {
+                // Sem âncora e sem nenhum payments[] cobrindo esta data: o
+                // padrão de descrição é a única pista que existe, e vale
+                // como uma nova âncora.
                 $anchorBillId[$candidate->id] = null;
             }
         }
@@ -120,7 +157,7 @@ final class CardPaymentMatcher
             $decisions[] = new CardPaymentDecision($candidateId, isDuplicate: true, billExternalId: null);
         }
 
-        return $decisions;
+        return new CardPaymentMatchResult($decisions, $gatedIds);
     }
 
     /**
@@ -191,6 +228,32 @@ final class CardPaymentMatcher
         }
 
         return $groups;
+    }
+
+    /**
+     * Existe algum payments[], de qualquer fatura deste lote, com data a
+     * ±WINDOW_DAYS de $date — não importa o valor (um valor igual já teria
+     * virado vaga antes de chegar aqui). Usada só para decidir se um
+     * candidato reconhecido apenas pelo padrão de descrição (sem vaga do
+     * banco) pode se tornar uma âncora nova — ver match().
+     *
+     * @param  list<ProviderBill>  $bills
+     */
+    private static function hasReportedPaymentNear(array $bills, string $date): bool
+    {
+        foreach ($bills as $bill) {
+            foreach ($bill->payments as $payment) {
+                if (! self::isUsablePayment($payment)) {
+                    continue;
+                }
+
+                if (abs(self::diffDays($date, $payment->date)) <= self::WINDOW_DAYS) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static function isUsablePayment(ProviderBillPayment $payment): bool

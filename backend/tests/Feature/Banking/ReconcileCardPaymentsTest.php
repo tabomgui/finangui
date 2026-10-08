@@ -313,6 +313,30 @@ it('crédito com statement_locked, sem decisão nesta passagem, perde a marca de
         ->and($transaction->statement_id)->toBe($lockedStatement->id);
 });
 
+it('crédito travado por um payments[] perto de outro valor mantém o estado atual, sem ser resetado nem reconhecido de novo', function () {
+    $statement = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-04-01', 'due_date' => '2026-04-10']);
+
+    // Já reconhecido como pagamento numa passagem anterior.
+    $transaction = creditIn([
+        'amount' => 9000, 'date' => '2026-04-14', 'description' => 'Pagamento recebido',
+        'statement_id' => $statement->id, 'card_payment_statement_id' => $statement->id,
+    ]);
+
+    // payments[] desta fatura cobre a mesma data, mas com outro valor —
+    // CardPaymentMatcher trava a decisão em vez de confiar só na descrição.
+    $bill = new ProviderBill(
+        id: 'fatura-x', dueDate: '2026-04-20', closingDate: '2026-04-05', totalCents: 20000,
+        payments: [new ProviderBillPayment('pag-outro', '2026-04-15', 5000)],
+    );
+
+    $this->action->handle($this->card, [$bill]);
+
+    $transaction->refresh();
+    expect($transaction->card_payment_statement_id)->toBe($statement->id)
+        ->and($transaction->statement_id)->toBe($statement->id)
+        ->and($transaction->is_ignored)->toBeFalse();
+});
+
 it('fora da janela re-sincronizada, uma transação sem decisão nesta passagem não é tocada', function () {
     CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-01-01', 'due_date' => '2026-01-10']);
     $transaction = creditIn([
@@ -358,6 +382,36 @@ it('fatura antiga sem fechamento informado não impede créditos de pagamento de
     expect($ignored->is_ignored)->toBeTrue()
         ->and($chosen->is_ignored)->toBeFalse()
         ->and($chosen->card_payment_statement_id)->toBe($statement->id);
+});
+
+it('dois créditos iguais no mesmo dia, com um único payments[] do banco: o reconhecido pelo padrão "pagamento on line" é deduplicado (agosto)', function () {
+    $statement = CardStatement::factory()->create([
+        'account_id' => $this->card->id, 'closing_date' => '2026-08-05', 'due_date' => '2026-08-12', 'external_id' => 'fatura-agosto',
+    ]);
+
+    $received = creditIn(['amount' => 15000, 'date' => '2026-08-10', 'description' => 'Pagamento recebido']);
+    $onLine = creditIn(['amount' => 15000, 'date' => '2026-08-10', 'description' => 'Pagamento on line']);
+
+    $bill = new ProviderBill(
+        id: 'fatura-agosto', dueDate: '2026-08-12', closingDate: '2026-08-05', totalCents: 15000,
+        payments: [new ProviderBillPayment('pag-unico', '2026-08-10', 15000)],
+    );
+
+    $this->action->handle($this->card, [$bill]);
+
+    $received->refresh();
+    $onLine->refresh();
+
+    $ignored = $received->is_ignored ? $received : $onLine;
+    $chosen = $received->is_ignored ? $onLine : $received;
+
+    expect($ignored->is_ignored)->toBeTrue()
+        ->and($ignored->ignored_reason)->not->toBeNull()
+        ->and($chosen->is_ignored)->toBeFalse()
+        ->and($chosen->card_payment_statement_id)->toBe($statement->id);
+
+    $loaded = CardStatement::query()->withTotals()->findOrFail($statement->id);
+    expect($loaded->paid()->cents)->toBe(15000);
 });
 
 it('crédito com statement_locked é reconhecido como pagamento, mas a fatura nunca muda, mesmo quando a fatura do banco indica outra', function () {

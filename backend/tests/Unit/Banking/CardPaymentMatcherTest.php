@@ -292,6 +292,66 @@ it('candidato com descrição de pagamento reivindica a vaga antes de um reembol
         ->and(paymentDecisionFor($decisions, 1))->toBeNull();
 });
 
+it('OTHER_PAYMENT da fatura casa com "Deb aut parcial" e deduplica "Pagamento recebido" sobrando (maio)', function () {
+    $bills = [billWithPayment('fatura-parcial', '2026-05-05', 'pag-parcial', 32000, '2026-05-14')];
+
+    $candidates = [
+        paymentCandidate(1, 32000, '2026-05-14', 'Pagamento recebido'),
+        paymentCandidate(2, 32000, '2026-05-15', 'Deb aut parcial'),
+    ];
+
+    $decisions = CardPaymentMatcher::match($candidates, $bills);
+
+    $first = paymentDecisionFor($decisions, 1);
+    $second = paymentDecisionFor($decisions, 2);
+
+    expect($first->isDuplicate)->not->toBe($second->isDuplicate);
+
+    $chosen = $first->isDuplicate ? $second : $first;
+    expect($chosen->billExternalId)->toBe('fatura-parcial');
+});
+
+it('duas entradas iguais no mesmo dia batendo com um único pagamento do banco: "Pagamento on line" sobrando é duplicata (agosto)', function () {
+    $bills = [billWithPayment('fatura-agosto', '2026-08-05', 'pag-unico', 15000, '2026-08-10')];
+
+    $candidates = [
+        paymentCandidate(1, 15000, '2026-08-10', 'Pagamento recebido'),
+        paymentCandidate(2, 15000, '2026-08-10', 'Pagamento on line'),
+    ];
+
+    $decisions = CardPaymentMatcher::match($candidates, $bills);
+
+    $first = paymentDecisionFor($decisions, 1);
+    $second = paymentDecisionFor($decisions, 2);
+
+    expect($first->isDuplicate)->not->toBe($second->isDuplicate);
+
+    $chosen = $first->isDuplicate ? $second : $first;
+    expect($chosen->billExternalId)->toBe('fatura-agosto');
+});
+
+it('candidato reconhecido só pelo padrão de descrição não se torna âncora quando algum payments[] do lote cobre a mesma data, de outro valor', function () {
+    // O banco já tem dado específico sobre este período (um pagamento de
+    // valor diferente, um dia depois) — melhor não decidir nada pela
+    // descrição sozinha do que confiar contra um sinal conflitante.
+    $bills = [billWithPayment('fatura-x', '2026-06-05', 'pag-x', 5000, '2026-06-11')];
+    $candidates = [paymentCandidate(1, 9000, '2026-06-10', 'Pagamento recebido')];
+
+    $decisions = CardPaymentMatcher::match($candidates, $bills);
+
+    expect(paymentDecisionFor($decisions, 1))->toBeNull();
+});
+
+it('matchDetailed() expõe o mesmo candidato travado em gatedIds, para quem chama nunca resetá-lo', function () {
+    $bills = [billWithPayment('fatura-x', '2026-06-05', 'pag-x', 5000, '2026-06-11')];
+    $candidates = [paymentCandidate(1, 9000, '2026-06-10', 'Pagamento recebido')];
+
+    $result = CardPaymentMatcher::matchDetailed($candidates, $bills);
+
+    expect($result->decisions)->toBeEmpty()
+        ->and($result->gatedIds)->toBe([1 => true]);
+});
+
 it('uma transação travada (isLocked) reivindica a vaga e nunca é duplicata, mesmo sem ser perna de transferência', function () {
     $bills = [billWithPayment('fatura-junho', '2026-06-05', 'pag-1', 18000, '2026-06-14')];
 

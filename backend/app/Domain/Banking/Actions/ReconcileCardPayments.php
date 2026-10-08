@@ -50,7 +50,12 @@ use Illuminate\Support\Facades\DB;
  * ainda reconhece o crédito como pagamento normalmente (sai de is_ignored,
  * conta em paid()), mas nunca move statement_id — nem para a fatura que o
  * próprio banco relata (ver statementFor()) nem ao perder o reconhecimento
- * (ver resetUnrecognized()).
+ * (ver resetUnrecognized()). Um candidato "gated" por
+ * App\Domain\Banking\Support\CardPaymentMatcher::matchDetailed() (reconhecido
+ * pelo padrão de descrição, mas sem decisão porque algum payments[] do
+ * banco cobre a mesma data com outro valor) também nunca passa por
+ * resetUnrecognized(): fica exatamente como está, nem reconhecido nem
+ * resetado, até uma passagem futura ter dado suficiente para decidir.
  */
 final class ReconcileCardPayments
 {
@@ -103,12 +108,12 @@ final class ReconcileCardPayments
                 isLocked: $t->card_payment_locked,
             ))->all();
 
-            $decisions = CardPaymentMatcher::match($candidates, $bills);
+            $result = CardPaymentMatcher::matchDetailed($candidates, $bills);
 
             /** @var array<int, true> $decidedIds */
             $decidedIds = [];
 
-            foreach ($decisions as $decision) {
+            foreach ($result->decisions as $decision) {
                 $decidedIds[$decision->transactionId] = true;
                 $transaction = $pool->get($decision->transactionId);
 
@@ -133,7 +138,9 @@ final class ReconcileCardPayments
             }
 
             foreach ($pool as $transaction) {
-                if (! $transaction->card_payment_locked && ! isset($decidedIds[$transaction->id])) {
+                if (! $transaction->card_payment_locked
+                    && ! isset($decidedIds[$transaction->id])
+                    && ! isset($result->gatedIds[$transaction->id])) {
                     $this->resetUnrecognized($card, $transaction);
                 }
             }
