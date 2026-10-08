@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export const headerIconButton =
-  'flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/20 text-white transition-colors hover:bg-white/30'
+  'flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/20 text-white outline-none transition-colors hover:bg-white/30 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
 export function ThemeToggle({ variant = 'ghost', className }: { variant?: 'ghost' | 'header'; className?: string }) {
   const { resolvedTheme, setTheme } = useTheme()
@@ -16,14 +16,14 @@ export function ThemeToggle({ variant = 'ghost', className }: { variant?: 'ghost
   if (variant === 'header') {
     return (
       <button type="button" aria-label={label} title={label} onClick={toggle} className={cn(headerIconButton, className)}>
-        <Icon className="h-5 w-5" />
+        <Icon className="h-5 w-5" aria-hidden="true" />
       </button>
     )
   }
 
   return (
     <Button type="button" variant="ghost" size="icon" aria-label={label} title={label} onClick={toggle} className={className}>
-      <Icon className="h-4 w-4" />
+      <Icon className="h-4 w-4" aria-hidden="true" />
     </Button>
   )
 }

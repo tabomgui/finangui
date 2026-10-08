@@ -5,6 +5,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { cn } from '@/lib/utils'
 import { moreNav } from './nav-items'
 import { ThemeToggle } from './theme-toggle'
+import { useCloseOnDesktop } from './use-close-on-desktop'
 import { useSignOut } from './use-sign-out'
 import { UserSummary } from './user-menu-actions'
 
@@ -16,17 +17,21 @@ export function MoreSheet() {
     (item) => location.pathname === item.to || location.pathname.startsWith(item.to + '/'),
   )
 
+  // O gatilho some (`md:hidden` no `nav` do `BottomNav`) ao cruzar para desktop, mas o conteúdo do
+  // `Sheet` fica num portal e não ouviria essa mudança por si só.
+  useCloseOnDesktop(open, setOpen)
+
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
         <button
           type="button"
           className={cn(
-            'flex flex-col items-center gap-1 py-2 text-[11px] font-medium transition-colors',
+            'flex flex-col items-center gap-1 py-2 text-[11px] font-medium outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
             active ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
           )}
         >
-          <Ellipsis className="h-5 w-5" />
+          <Ellipsis className="h-5 w-5" aria-hidden="true" />
           Mais
         </button>
       </SheetTrigger>

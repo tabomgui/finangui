@@ -1,3 +1,4 @@
+import { act } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NotificationBell } from './notification-bell'
@@ -23,6 +24,37 @@ vi.mock('@/features/notifications/notification-panel', () => ({
 beforeEach(() => {
   unreadCount = 0
 })
+
+/**
+ * jsdom não implementa `matchMedia`; aqui controlamos `matches` manualmente e disparamos o
+ * listener de `change` registrado pelo componente, para simular o cruzamento do breakpoint de
+ * desktop com o `Sheet` já aberto.
+ */
+function stubMatchMedia() {
+  const listeners = new Set<(event: MediaQueryListEvent) => void>()
+
+  window.matchMedia = ((query: string) =>
+    ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: (_: string, listener: (event: MediaQueryListEvent) => void) => listeners.add(listener),
+      removeEventListener: (_: string, listener: (event: MediaQueryListEvent) => void) => listeners.delete(listener),
+      dispatchEvent: () => false,
+    }) as unknown as MediaQueryList) as typeof window.matchMedia
+
+  return {
+    // O listener chama `setOpen`, fora de qualquer handler do Testing Library: sem `act()`, a
+    // atualização fica agendada e o teste não veria o resultado ainda na mesma sincronia.
+    crossToDesktop() {
+      act(() => {
+        for (const listener of listeners) listener({ matches: true } as MediaQueryListEvent)
+      })
+    },
+  }
+}
 
 describe('NotificationBell (header, mobile)', () => {
   it('sem notificações não lidas, não mostra o badge', () => {
@@ -85,6 +117,25 @@ describe('NotificationBell (header, mobile)', () => {
     fireEvent.focus(trigger)
 
     expect(screen.queryByTestId('panel')).not.toBeInTheDocument()
+  })
+
+  it('mostra o anel de foco visível ao tabular', () => {
+    render(<NotificationBell variant="header" />)
+    const trigger = screen.getByLabelText('Notificações, 0 não lidas')
+
+    expect(trigger.className).toMatch(/focus-visible:ring/)
+  })
+
+  it('o gatilho some em telas grandes (md:hidden): fecha o painel ao cruzar para desktop', async () => {
+    const media = stubMatchMedia()
+    render(<NotificationBell variant="header" />)
+
+    fireEvent.click(screen.getByLabelText('Notificações, 0 não lidas'))
+    await screen.findByTestId('panel')
+
+    media.crossToDesktop()
+
+    expect(screen.getByTestId('panel')).toHaveAttribute('data-open', 'false')
   })
 })
 

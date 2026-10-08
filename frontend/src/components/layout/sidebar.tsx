@@ -15,12 +15,12 @@ function SidebarLink({ item }: { item: NavItem }) {
       end={item.end}
       className={({ isActive }) =>
         cn(
-          'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
+          'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
           isActive ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
         )
       }
     >
-      <Icon className="h-4 w-4" />
+      <Icon className="h-4 w-4" aria-hidden="true" />
       {item.label}
     </NavLink>
   )
@@ -37,7 +37,7 @@ export function Sidebar() {
       <div className="px-3">
         <Button asChild className="w-full justify-start gap-2 rounded-xl">
           <NavLink to={newTransactionItem.to}>
-            <NewIcon className="h-4 w-4" />
+            <NewIcon className="h-4 w-4" aria-hidden="true" />
             {newTransactionItem.label}
           </NavLink>
         </Button>

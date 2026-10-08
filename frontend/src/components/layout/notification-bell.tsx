@@ -6,6 +6,7 @@ import { Popover, PopoverTrigger } from '@/components/ui/popover'
 import { Sheet, SheetTrigger } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { headerIconButton } from './theme-toggle'
+import { useCloseOnDesktop } from './use-close-on-desktop'
 
 // `.then` mantém o módulo com export nomeado (convenção do projeto: nunca `export default`) e
 // ainda satisfaz o formato que `React.lazy` espera.
@@ -46,6 +47,10 @@ export function NotificationBell({ variant, className }: NotificationBellProps) 
   const [touched, setTouched] = useState(false)
   const { data: unreadCount = 0 } = useUnreadCount()
 
+  // Só a variante `header` vira `md:hidden` (ver uso em `page-header.tsx`): o gatilho some ao
+  // cruzar para desktop, mas o `Sheet` fica num portal e não ouviria essa mudança por si só.
+  useCloseOnDesktop(variant === 'header' && open, setOpen)
+
   function handleOpenChange(next: boolean) {
     if (next) setTouched(true)
     setOpen(next)
@@ -71,7 +76,7 @@ export function NotificationBell({ variant, className }: NotificationBellProps) 
         onFocus={prefetchPanel}
         className={cn(headerIconButton, 'relative', className)}
       >
-        <Bell className="h-5 w-5" />
+        <Bell className="h-5 w-5" aria-hidden="true" />
         {badge}
       </button>
     ) : (
@@ -85,7 +90,7 @@ export function NotificationBell({ variant, className }: NotificationBellProps) 
         onFocus={prefetchPanel}
         className={cn('relative', className)}
       >
-        <Bell className="h-4 w-4" />
+        <Bell className="h-4 w-4" aria-hidden="true" />
         {badge}
       </Button>
     )

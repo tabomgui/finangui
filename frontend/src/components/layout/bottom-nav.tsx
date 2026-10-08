@@ -11,12 +11,12 @@ function BottomNavLink({ item }: { item: NavItem }) {
       end={item.end}
       className={({ isActive }) =>
         cn(
-          'flex flex-col items-center gap-1 py-2 text-[11px] font-medium transition-colors',
+          'flex flex-col items-center gap-1 py-2 text-[11px] font-medium outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
           isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
         )
       }
     >
-      <Icon className="h-5 w-5" />
+      <Icon className="h-5 w-5" aria-hidden="true" />
       {item.label}
     </NavLink>
   )
@@ -34,9 +34,13 @@ export function BottomNav() {
       <div className="mx-auto grid h-16 max-w-md grid-cols-5 items-center">
         <BottomNavLink item={home} />
         <BottomNavLink item={transactions} />
-        <NavLink to={newTransactionItem.to} aria-label={newTransactionItem.label} className="flex justify-center">
+        <NavLink
+          to={newTransactionItem.to}
+          aria-label={newTransactionItem.label}
+          className="flex justify-center rounded-full outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
           <span className="-mt-7 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-4 ring-background transition-transform active:scale-95">
-            <NewIcon className="h-6 w-6" />
+            <NewIcon className="h-6 w-6" aria-hidden="true" />
           </span>
         </NavLink>
         <BottomNavLink item={cards} />
