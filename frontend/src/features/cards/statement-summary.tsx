@@ -18,9 +18,11 @@ type StatementSummaryProps = {
 }
 
 export function StatementSummary({ statement, currency, limit, onPay, onEditDates }: StatementSummaryProps) {
-  // Fatura aberta com restante zerado: já está em dia, mas continua aberta — uma nova compra
-  // pode voltar a aumentar o restante, então o botão de pagar segue habilitado (ver PayStatement).
-  const isSettledOpen = statement.status === 'open' && statement.remaining === 0
+  // Fatura aberta com restante zerado e algum pagamento registrado: já está em dia, mas continua
+  // aberta — uma nova compra pode voltar a aumentar o restante, então o botão de pagar segue
+  // habilitado (ver PayStatement). `paid > 0` separa isso de uma fatura recém-criada sem nenhuma
+  // compra nem pagamento ainda (nada foi "pago por enquanto" ali).
+  const isSettledOpen = statement.status === 'open' && statement.remaining === 0 && statement.paid > 0
 
   return (
     <Card className="space-y-4 rounded-2xl p-4 shadow-card">
