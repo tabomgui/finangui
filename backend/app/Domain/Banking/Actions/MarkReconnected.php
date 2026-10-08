@@ -16,6 +16,11 @@ use App\Domain\Banking\Models\BankConnection;
  * `pending_link`): reconectar faz sentido para uma conexão que já tem
  * contas vinculadas e precisa de novo login no banco, não para uma que
  * nunca terminou o primeiro vínculo.
+ *
+ * `settings.refresh_unsupported` (ver App\Domain\Banking\Support\ItemRefresher)
+ * é limpo aqui: a reconexão é uma boa oportunidade para reconsiderar do
+ * zero, mesmo sem o conector ter mudado de nome (o próximo sync detecta de
+ * novo, de antemão ou pelo erro específico, se ainda vale).
  */
 final class MarkReconnected
 {
@@ -25,9 +30,13 @@ final class MarkReconnected
             throw new ConnectionNotLinked;
         }
 
+        $settings = $connection->settings ?? [];
+        unset($settings['refresh_unsupported'], $settings['refresh_unsupported_connector']);
+
         $connection->update([
             'status' => ConnectionStatus::Active,
             'last_error' => null,
+            'settings' => $settings,
         ]);
 
         return $connection;

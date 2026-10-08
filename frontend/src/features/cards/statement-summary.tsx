@@ -1,4 +1,4 @@
-import { TriangleAlert } from 'lucide-react'
+import { Info, TriangleAlert } from 'lucide-react'
 import type { Card as CardType, CardStatement } from '@/api/types'
 import { MoneyText } from '@/components/shared/money-text'
 import { Button } from '@/components/ui/button'
@@ -55,6 +55,13 @@ export function StatementSummary({ statement, currency, limit, onPay, onEditDate
             O banco informou {formatMoney(statement.reported_total, currency)}; o total calculado aqui é{' '}
             {formatMoney(statement.computed_total, currency)}.
           </p>
+        </div>
+      )}
+
+      {statement.history_incomplete && statement.history_incomplete_since && (
+        <div className="flex items-start gap-2 rounded-lg bg-muted p-3 text-sm text-muted-foreground">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>Os lançamentos desta fatura são anteriores ao histórico compartilhado pelo banco (desde {formatDate(statement.history_incomplete_since)}).</p>
         </div>
       )}
 

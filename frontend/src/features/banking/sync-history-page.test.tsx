@@ -189,6 +189,21 @@ describe('SyncHistoryPage', () => {
     expect(screen.getByText('Página de contas')).toBeInTheDocument()
   })
 
+  it('mostra a nota de conexão não atualizável quando refresh_unsupported é true', () => {
+    useBankConnections.mockReturnValue({ data: [connection({ refresh_unsupported: true })] })
+    setRuns([[run()]])
+    renderPage()
+
+    expect(screen.getByText(/atualizada pela Pluggy uma vez por dia/)).toBeInTheDocument()
+  })
+
+  it('sem refresh_unsupported, a nota não aparece', () => {
+    setRuns([[run()]])
+    renderPage()
+
+    expect(screen.queryByText(/atualizada pela Pluggy uma vez por dia/)).not.toBeInTheDocument()
+  })
+
   it('abre o detalhe da run ao clicar na linha', () => {
     setRuns([[run({ id: 42 })]])
     renderPage()

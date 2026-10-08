@@ -55,19 +55,52 @@ final class CardOverview
         $today = CarbonImmutable::today();
         $accountIds = $cards->modelKeys();
 
-        $base = fn () => CardStatement::query()->withTotals()
+        $base = fn () => CardStatement::query()->withHistoryContext()
             ->whereIn('card_statements.account_id', $accountIds);
 
+        // Dívida ("saldo em aberto") de uma fatura fechada, com o mesmo piso
+        // de pago que CardStatement::paid() (o maior entre payments_sum e
+        // reported_paid — uma fatura de antes do histórico sincronizado,
+        // sem pagamento local nenhum, mas já quitada segundo o banco, não
+        // pode continuar "devendo" aqui só por falta de lançamento local).
+        $debtExpr = '(COALESCE(cs.reported_total, cs.charges_net) - GREATEST(cs.payments_sum, COALESCE(cs.reported_paid, 0)))';
+
+        // "Totalmente paga" exige, além de saldo <= 0, um total maior que
+        // zero: uma fatura fechada sem nenhuma cobrança (ciclo vazio — o
+        // cartão não foi usado naquele mês) nunca pode servir de piso — ela
+        // não "pagou" nada, e deixaria uma fatura antiga de verdade, ainda
+        // em aberto, escondida atrás dela só por ser mais recente.
+        $fullyPaidExpr = "({$debtExpr} <= 0 AND COALESCE(cs.reported_total, cs.charges_net) > 0)";
+
+        // Fechamento mais recente, entre as fechadas totalmente pagas, de
+        // cada conta: calculado uma vez por conta via window function
+        // (MAX(...) FILTER ... OVER (PARTITION BY account_id)) em vez de um
+        // correlacionado reconstruído a cada linha de $closedWithDebt —
+        // cada fatura já carrega o fechamento da última paga da própria
+        // conta pronto para o filtro abaixo usar.
+        $withLatestPaidClosing = DB::query()->fromSub($base(), 'cs')->selectRaw(
+            "cs.*, MAX(CASE WHEN cs.closing_date <= ? AND {$fullyPaidExpr} THEN cs.closing_date END) OVER (PARTITION BY cs.account_id) AS latest_paid_closing",
+            [$today->toDateString()],
+        );
+
         // DISTINCT ON (Postgres): uma linha por conta, a de menor closing_date
-        // entre as fechadas que ainda devem dinheiro — pelo total exibido
-        // (App\Domain\Cards\Models\CardStatement::total(): reported_total
-        // quando informado, senão charges_net), nunca pelo calculado puro:
-        // uma fatura fechada com reported_total menor que o calculado (ou
-        // já quitada pelo banco) não pode continuar aparecendo como "atual"
-        // só porque o cálculo local ainda mostra saldo.
-        $closedWithDebt = DB::query()->fromSub($base(), 'cs')
+        // entre as fechadas que ainda devem dinheiro (pelo total exibido —
+        // App\Domain\Cards\Models\CardStatement::total(): reported_total
+        // quando informado, senão charges_net) e mais recente que a última
+        // fechada já totalmente paga da mesma conta — uma fatura antiga
+        // parcialmente paga (ou sem pagamento nenhum, ex.: import malformado,
+        // dado de antes do histórico) nunca volta a ser a "atual" depois que
+        // o usuário já pagou em cheio uma fatura mais nova: card companies
+        // sempre aplicam pagamento à fatura mais antiga primeiro, então uma
+        // fatura nova paga implica que a antiga também já foi resolvida de
+        // algum jeito, mesmo que o cálculo local (sem todo o histórico)
+        // ainda mostre saldo nela. Sem nenhuma fatura paga ainda para a
+        // conta, o COALESCE cai numa data bem no passado — nunca filtra
+        // nada nesse caso.
+        $closedWithDebt = DB::query()->fromSub($withLatestPaidClosing, 'cs')
             ->where('cs.closing_date', '<=', $today->toDateString())
-            ->whereRaw('(COALESCE(cs.reported_total, cs.charges_net) - cs.payments_sum) > 0')
+            ->whereRaw("{$debtExpr} > 0")
+            ->whereRaw("cs.closing_date > COALESCE(cs.latest_paid_closing, '0001-01-01')")
             ->orderBy('cs.account_id')
             ->orderBy('cs.closing_date')
             ->distinct(['cs.account_id'])

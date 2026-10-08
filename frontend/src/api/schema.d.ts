@@ -1118,6 +1118,12 @@ export interface components {
             institution_logo_url: string | null;
             last_synced_at: string | null;
             last_error: string | null;
+            /**
+             * @description Conector (ex.: MeuPluggy) que a Pluggy nunca deixa atualizar
+             *     sob pedido — ver App\Domain\Banking\Support\ItemRefresher.
+             *     Omitido quando false: a tela só precisa saber quando é true.
+             */
+            refresh_unsupported?: boolean;
             accounts: {
                 id: number;
                 name: string;
@@ -1235,7 +1241,16 @@ export interface components {
             status: components["schemas"]["StatementStatus"];
             days_until_due: number;
             is_overdue: boolean;
+            /**
+             * @description Nunca é divergência quando os lançamentos desta fatura são de
+             *     antes do histórico compartilhado pelo banco (ver
+             *     CardStatement::historyIncompleteSince()): o calculado é 0 (ou
+             *     bem menor) só por falta de lançamento local, não porque o
+             *     banco e o app discordam de verdade.
+             */
             has_divergence: boolean;
+            history_incomplete?: boolean;
+            history_incomplete_since?: string;
         };
         /** CategoryComparisonResource */
         CategoryComparisonResource: {

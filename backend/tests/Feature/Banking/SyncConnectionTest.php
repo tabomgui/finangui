@@ -4,6 +4,7 @@ use App\Domain\Accounts\Models\Account;
 use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Data\ProviderItem;
 use App\Domain\Banking\Enums\ConnectionStatus;
+use App\Domain\Banking\Enums\SyncRunStatus;
 use App\Domain\Banking\Enums\SyncTrigger;
 use App\Domain\Banking\Errors\ProviderAuthFailed;
 use App\Domain\Banking\Errors\ProviderRequestFailed;
@@ -565,6 +566,171 @@ it('refreshItem indisponível (ex.: 429) não derruba o sync: loga e segue com o
 
     expect($connection->refresh()->status)->toBe(ConnectionStatus::Active)
         ->and($connection->last_error)->toBeNull();
+});
+
+it('item de um conector MeuPluggy nunca pede refresh, mesmo velho, e grava refresh_unsupported na conexão sem gerar aviso', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+    $this->fake->items[$this->itemId] = providerItem([
+        'id' => $this->itemId, 'status' => 'UPDATED', 'institutionName' => 'MeuPluggy', 'lastUpdatedAt' => CarbonImmutable::now()->subHours(40),
+    ]);
+
+    runConnectionSync($connection->id);
+
+    expect(array_filter($this->fake->calls, fn (array $c) => $c['method'] === 'refreshItem'))->toBeEmpty();
+
+    $connection->refresh();
+    expect($connection->status)->toBe(ConnectionStatus::Active)
+        ->and($connection->settings['refresh_unsupported'] ?? null)->toBeTrue();
+
+    $run = BankSyncRun::query()->where('connection_id', $connection->id)->first();
+    expect($run->status)->toBe(SyncRunStatus::Success)
+        ->and($run->refresh_requested)->toBeFalse()
+        ->and($run->warnings)->toBe([]);
+});
+
+it('conector que não se chama MeuPluggy continua pedindo refresh normalmente, mesmo velho (a detecção é só pelo nome)', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+    $this->fake->items[$this->itemId] = providerItem([
+        'id' => $this->itemId, 'status' => 'UPDATED', 'institutionName' => 'Banco OAuth Qualquer',
+        'lastUpdatedAt' => CarbonImmutable::now()->subHours(40),
+    ]);
+
+    runConnectionSync($connection->id);
+
+    expect(array_filter($this->fake->calls, fn (array $c) => $c['method'] === 'refreshItem'))->toHaveCount(1);
+    expect($connection->refresh()->settings['refresh_unsupported'] ?? null)->not->toBeTrue();
+});
+
+it('conexão já marcada refresh_unsupported de um sync anterior nunca mais pede refresh', function () {
+    $connection = BankConnection::factory()->active()->create([
+        'user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now(),
+        'settings' => ['refresh_unsupported' => true],
+    ]);
+    // Item comum, sem nenhum sinal de conector — só a flag já gravada decide.
+    $this->fake->items[$this->itemId] = providerItem([
+        'id' => $this->itemId, 'status' => 'UPDATED', 'lastUpdatedAt' => CarbonImmutable::now()->subHours(40),
+    ]);
+
+    runConnectionSync($connection->id);
+
+    expect(array_filter($this->fake->calls, fn (array $c) => $c['method'] === 'refreshItem'))->toBeEmpty();
+
+    $run = BankSyncRun::query()->where('connection_id', $connection->id)->first();
+    expect($run->status)->toBe(SyncRunStatus::Success)
+        ->and($run->refresh_requested)->toBeFalse()
+        ->and($run->warnings)->toBe([]);
+});
+
+it('refreshItem respondendo "item cant be updated" (MeuPluggy) grava refresh_unsupported e não gera aviso nesta run', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+    $delegate = new FakeBankProvider;
+    $delegate->items[$this->itemId] = providerItem(['id' => $this->itemId, 'status' => 'UPDATED', 'lastUpdatedAt' => CarbonImmutable::now()->subHours(21)]);
+
+    fakeBankProvider(providerFailingOn($delegate, 'refreshItem', new ProviderRequestFailed(400, null, 'MeuPluggy item cant be updated')));
+
+    runConnectionSync($connection->id);
+
+    expect($connection->refresh()->status)->toBe(ConnectionStatus::Active)
+        ->and($connection->settings['refresh_unsupported'] ?? null)->toBeTrue();
+
+    $run = BankSyncRun::query()->where('connection_id', $connection->id)->first();
+    expect($run->status)->toBe(SyncRunStatus::Success)
+        ->and($run->refresh_requested)->toBeFalse()
+        ->and($run->warnings)->toBe([]);
+});
+
+it('refreshItem recusado com outro 400 continua o aviso normal, sem marcar refresh_unsupported', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+    $delegate = new FakeBankProvider;
+    $delegate->items[$this->itemId] = providerItem(['id' => $this->itemId, 'status' => 'UPDATED', 'lastUpdatedAt' => CarbonImmutable::now()->subHours(21)]);
+
+    fakeBankProvider(providerFailingOn($delegate, 'refreshItem', new ProviderRequestFailed(400, null, 'limite de atualizações excedido')));
+
+    runConnectionSync($connection->id);
+
+    expect($connection->refresh()->settings['refresh_unsupported'] ?? null)->not->toBeTrue();
+
+    $run = BankSyncRun::query()->where('connection_id', $connection->id)->first();
+    expect($run->status)->toBe(SyncRunStatus::Partial)
+        ->and($run->warnings)->toHaveCount(1);
+});
+
+it('"item can\'t be updated" (com apóstrofo) também bate na regex exata', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+    $delegate = new FakeBankProvider;
+    $delegate->items[$this->itemId] = providerItem(['id' => $this->itemId, 'status' => 'UPDATED', 'lastUpdatedAt' => CarbonImmutable::now()->subHours(21)]);
+
+    fakeBankProvider(providerFailingOn($delegate, 'refreshItem', new ProviderRequestFailed(400, null, "MeuPluggy item can't be updated")));
+
+    runConnectionSync($connection->id);
+
+    expect($connection->refresh()->settings['refresh_unsupported'] ?? null)->toBeTrue();
+});
+
+it('mensagem genérica "cant be updated", sem nomear o conector na mensagem, nunca marca refresh_unsupported', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+    $delegate = new FakeBankProvider;
+    $delegate->items[$this->itemId] = providerItem([
+        'id' => $this->itemId, 'status' => 'UPDATED', 'institutionName' => 'Banco Qualquer', 'lastUpdatedAt' => CarbonImmutable::now()->subHours(21),
+    ]);
+
+    fakeBankProvider(providerFailingOn($delegate, 'refreshItem', new ProviderRequestFailed(400, null, 'item cant be updated right now')));
+
+    runConnectionSync($connection->id);
+
+    expect($connection->refresh()->settings['refresh_unsupported'] ?? null)->not->toBeTrue();
+
+    $run = BankSyncRun::query()->where('connection_id', $connection->id)->first();
+    expect($run->status)->toBe(SyncRunStatus::Partial)
+        ->and($run->warnings)->toHaveCount(1);
+});
+
+it('conector do item muda de nome desde que refresh_unsupported foi gravado: limpa a flag', function () {
+    $connection = BankConnection::factory()->active()->create([
+        'user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now(),
+        'settings' => ['refresh_unsupported' => true, 'refresh_unsupported_connector' => 'MeuPluggy'],
+    ]);
+    // O item agora reporta um conector diferente do que tinha quando a flag
+    // foi gravada (ex.: o banco migrou de agregador) — item recente, então
+    // nem pediria refresh de qualquer jeito, só prova que a flag some.
+    $this->fake->items[$this->itemId] = providerItem([
+        'id' => $this->itemId, 'status' => 'UPDATED', 'institutionName' => 'Banco Novo', 'lastUpdatedAt' => CarbonImmutable::now()->subMinutes(5),
+    ]);
+
+    runConnectionSync($connection->id);
+
+    $connection->refresh();
+    expect($connection->settings['refresh_unsupported'] ?? null)->not->toBeTrue()
+        ->and($connection->settings['refresh_unsupported_connector'] ?? null)->toBeNull();
+});
+
+it('conector do item muda de nome desde que a flag foi gravada: o item velho volta a pedir refresh normalmente', function () {
+    $connection = BankConnection::factory()->active()->create([
+        'user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now(),
+        'settings' => ['refresh_unsupported' => true, 'refresh_unsupported_connector' => 'MeuPluggy'],
+    ]);
+    $this->fake->items[$this->itemId] = providerItem([
+        'id' => $this->itemId, 'status' => 'UPDATED', 'institutionName' => 'Banco Novo', 'lastUpdatedAt' => CarbonImmutable::now()->subHours(40),
+    ]);
+
+    runConnectionSync($connection->id);
+
+    expect(array_filter($this->fake->calls, fn (array $c) => $c['method'] === 'refreshItem'))->toHaveCount(1);
+});
+
+it('mesmo conector de quando a flag foi gravada (nem precisa ser MeuPluggy pelo nome): continua sem pedir refresh', function () {
+    $connection = BankConnection::factory()->active()->create([
+        'user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now(),
+        'settings' => ['refresh_unsupported' => true, 'refresh_unsupported_connector' => 'Banco Estranho'],
+    ]);
+    $this->fake->items[$this->itemId] = providerItem([
+        'id' => $this->itemId, 'status' => 'UPDATED', 'institutionName' => 'Banco Estranho', 'lastUpdatedAt' => CarbonImmutable::now()->subHours(40),
+    ]);
+
+    runConnectionSync($connection->id);
+
+    expect(array_filter($this->fake->calls, fn (array $c) => $c['method'] === 'refreshItem'))->toBeEmpty();
+    expect($connection->refresh()->settings['refresh_unsupported'] ?? null)->toBeTrue();
 });
 
 it('ProviderUnavailable com retryAfter solta o job de volta na fila com essa espera, em vez do backoff padrão', function () {

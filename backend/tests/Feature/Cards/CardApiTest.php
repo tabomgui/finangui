@@ -138,6 +138,76 @@ it('fatura paga no passado é ignorada; a atual passa a ser a próxima a vencer'
         ->assertJsonPath('data.current_statement.is_overdue', false);
 });
 
+it('fatura de antes do histórico sincronizado, sem pagamento local nenhum, mas quitada segundo reported_paid, é ignorada como atual', function () {
+    CardStatement::factory()->create([
+        'account_id' => $this->card->id, 'closing_date' => '2026-01-10', 'due_date' => '2026-01-20',
+        'reported_total' => 18000, 'reported_paid' => 18000,
+    ]);
+    $next = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-03-10', 'due_date' => '2026-03-20']);
+
+    $this->getJson("/api/v1/cards/{$this->card->id}")->assertOk()
+        ->assertJsonPath('data.current_statement.id', $next->id)
+        ->assertJsonPath('data.current_statement.status', 'open');
+});
+
+it('fatura antiga parcialmente paga nunca volta a ser a atual depois de uma fatura mais nova já totalmente paga: a atual é a próxima com saldo', function () {
+    $old = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-01-10', 'due_date' => '2026-01-20']);
+    Transaction::factory()->create(['account_id' => $this->card->id, 'statement_id' => $old->id, 'amount' => 50000, 'direction' => 'out']);
+    Transaction::factory()->create([
+        'account_id' => $this->card->id, 'statement_id' => $old->id, 'card_payment_statement_id' => $old->id,
+        'amount' => 20000, 'direction' => 'in',
+    ]);
+
+    $paidLater = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-02-10', 'due_date' => '2026-02-20']);
+    Transaction::factory()->create(['account_id' => $this->card->id, 'statement_id' => $paidLater->id, 'amount' => 10000, 'direction' => 'out']);
+    Transaction::factory()->create([
+        'account_id' => $this->card->id, 'statement_id' => $paidLater->id, 'card_payment_statement_id' => $paidLater->id,
+        'amount' => 10000, 'direction' => 'in',
+    ]);
+
+    $newDebt = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-03-01', 'due_date' => '2026-03-08']);
+    Transaction::factory()->create(['account_id' => $this->card->id, 'statement_id' => $newDebt->id, 'amount' => 7000, 'direction' => 'out']);
+
+    $this->getJson("/api/v1/cards/{$this->card->id}")->assertOk()
+        ->assertJsonPath('data.current_statement.id', $newDebt->id)
+        ->assertJsonPath('data.current_statement.status', 'closed');
+});
+
+it('fatura fechada vazia (sem nenhuma cobrança) nunca serve de piso de "totalmente paga": a antiga não paga continua a atual', function () {
+    $unpaid = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-01-10', 'due_date' => '2026-01-20']);
+    Transaction::factory()->create(['account_id' => $this->card->id, 'statement_id' => $unpaid->id, 'amount' => 50000, 'direction' => 'out']);
+
+    // Fatura mais nova, fechada, sem nenhum lançamento (cartão não usado
+    // naquele ciclo) — total calculado é zero, não "pago em cheio".
+    CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-02-10', 'due_date' => '2026-02-20']);
+
+    $this->getJson("/api/v1/cards/{$this->card->id}")->assertOk()
+        ->assertJsonPath('data.current_statement.id', $unpaid->id)
+        ->assertJsonPath('data.current_statement.status', 'closed');
+});
+
+it('sem nenhuma fatura mais nova com débito depois da última paga, a atual é a próxima a vencer', function () {
+    $old = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-01-10', 'due_date' => '2026-01-20']);
+    Transaction::factory()->create(['account_id' => $this->card->id, 'statement_id' => $old->id, 'amount' => 50000, 'direction' => 'out']);
+    Transaction::factory()->create([
+        'account_id' => $this->card->id, 'statement_id' => $old->id, 'card_payment_statement_id' => $old->id,
+        'amount' => 20000, 'direction' => 'in',
+    ]);
+
+    $paidLater = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-02-10', 'due_date' => '2026-02-20']);
+    Transaction::factory()->create(['account_id' => $this->card->id, 'statement_id' => $paidLater->id, 'amount' => 10000, 'direction' => 'out']);
+    Transaction::factory()->create([
+        'account_id' => $this->card->id, 'statement_id' => $paidLater->id, 'card_payment_statement_id' => $paidLater->id,
+        'amount' => 10000, 'direction' => 'in',
+    ]);
+
+    $next = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-04-10', 'due_date' => '2026-04-20']);
+
+    $this->getJson("/api/v1/cards/{$this->card->id}")->assertOk()
+        ->assertJsonPath('data.current_statement.id', $next->id)
+        ->assertJsonPath('data.current_statement.status', 'open');
+});
+
 it('cartão sem faturas tem fatura atual nula', function () {
     $this->getJson("/api/v1/cards/{$this->card->id}")->assertOk()->assertJsonPath('data.current_statement', null);
 });

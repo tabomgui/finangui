@@ -8,7 +8,7 @@ Notificações (sino no cabeçalho/barra lateral) avisam fatura vencendo, orçam
 
 Transferências entre contas próprias são detectadas automaticamente ao final de cada importação de extrato ou sincronização bancária: quando as duas pernas (saída numa conta, entrada noutra, de qualquer origem — inclusive um lançamento manual já existente) formam um par, o sistema liga as duas sozinho quando é inequívoco ou sugere quando é ambíguo; também dá para buscar sob demanda. Sugestões ficam disponíveis para aceitar ou descartar, e também é possível juntar duas transações à mão ou desfazer uma transferência já ligada.
 
-Um pagamento de fatura (perna de transferência, pagamento informado pela fatura do banco, ou descrição que bate com um padrão conhecido como "pagamento recebido") nunca abate o total da fatura: ele conta só em "Pago" da fatura que quita, e aparece na lista de lançamentos com o rótulo "Pagamento" em vez de uma categoria. Um pagamento duplicado (o mesmo pagamento relatado duas vezes pelo banco) fica marcado como ignorado, com o motivo visível.
+Um pagamento de fatura (perna de transferência, pagamento informado pela fatura do banco, ou descrição que bate com um padrão conhecido como "pagamento recebido") nunca abate o total da fatura: ele conta só em "Pago" da fatura que quita, e aparece na lista de lançamentos com o rótulo "Pagamento" em vez de uma categoria. Um pagamento duplicado (o mesmo pagamento relatado duas vezes pelo banco) fica marcado como ignorado, com o motivo visível. Uma fatura fechada cujas compras são de antes do período que o banco compartilha (o Open Finance soma só uns 12 meses de histórico) não mostra o aviso de divergência: ela aparece como paga quando o próprio banco já informou os pagamentos daquele período, com uma nota neutra no lugar do aviso.
 
 Cada sincronização bancária fica registrada num histórico, em "Histórico" no card da conexão (`/conexoes/:id/sincronizacoes`): data e gatilho (agendada, manual, conexão, credenciais), status (sucesso, parcial ou erro), quantos lançamentos foram adicionados e eventuais avisos; o detalhe de cada execução mostra os lançamentos que ela trouxe. Dá para disparar uma sincronização na hora a partir dali.
 
@@ -102,6 +102,8 @@ Depois de conectar, cada conexão sincroniza automaticamente a cada 6 horas (con
 
 Cada sincronização pede dados novos ao banco só quando os que ele tem estão velhos: 12 horas na sincronização automática, 30 minutos na manual — a Pluggy já atualiza o item sozinha uma vez por dia. Além dos lançamentos novos, toda sincronização confere de novo por data os últimos 40 dias, para captar uma alteração num lançamento já existente (confirmação de pendente, correção de descrição, fatura de uma compra que ainda não tinha fatura) sem perder uma edição manual. O histórico de sincronização de cada conexão guarda sempre as 20 execuções mais recentes, e descarta as com mais de 90 dias.
 
+Alguns conectores (ex.: MeuPluggy, o agregador Open Finance da própria Pluggy) nunca aceitam o pedido de atualização sob demanda; o app detecta isso (de antemão ou na primeira tentativa recusada) e para de pedir, sem gerar aviso — o histórico dessas conexões mostra um aviso explicando que a atualização é só da própria Pluggy, uma vez por dia.
+
 Em produção, o nginx do serviço `web` já libera `frame-src https://connect.pluggy.ai` na Content-Security-Policy, necessário para o widget da Pluggy abrir o iframe de login do banco.
 
 ### Após atualizar
@@ -114,6 +116,8 @@ make art c="cards:reconcile-payments"              # aplica
 ```
 
 Rodar sem `--user` reconcilia todos os usuários. Para um cartão conectado a um banco, o comando busca de novo as faturas do provedor e nunca reconsidera (nem reseta) nada anterior ao fechamento da fatura mais antiga que essa busca trouxe — não necessariamente todo o histórico do cartão; um cartão sem conexão (ou sem credenciais no momento) é reconciliado sem essa restrição, só pelas regras que não dependem de fatura do banco (transferência já ligada, padrão de descrição). Em produção, troque `make art` por `docker compose -f docker-compose.prod.yml --env-file backend/.env exec backend php artisan`.
+
+Uma versão anterior a esta reescrevia, por engano, o fechamento de fatura antiga sempre que o dia de fechamento do cartão mudava e o banco não informava `billClosingDate` para aquela fatura (comum em fatura bem antiga). A partir desta versão isso não acontece mais, mas uma fatura já afetada por uma sincronização anterior não se corrige sozinha — edite a data de fechamento dela à mão (tela da fatura → "Editar datas", ou `PATCH /card-statements/{id}`).
 
 ## Importar categorias do finangui-js
 

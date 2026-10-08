@@ -10,7 +10,11 @@ use App\Domain\Rules\Support\TextNormalizer;
  * banco não traz `payments[]` — e por App\Domain\Transactions\Actions\UpdateTransaction
  * para reconhecer na hora um crédito que o usuário acabou de deixar de
  * ignorar. Comparação sem acento e sem caixa (TextNormalizer::normalize(),
- * maiúsculas ASCII).
+ * maiúsculas ASCII), com `-`/`.` normalizados para espaço antes de comparar
+ * (ex.: "pagto-debito.automatico" ainda bate com "PAGTO DEBITO AUTOMATICO").
+ * Uma descrição com "estorno" nunca é pagamento, mesmo que também contenha
+ * um dos padrões abaixo (ex.: "estorno pagamento recebido" — o banco
+ * desfazendo um pagamento que tinha reconhecido antes).
  */
 final class CardPaymentDescriptionPatterns
 {
@@ -21,11 +25,21 @@ final class CardPaymentDescriptionPatterns
         'PAGAMENTO DE FATURA',
         'PAGAMENTO FATURA',
         'PGTO',
+        'PAGAMENTO ON LINE',
+        'PAGAMENTO ONLINE',
+        'DEB AUT PARCIAL',
+        'DEBITO AUTOMATICO PARCIAL',
     ];
+
+    private const EXCLUDED = 'ESTORNO';
 
     public static function matches(string $description): bool
     {
-        $normalized = TextNormalizer::normalize($description);
+        $normalized = self::normalize($description);
+
+        if (str_contains($normalized, self::EXCLUDED)) {
+            return false;
+        }
 
         foreach (self::PATTERNS as $pattern) {
             if (str_contains($normalized, $pattern)) {
@@ -34,5 +48,12 @@ final class CardPaymentDescriptionPatterns
         }
 
         return false;
+    }
+
+    private static function normalize(string $description): string
+    {
+        $dashesAndDotsAsSpaces = str_replace(['-', '.'], ' ', TextNormalizer::normalize($description));
+
+        return trim((string) preg_replace('/\s+/', ' ', $dashesAndDotsAsSpaces));
     }
 }

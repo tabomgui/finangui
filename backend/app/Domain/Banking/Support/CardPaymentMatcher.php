@@ -23,7 +23,12 @@ use Carbon\CarbonImmutable;
  * - Sem pagamento do banco disponível, a descrição bate com
  *   App\Domain\Banking\Support\CardPaymentDescriptionPatterns — só então um
  *   lançamento vindo do banco (não manual/CSV/OFX) pode ser candidato a
- *   duplicata.
+ *   duplicata. Um candidato assim só se torna uma âncora NOVA (sem casar
+ *   com nenhuma já existente — ver nearestAnchor()) quando nenhum payments[]
+ *   do lote cobre a data dele (ver hasReportedPaymentNear()): com algum
+ *   payments[] por perto, mas de outro valor, o banco já tem dado
+ *   específico sobre o período — melhor deixar sem decisão do que confiar
+ *   só na descrição contra um sinal conflitante.
  *
  * Deduplicação: o excedente de lançamentos reconhecidos pelo padrão de
  * descrição, além do que já foi consumido por um pagamento do banco, é
@@ -35,7 +40,8 @@ use Carbon\CarbonImmutable;
  */
 final class CardPaymentMatcher
 {
-    private const WINDOW_DAYS = 3;
+    /** Também usada por App\Domain\Banking\Actions\ReconcileCardPayments::earliestBillClosing(). */
+    public const WINDOW_DAYS = 3;
 
     /**
      * @param  list<CardPaymentCandidate>  $candidates
@@ -43,6 +49,25 @@ final class CardPaymentMatcher
      * @return list<CardPaymentDecision>
      */
     public static function match(array $candidates, array $bills): array
+    {
+        return self::matchDetailed($candidates, $bills)->decisions;
+    }
+
+    /**
+     * Como match(), mas também devolve os candidatos travados por
+     * hasReportedPaymentNear() (ver a classe) — reconhecidos pelo padrão de
+     * descrição, sem vaga/âncora do banco, mas com algum payments[] do lote
+     * cobrindo a mesma data, de outro valor. Usada por
+     * App\Domain\Banking\Actions\ReconcileCardPayments, que precisa saber
+     * quais ids ficaram deliberadamente sem decisão (para nunca resetá-los —
+     * eles não são "não reconhecidos", são "sem dado novo suficiente para
+     * decidir agora") — match() sozinho não distingue um candidato assim de
+     * um que realmente não bateu com nada.
+     *
+     * @param  list<CardPaymentCandidate>  $candidates
+     * @param  list<ProviderBill>  $bills
+     */
+    public static function matchDetailed(array $candidates, array $bills): CardPaymentMatchResult
     {
         /** @var array<int, CardPaymentCandidate> $byId */
         $byId = [];
@@ -99,12 +124,25 @@ final class CardPaymentMatcher
         /** @var array<int, true> $duplicateIds */
         $duplicateIds = [];
 
+        /** @var array<int, true> $gatedIds */
+        $gatedIds = [];
+
         foreach ($providerPatternLeftovers as $candidate) {
             $anchorId = self::nearestAnchor($candidate, $byId, array_keys($anchorBillId));
 
             if ($anchorId !== null) {
                 $duplicateIds[$candidate->id] = true;
+            } elseif (self::hasReportedPaymentNear($bills, $candidate->date)) {
+                // Sem âncora e com algum payments[] cobrindo esta data (mas
+                // de outro valor, já que senão teria virado uma vaga mais
+                // acima): o banco já tem dado específico sobre o período —
+                // mais seguro deixar este candidato sem decisão do que
+                // confiar só na descrição contra um sinal conflitante.
+                $gatedIds[$candidate->id] = true;
             } else {
+                // Sem âncora e sem nenhum payments[] cobrindo esta data: o
+                // padrão de descrição é a única pista que existe, e vale
+                // como uma nova âncora.
                 $anchorBillId[$candidate->id] = null;
             }
         }
@@ -119,7 +157,7 @@ final class CardPaymentMatcher
             $decisions[] = new CardPaymentDecision($candidateId, isDuplicate: true, billExternalId: null);
         }
 
-        return $decisions;
+        return new CardPaymentMatchResult($decisions, $gatedIds);
     }
 
     /**
@@ -138,7 +176,40 @@ final class CardPaymentMatcher
      */
     private static function bankPaymentSlots(array $bills): array
     {
-        /** @var array<string, list<array{billId: string, closingDate: ?string, amountCents: int, date: string}>> $groups */
+        return array_map(self::preferredEntry(...), array_values(self::groupPaymentsById($bills)));
+    }
+
+    /**
+     * A mesma fatura preferida que bankPaymentSlots() usa internamente
+     * (preferredEntry()), exposta para quem precisa só da atribuição
+     * id-de-pagamento → fatura — hoje, App\Domain\Banking\Actions\SyncBills,
+     * para nunca somar o mesmo pagamento do banco (mesmo `payments[].id`
+     * repetido em mais de uma fatura — dado real da Pluggy) em reported_paid
+     * de duas faturas diferentes.
+     *
+     * @param  list<ProviderBill>  $bills
+     * @return array<string, string> id do pagamento => id da fatura preferida
+     */
+    public static function preferredBillForPayment(array $bills): array
+    {
+        $preferred = [];
+
+        foreach (self::groupPaymentsById($bills) as $paymentId => $entries) {
+            $preferred[$paymentId] = self::preferredEntry($entries)['billId'];
+        }
+
+        return $preferred;
+    }
+
+    /**
+     * Todas as ocorrências de payments[] de todas as faturas, agrupadas por
+     * `id` do pagamento — base de bankPaymentSlots() e preferredBillForPayment().
+     *
+     * @param  list<ProviderBill>  $bills
+     * @return array<string, list<array{billId: string, closingDate: ?string, amountCents: int, date: string}>>
+     */
+    private static function groupPaymentsById(array $bills): array
+    {
         $groups = [];
 
         foreach ($bills as $bill) {
@@ -156,7 +227,33 @@ final class CardPaymentMatcher
             }
         }
 
-        return array_map(self::preferredEntry(...), array_values($groups));
+        return $groups;
+    }
+
+    /**
+     * Existe algum payments[], de qualquer fatura deste lote, com data a
+     * ±WINDOW_DAYS de $date — não importa o valor (um valor igual já teria
+     * virado vaga antes de chegar aqui). Usada só para decidir se um
+     * candidato reconhecido apenas pelo padrão de descrição (sem vaga do
+     * banco) pode se tornar uma âncora nova — ver match().
+     *
+     * @param  list<ProviderBill>  $bills
+     */
+    private static function hasReportedPaymentNear(array $bills, string $date): bool
+    {
+        foreach ($bills as $bill) {
+            foreach ($bill->payments as $payment) {
+                if (! self::isUsablePayment($payment)) {
+                    continue;
+                }
+
+                if (abs(self::diffDays($date, $payment->date)) <= self::WINDOW_DAYS) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static function isUsablePayment(ProviderBillPayment $payment): bool

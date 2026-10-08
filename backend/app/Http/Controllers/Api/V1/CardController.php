@@ -34,7 +34,7 @@ final class CardController extends Controller
         $this->ensureCard($account);
 
         return CardStatementResource::collection(
-            CardStatement::query()->withTotals()->where('account_id', $account->id)->orderBy('due_date')->get(),
+            CardStatement::query()->withHistoryContext()->where('account_id', $account->id)->orderBy('due_date')->get(),
         );
     }
 

@@ -103,6 +103,32 @@ it('mapeia o item com needsReauth/isUpdating', function () {
         ->and($item->lastUpdatedAt)->toBeInstanceOf(CarbonImmutable::class);
 });
 
+it('mapeia o nome do conector e refreshUnsupported() reconhece MeuPluggy só por ele', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/items/*' => Http::response([
+            'id' => 'item-meupluggy', 'status' => 'UPDATED',
+            'connector' => ['name' => 'MeuPluggy'],
+        ]),
+    ]);
+
+    $item = $this->provider->item('item-meupluggy');
+
+    expect($item->institutionName)->toBe('MeuPluggy')
+        ->and($item->refreshUnsupported())->toBeTrue();
+});
+
+it('conector comum: refreshUnsupported() é false, sem quebrar o mapeamento', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/items/*' => Http::response(pluggyFixture('item-updated.json')),
+    ]);
+
+    $item = $this->provider->item('00000000-0000-0000-0000-000000000001');
+
+    expect($item->refreshUnsupported())->toBeFalse();
+});
+
 it('manda clientUserId dentro de options no connect_token, sem avoidDuplicates, e itemId só na raiz quando informado', function () {
     Http::fake([
         'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
@@ -754,6 +780,22 @@ it('converte um 400 inesperado em ProviderRequestFailed, com status e providerCo
     } catch (ProviderRequestFailed $e) {
         expect($e->status)->toBe(400)
             ->and($e->providerCode)->toBe('INVALID_ITEM');
+    }
+});
+
+it('ProviderRequestFailed carrega o "message" cru da resposta, mesmo sem "code" — refreshItem de um item MeuPluggy', function () {
+    Http::fake([
+        'api.pluggy.ai/auth' => Http::response(['apiKey' => 'key-1']),
+        'api.pluggy.ai/items/*' => Http::response(['message' => 'MeuPluggy item cant be updated'], 400),
+    ]);
+
+    try {
+        $this->provider->refreshItem('item-1');
+        $this->fail('deveria ter lançado ProviderRequestFailed');
+    } catch (ProviderRequestFailed $e) {
+        expect($e->status)->toBe(400)
+            ->and($e->providerCode)->toBeNull()
+            ->and($e->providerMessage)->toBe('MeuPluggy item cant be updated');
     }
 });
 

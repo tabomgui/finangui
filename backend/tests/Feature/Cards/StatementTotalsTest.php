@@ -136,6 +136,58 @@ it('fatura ainda aberta mantém a previsão de uma ocorrência de recorrência a
     expect($loaded->total()->cents)->toBe(7000);
 });
 
+it('reported_paid vale como pago quando não há pagamento local nenhum (fatura de antes do histórico sincronizado)', function () {
+    test()->statement->update(['reported_total' => 30000, 'reported_paid' => 30000]);
+
+    $statement = loaded();
+
+    expect($statement->paid()->cents)->toBe(30000)
+        ->and($statement->remaining(CarbonImmutable::parse('2026-03-05'))->cents)->toBe(0)
+        ->and($statement->status(CarbonImmutable::parse('2026-03-05')))->toBe(StatementStatus::Paid);
+});
+
+it('pago é o maior entre o pagamento local e reported_paid, nunca a soma dos dois', function () {
+    linked(['amount' => 20000, 'direction' => Direction::Out]);
+    linked([
+        'amount' => 20000, 'direction' => Direction::In, 'transfer_id' => (string) Str::uuid(),
+        'card_payment_statement_id' => test()->statement->id,
+    ]);
+    test()->statement->update(['reported_total' => 20000, 'reported_paid' => 20000]);
+
+    expect(loaded()->paid()->cents)->toBe(20000);
+});
+
+it('pagamento local maior que reported_paid: paid() usa o local, nunca reported_paid isolado', function () {
+    linked(['amount' => 30000, 'direction' => Direction::Out]);
+    linked([
+        'amount' => 25000, 'direction' => Direction::In, 'transfer_id' => (string) Str::uuid(),
+        'card_payment_statement_id' => test()->statement->id,
+    ]);
+    test()->statement->update(['reported_total' => 30000, 'reported_paid' => 10000]);
+
+    expect(loaded()->paid()->cents)->toBe(25000);
+});
+
+it('reported_paid parcial: status partial e remaining pelo que falta', function () {
+    test()->statement->update(['reported_total' => 10000, 'reported_paid' => 4000]);
+
+    $statement = loaded();
+
+    expect($statement->paid()->cents)->toBe(4000)
+        ->and($statement->remaining(CarbonImmutable::parse('2026-03-05'))->cents)->toBe(6000)
+        ->and($statement->status(CarbonImmutable::parse('2026-03-05')))->toBe(StatementStatus::Partial);
+});
+
+it('reported_paid maior que o total (sobrepagamento) não é erro: remaining fica em zero', function () {
+    test()->statement->update(['reported_total' => 10000, 'reported_paid' => 15000]);
+
+    $statement = loaded();
+
+    expect($statement->paid()->cents)->toBe(15000)
+        ->and($statement->remaining(CarbonImmutable::parse('2026-03-05'))->cents)->toBe(0)
+        ->and($statement->status(CarbonImmutable::parse('2026-03-05')))->toBe(StatementStatus::Paid);
+});
+
 it('fatura fechada mantém no total uma ocorrência de recorrência já adotada por importação/banco', function () {
     CarbonImmutable::setTestNow('2026-03-15');
     $recurrence = Recurrence::factory()->create(['account_id' => $this->card->id, 'user_id' => $this->user->id]);

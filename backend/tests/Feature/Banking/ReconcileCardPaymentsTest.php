@@ -294,6 +294,49 @@ it('dentro da janela re-sincronizada, uma transação sem decisão nesta passage
         ->and($transaction->card_payment_statement_id)->toBeNull();
 });
 
+it('crédito com statement_locked, sem decisão nesta passagem, perde a marca de pagamento mas nunca a fatura', function () {
+    $lockedStatement = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-04-01', 'due_date' => '2026-04-10']);
+
+    // Reconhecido como pagamento antes; a descrição não bate com nenhum
+    // padrão e não há fatura do banco nesta passagem — fica sem decisão.
+    $transaction = creditIn([
+        'amount' => 9000, 'date' => '2026-04-14', 'description' => 'Compra qualquer',
+        'statement_id' => $lockedStatement->id, 'card_payment_statement_id' => $lockedStatement->id, 'statement_locked' => true,
+    ]);
+
+    $this->action->handle($this->card, []);
+
+    $transaction->refresh();
+    expect($transaction->card_payment_statement_id)->toBeNull()
+        ->and($transaction->is_ignored)->toBeFalse()
+        ->and($transaction->ignored_reason)->toBeNull()
+        ->and($transaction->statement_id)->toBe($lockedStatement->id);
+});
+
+it('crédito travado por um payments[] perto de outro valor mantém o estado atual, sem ser resetado nem reconhecido de novo', function () {
+    $statement = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-04-01', 'due_date' => '2026-04-10']);
+
+    // Já reconhecido como pagamento numa passagem anterior.
+    $transaction = creditIn([
+        'amount' => 9000, 'date' => '2026-04-14', 'description' => 'Pagamento recebido',
+        'statement_id' => $statement->id, 'card_payment_statement_id' => $statement->id,
+    ]);
+
+    // payments[] desta fatura cobre a mesma data, mas com outro valor —
+    // CardPaymentMatcher trava a decisão em vez de confiar só na descrição.
+    $bill = new ProviderBill(
+        id: 'fatura-x', dueDate: '2026-04-20', closingDate: '2026-04-05', totalCents: 20000,
+        payments: [new ProviderBillPayment('pag-outro', '2026-04-15', 5000)],
+    );
+
+    $this->action->handle($this->card, [$bill]);
+
+    $transaction->refresh();
+    expect($transaction->card_payment_statement_id)->toBe($statement->id)
+        ->and($transaction->statement_id)->toBe($statement->id)
+        ->and($transaction->is_ignored)->toBeFalse();
+});
+
 it('fora da janela re-sincronizada, uma transação sem decisão nesta passagem não é tocada', function () {
     CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-01-01', 'due_date' => '2026-01-10']);
     $transaction = creditIn([
@@ -306,6 +349,112 @@ it('fora da janela re-sincronizada, uma transação sem decisão nesta passagem 
     $transaction->refresh();
     expect($transaction->is_ignored)->toBeTrue()
         ->and($transaction->ignored_reason)->toBe(ReconcileCardPayments::DUPLICATE_REASON);
+});
+
+it('fatura antiga sem fechamento informado não impede créditos de pagamento de fora da janela de 40 dias de serem reconsiderados (abril)', function () {
+    // Cenário real: faturas recentes já têm billClosingDate, mas faturas
+    // antigas (daquela época do cartão) não têm — earliestBillClosing()
+    // não pode ignorar a antiga e calcular a janela só a partir da recente,
+    // senão os créditos de pagamento dela nunca entrariam no pool() abaixo.
+    $statement = CardStatement::factory()->create([
+        'account_id' => $this->card->id, 'closing_date' => '2026-01-10', 'due_date' => '2026-02-10', 'external_id' => 'fatura-sem-fechamento',
+    ]);
+    $oldBill = new ProviderBill(
+        id: 'fatura-sem-fechamento', dueDate: '2026-02-10', closingDate: null, totalCents: 45000,
+        payments: [new ProviderBillPayment('pagto-antigo', '2026-02-11', 45000)],
+    );
+    $recentBill = new ProviderBill(id: 'fatura-recente', dueDate: '2026-09-10', closingDate: '2026-09-01', totalCents: 10000);
+
+    $received = creditIn(['amount' => 45000, 'date' => '2026-02-11', 'description' => 'Pagamento recebido']);
+    $autoDebit = creditIn(['amount' => 45000, 'date' => '2026-02-11', 'description' => 'Pagto debito automatico']);
+
+    $bills = [$oldBill, $recentBill];
+    $windowFrom = ReconcileCardPayments::earliestBillClosing($bills);
+
+    $this->action->handle($this->card, $bills, $windowFrom);
+
+    $received->refresh();
+    $autoDebit->refresh();
+
+    $ignored = $received->is_ignored ? $received : $autoDebit;
+    $chosen = $received->is_ignored ? $autoDebit : $received;
+
+    expect($ignored->is_ignored)->toBeTrue()
+        ->and($chosen->is_ignored)->toBeFalse()
+        ->and($chosen->card_payment_statement_id)->toBe($statement->id);
+});
+
+it('dois créditos iguais no mesmo dia, com um único payments[] do banco: o reconhecido pelo padrão "pagamento on line" é deduplicado (agosto)', function () {
+    $statement = CardStatement::factory()->create([
+        'account_id' => $this->card->id, 'closing_date' => '2026-08-05', 'due_date' => '2026-08-12', 'external_id' => 'fatura-agosto',
+    ]);
+
+    $received = creditIn(['amount' => 15000, 'date' => '2026-08-10', 'description' => 'Pagamento recebido']);
+    $onLine = creditIn(['amount' => 15000, 'date' => '2026-08-10', 'description' => 'Pagamento on line']);
+
+    $bill = new ProviderBill(
+        id: 'fatura-agosto', dueDate: '2026-08-12', closingDate: '2026-08-05', totalCents: 15000,
+        payments: [new ProviderBillPayment('pag-unico', '2026-08-10', 15000)],
+    );
+
+    $this->action->handle($this->card, [$bill]);
+
+    $received->refresh();
+    $onLine->refresh();
+
+    $ignored = $received->is_ignored ? $received : $onLine;
+    $chosen = $received->is_ignored ? $onLine : $received;
+
+    expect($ignored->is_ignored)->toBeTrue()
+        ->and($ignored->ignored_reason)->not->toBeNull()
+        ->and($chosen->is_ignored)->toBeFalse()
+        ->and($chosen->card_payment_statement_id)->toBe($statement->id);
+
+    $loaded = CardStatement::query()->withTotals()->findOrFail($statement->id);
+    expect($loaded->paid()->cents)->toBe(15000);
+});
+
+it('crédito com statement_locked é reconhecido como pagamento, mas a fatura nunca muda, mesmo quando a fatura do banco indica outra', function () {
+    $lockedStatement = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-04-01', 'due_date' => '2026-04-10']);
+    CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-05-01', 'due_date' => '2026-05-10', 'external_id' => 'fatura-maio']);
+
+    $payment = creditIn([
+        'amount' => 33000, 'date' => '2026-04-14', 'description' => 'Pagamento recebido',
+        'is_ignored' => true, 'ignored_reason' => ReconcileCardPayments::DUPLICATE_REASON,
+        'statement_id' => $lockedStatement->id, 'statement_locked' => true,
+    ]);
+
+    // A fatura do banco (com payments[] casando por valor/data) indica maio,
+    // não abril — statement_locked tem que vencer essa indicação.
+    $bill = new ProviderBill(id: 'fatura-maio', dueDate: '2026-05-10', closingDate: '2026-05-01', totalCents: 33000, payments: [new ProviderBillPayment('pagto-mai', '2026-04-14', 33000)]);
+
+    $this->action->handle($this->card, [$bill]);
+
+    $payment->refresh();
+    expect($payment->statement_id)->toBe($lockedStatement->id)
+        ->and($payment->card_payment_statement_id)->toBe($lockedStatement->id)
+        ->and($payment->is_ignored)->toBeFalse()
+        ->and($payment->ignored_reason)->toBeNull();
+});
+
+it('perna de transferência com statement_locked também nunca move a fatura para a do banco', function () {
+    $lockedStatement = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-04-01', 'due_date' => '2026-04-10']);
+    CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-05-01', 'due_date' => '2026-05-10', 'external_id' => 'fatura-maio']);
+
+    $payment = creditIn([
+        'source' => TransactionSource::Pluggy,
+        'amount' => 28000, 'date' => '2026-04-14', 'description' => 'Pagamento recebido',
+        'transfer_id' => (string) Str::uuid(), 'statement_id' => $lockedStatement->id,
+        'card_payment_statement_id' => $lockedStatement->id, 'statement_locked' => true,
+    ]);
+
+    $bill = new ProviderBill(id: 'fatura-maio', dueDate: '2026-05-10', closingDate: '2026-05-01', totalCents: 28000, payments: [new ProviderBillPayment('pagto-mai-2', '2026-04-14', 28000)]);
+
+    $this->action->handle($this->card, [$bill]);
+
+    $payment->refresh();
+    expect($payment->statement_id)->toBe($lockedStatement->id)
+        ->and($payment->card_payment_statement_id)->toBe($lockedStatement->id);
 });
 
 it('um pagamento sem transferência mantém a fatura escolhida pela fatura do banco quando o banco não responde no sync seguinte', function () {
