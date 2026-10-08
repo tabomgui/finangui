@@ -145,6 +145,16 @@ describe('PayStatementDialog', () => {
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Banco Antigo', 'Carteira'])
   })
 
+  it('com o cartão como última conta usada (num lançamento comum), o padrão continua sendo a conta pagável, nunca o cartão', () => {
+    rememberLastUsedAccountId(cardAccount.id)
+
+    renderDialog()
+
+    const trigger = screen.getByRole('combobox')
+    expect(trigger).toHaveTextContent('Carteira')
+    expect(trigger).not.toHaveTextContent('Nubank')
+  })
+
   it('409 statement_already_paid mostra a mensagem do backend em toast e mantém o diálogo aberto', async () => {
     mutateAsync.mockRejectedValue(new ApiError(409, 'Esta fatura já foi paga.', 'statement_already_paid'))
     const onOpenChange = vi.fn()
