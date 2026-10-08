@@ -151,11 +151,27 @@ export function DashboardPage() {
         ) : (
           <div className={cn('space-y-4 transition-opacity', isPlaceholderData && 'opacity-60')} aria-busy={isPlaceholderData}>
             <SummaryCards income={data.income} expense={data.expense} net={data.net} currency={data.currency} />
-            <PendingCard onOpenOverdue={() => setOverdueOpen(true)} />
-            <StatementsCard />
+            {/*
+              Pendências e Faturas raramente têm conteúdo suficiente para justificar a largura
+              toda num desktop; lado a lado a partir de `lg`, cada card com sua própria altura
+              (`items-start`, sem estirar o mais curto). Qualquer um dos dois pode não renderizar
+              nada (`PendingCard`/`StatementsCard` retornam `null` sem pendência/fatura aberta) —
+              `:only-child` detecta isso no DOM de verdade e devolve a largura toda ao que restou,
+              sem os dois precisarem saber um do outro.
+            */}
+            <div className="grid gap-4 lg:grid-cols-2 lg:items-start lg:[&>*:only-child]:col-span-2">
+              <PendingCard onOpenOverdue={() => setOverdueOpen(true)} />
+              <StatementsCard />
+            </div>
             <SpendingCard key={month} month={month} />
-            <AccountsCard accounts={data.accounts} />
-            <RecentTransactionsCard />
+            {/*
+              Contas e Últimos lançamentos pareados do mesmo jeito: os dois sempre renderizam algo
+              (mesmo vazios), então não precisam do fallback de `:only-child` aqui.
+            */}
+            <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+              <AccountsCard accounts={data.accounts} />
+              <RecentTransactionsCard />
+            </div>
           </div>
         )}
       </PageBody>
