@@ -57,7 +57,7 @@ export function CardsPage() {
         ) : cards && cards.length > 0 ? (
           <div
             aria-busy={isPlaceholderData}
-            className={cn('grid gap-4 transition-opacity sm:grid-cols-2', isPlaceholderData && 'opacity-60')}
+            className={cn('grid grid-cols-1 gap-4 transition-opacity sm:grid-cols-2', isPlaceholderData && 'opacity-60')}
           >
             {cards.map((card) => (
               <CardTile key={card.id} card={card} />

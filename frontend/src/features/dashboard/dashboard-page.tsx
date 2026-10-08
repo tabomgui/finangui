@@ -160,7 +160,7 @@ export function DashboardPage() {
               sem os dois precisarem saber um do outro; `empty:hidden` cobre o caso dos dois
               nulos, pra não sobrar um espaçamento (`space-y-4` do pai) em cima de nada.
             */}
-            <div className="grid gap-4 empty:hidden lg:grid-cols-2 lg:items-start lg:[&>*:only-child]:col-span-2">
+            <div className="grid grid-cols-1 gap-4 empty:hidden lg:grid-cols-2 lg:items-start lg:[&>*:only-child]:col-span-2">
               <PendingCard onOpenOverdue={() => setOverdueOpen(true)} />
               <StatementsCard />
             </div>
@@ -168,8 +168,11 @@ export function DashboardPage() {
             {/*
               Contas e Últimos lançamentos pareados do mesmo jeito: os dois sempre renderizam algo
               (mesmo vazios), então não precisam do fallback de `:only-child` aqui.
+              `grid-cols-1` é essencial abaixo de `lg`: sem ele a coluna única usa `auto` (largura
+              de conteúdo), e uma descrição de lançamento longa estoura a largura da tela em vez de
+              truncar — min-w-0/truncate mais fundo na árvore só funcionam com minmax(0, 1fr).
             */}
-            <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
               <AccountsCard accounts={data.accounts} />
               <RecentTransactionsCard />
             </div>
