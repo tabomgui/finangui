@@ -4,8 +4,10 @@ import { StrictMode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '@/api/errors'
 import { queryKeys } from '@/api/query-keys'
 import type { Account, Category, Transaction, Transfer } from '@/api/types'
+import { getLastUsedAccountId, rememberLastUsedAccountId } from '@/lib/last-used-account'
 import { TransactionFormPage } from './transaction-form-page'
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
@@ -38,17 +40,22 @@ vi.mock('@/api/queries/transactions', () => ({
 }))
 
 const createRecurrenceMutateAsync = vi.fn()
+const confirmOccurrenceMutateAsync = vi.fn()
+const skipOccurrenceMutateAsync = vi.fn()
 
 vi.mock('@/api/queries/recurrences', () => ({
   useCreateRecurrence: () => ({ mutateAsync: createRecurrenceMutateAsync }),
+  useConfirmOccurrence: () => ({ mutateAsync: confirmOccurrenceMutateAsync }),
+  useSkipOccurrence: () => ({ mutateAsync: skipOccurrenceMutateAsync }),
 }))
 
 let mockTransfer: Transfer | undefined
 const unlinkTransferMutateAsync = vi.fn()
+const createTransferMutateAsync = vi.fn()
 
 vi.mock('@/api/queries/transfers', () => ({
   useTransfer: () => ({ data: mockTransfer, isPending: false, isError: false }),
-  useCreateTransfer: () => ({ mutateAsync: vi.fn() }),
+  useCreateTransfer: () => ({ mutateAsync: createTransferMutateAsync }),
   useUpdateTransfer: () => ({ mutateAsync: vi.fn() }),
 }))
 
@@ -160,15 +167,19 @@ function renderPage(
 }
 
 beforeEach(() => {
+  window.localStorage.clear()
   mockAccounts = []
   mockTransaction = undefined
   mockTransactionError = true
   mockTransfer = undefined
   createTransactionMutateAsync.mockReset().mockResolvedValue(transaction({ id: 9 }))
   createRecurrenceMutateAsync.mockReset().mockResolvedValue({ id: 1 })
+  confirmOccurrenceMutateAsync.mockReset().mockResolvedValue(undefined)
+  skipOccurrenceMutateAsync.mockReset().mockResolvedValue(undefined)
   updateTransactionMutateAsync.mockReset().mockResolvedValue(undefined)
   deleteTransactionMutateAsync.mockReset().mockResolvedValue(undefined)
   unlinkTransferMutateAsync.mockReset().mockResolvedValue(undefined)
+  createTransferMutateAsync.mockReset().mockResolvedValue(transfer())
   vi.mocked(toast.error).mockReset()
   vi.mocked(toast.success).mockReset()
 })
@@ -222,6 +233,44 @@ describe('TransactionFormPage', () => {
     renderPage(['/transacoes/nova'])
 
     expect(screen.getByLabelText('Conta')).toHaveTextContent('Inter')
+  })
+
+  it('criação: com uma conta já usada antes, o padrão é ela, mesmo com outra conta alfabeticamente anterior', () => {
+    rememberLastUsedAccountId(2)
+    mockAccounts = [account({ id: 1, name: 'Acai' }), account({ id: 2, name: 'Inter' })]
+
+    renderPage(['/transacoes/nova'])
+
+    expect(screen.getByLabelText('Conta')).toHaveTextContent('Inter')
+  })
+
+  it('criação: salvar uma despesa grava a conta usada como padrão para a próxima vez', async () => {
+    mockAccounts = [account({ id: 1, name: 'Inter' })]
+
+    renderPage(['/transacoes/nova'])
+
+    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '10,00' } })
+    fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Compra' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))
+
+    await waitFor(() => expect(createTransactionMutateAsync).toHaveBeenCalled())
+    expect(getLastUsedAccountId()).toBe(1)
+  })
+
+  it('criação: salvar uma transferência grava a conta de origem como padrão para a próxima vez', async () => {
+    mockAccounts = [account({ id: 1, name: 'Inter' }), account({ id: 2, name: 'Nubank' })]
+
+    renderPage(['/transacoes/nova?tipo=transferencia'])
+
+    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '10,00' } })
+    const toTrigger = screen.getByLabelText('Para')
+    fireEvent.pointerDown(toTrigger, { button: 0, pointerType: 'mouse' })
+    fireEvent.click(toTrigger)
+    fireEvent.click(await screen.findByRole('option', { name: 'Nubank' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar transferência' }))
+
+    await waitFor(() => expect(createTransferMutateAsync).toHaveBeenCalled())
+    expect(getLastUsedAccountId()).toBe(1)
   })
 
   it('salvar volta para o location.state.from', async () => {
@@ -400,5 +449,118 @@ describe('TransactionFormPage', () => {
     expect(createTransactionMutateAsync).toHaveBeenCalledTimes(1)
     expect(toast.error).toHaveBeenCalledWith('Lançamento salvo, mas não foi possível criar a recorrência.')
     expect(toast.success).toHaveBeenCalledWith('Lançamento salvo.')
+  })
+
+  it('ocorrência prevista: mostra o aviso e as ações de confirmar e pular', () => {
+    mockTransaction = transaction({ status: 'projected', recurrence: { id: 2, description: 'Aluguel' } })
+    mockTransactionError = false
+
+    renderPage()
+
+    expect(screen.getByText(/ocorrência prevista da recorrência "Aluguel"/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pular esta ocorrência' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Excluir' })).not.toBeInTheDocument()
+  })
+
+  it('ocorrência prevista: confirma primeiro (valor/data) e só depois grava os outros campos editados', async () => {
+    mockTransaction = transaction({ id: 1, status: 'projected', recurrence: { id: 2, description: 'Aluguel' } })
+    mockTransactionError = false
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+    await waitFor(() => expect(updateTransactionMutateAsync).toHaveBeenCalled())
+    expect(confirmOccurrenceMutateAsync).toHaveBeenCalledWith({ id: 1, body: { amount: 1000, date: '2026-10-01' } })
+    // A chamada que gravaria categoria/conta/tags/etc. só pode acontecer depois da confirmação
+    // ter sido aceita: ela é a que protege contra sobrescrever uma ocorrência já confirmada por
+    // outro caminho (ex.: casada durante uma sincronização bancária).
+    expect(confirmOccurrenceMutateAsync.mock.invocationCallOrder[0]).toBeLessThan(
+      updateTransactionMutateAsync.mock.invocationCallOrder[0],
+    )
+    expect(toast.success).toHaveBeenCalledWith('Ocorrência confirmada.')
+    await waitFor(() => expect(screen.getByText('Lista')).toBeInTheDocument())
+  })
+
+  it('ocorrência prevista: confirmar falha, não grava os outros campos nem navega', async () => {
+    mockTransaction = transaction({ id: 1, status: 'projected', recurrence: { id: 2, description: 'Aluguel' } })
+    mockTransactionError = false
+    confirmOccurrenceMutateAsync.mockRejectedValueOnce(new ApiError(409, 'Conflito ao confirmar.', 'some_other_code'))
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+    await waitFor(() => expect(confirmOccurrenceMutateAsync).toHaveBeenCalled())
+    expect(updateTransactionMutateAsync).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith('Conflito ao confirmar.')
+    expect(toast.success).not.toHaveBeenCalledWith('Ocorrência confirmada.')
+    expect(screen.queryByText('Lista')).not.toBeInTheDocument()
+  })
+
+  it('ocorrência prevista: confirmar uma já confirmada em outro lugar mostra mensagem específica', async () => {
+    mockTransaction = transaction({ id: 1, status: 'projected', recurrence: { id: 2, description: 'Aluguel' } })
+    mockTransactionError = false
+    confirmOccurrenceMutateAsync.mockRejectedValueOnce(
+      new ApiError(409, 'Este lançamento não é uma ocorrência prevista de recorrência.', 'occurrence_not_projected'),
+    )
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+    await waitFor(() => expect(confirmOccurrenceMutateAsync).toHaveBeenCalled())
+    expect(updateTransactionMutateAsync).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith('Esta previsão já foi confirmada por outro processo. Atualize a página.')
+    expect(screen.queryByText('Lista')).not.toBeInTheDocument()
+  })
+
+  it('ocorrência prevista: pular explica o que faz e chama o endpoint de pular', async () => {
+    mockTransaction = transaction({ id: 1, status: 'projected', recurrence: { id: 2, description: 'Aluguel' } })
+    mockTransactionError = false
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pular esta ocorrência' }))
+
+    expect(screen.getByText('Pular esta ocorrência?')).toBeInTheDocument()
+    expect(screen.getByText(/Esta previsão não será lançada/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pular' }))
+
+    await waitFor(() => expect(skipOccurrenceMutateAsync).toHaveBeenCalledWith(1))
+    expect(updateTransactionMutateAsync).not.toHaveBeenCalled()
+    expect(toast.success).toHaveBeenCalledWith('Ocorrência pulada.')
+    await waitFor(() => expect(screen.getByText('Lista')).toBeInTheDocument())
+  })
+
+  it('ocorrência prevista: pular uma já confirmada em outro lugar mostra mensagem específica', async () => {
+    mockTransaction = transaction({ id: 1, status: 'projected', recurrence: { id: 2, description: 'Aluguel' } })
+    mockTransactionError = false
+    skipOccurrenceMutateAsync.mockRejectedValueOnce(
+      new ApiError(409, 'Este lançamento não é uma ocorrência prevista de recorrência.', 'occurrence_not_projected'),
+    )
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pular esta ocorrência' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pular' }))
+
+    await waitFor(() => expect(skipOccurrenceMutateAsync).toHaveBeenCalled())
+    expect(toast.error).toHaveBeenCalledWith('Esta previsão já foi confirmada por outro processo. Atualize a página.')
+    expect(toast.success).not.toHaveBeenCalledWith('Ocorrência pulada.')
+  })
+
+  it('status "projected" sem recorrência (ex.: previsão de parcela) não mostra o aviso nem as ações de ocorrência', () => {
+    mockTransaction = transaction({ status: 'projected' })
+    mockTransactionError = false
+
+    renderPage()
+
+    expect(screen.queryByText(/ocorrência prevista da recorrência/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Pular esta ocorrência' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Salvar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Excluir' })).toBeInTheDocument()
   })
 })

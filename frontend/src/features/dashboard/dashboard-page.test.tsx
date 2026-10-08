@@ -23,13 +23,22 @@ vi.mock('@/api/queries/auth', () => ({ useMe: () => ({ data: { banking_enabled: 
 vi.mock('../banking/use-reconnect-flow', () => ({
   useReconnectFlow: () => ({ reconnect: vi.fn(), isPending: false, widget: null }),
 }))
-vi.mock('@/api/queries/transfer-suggestions', () => ({ useTransferSuggestions: () => ({ data: undefined }) }))
+// `useTransferSuggestions`/`useOverdueOccurrences`/`useCards` ficam como `vi.fn()` (em vez de
+// retorno fixo) para o describe de layout abaixo poder fazer `PendingCard`/`StatementsCard`
+// renderizarem conteúdo de verdade — os outros testes desta suíte nunca chegam a essa parte da
+// página (sempre com `accounts: []`, que cai no estado vazio antes dela) e por isso não notam a
+// diferença.
+const useTransferSuggestions = vi.fn()
+const useOverdueOccurrences = vi.fn()
+const useCards = vi.fn()
+
+vi.mock('@/api/queries/transfer-suggestions', () => ({ useTransferSuggestions: () => useTransferSuggestions() }))
 vi.mock('@/api/queries/recurrences', () => ({
-  useOverdueOccurrences: () => ({ data: undefined, isPending: false }),
+  useOverdueOccurrences: () => useOverdueOccurrences(),
   useSkipOccurrence: () => ({ isPending: false, variables: undefined, mutateAsync: vi.fn() }),
   useConfirmOccurrence: () => ({ isPending: false, mutateAsync: vi.fn() }),
 }))
-vi.mock('@/api/queries/cards', () => ({ useCards: () => ({ data: [] }) }))
+vi.mock('@/api/queries/cards', () => ({ useCards: () => useCards() }))
 vi.mock('@/api/queries/transactions', () => ({ useRecentTransactions: () => ({ data: [], isPending: false, isError: false, refetch: vi.fn() }) }))
 // O card de distribuição de gastos (ver spending-card.test.tsx) não aparece em nenhum destes
 // testes (todos ficam com `accounts: []`, que cai no estado vazio da página antes dele), mas
@@ -104,6 +113,9 @@ function mockDashboard(data: DashboardSummary) {
 
 beforeEach(() => {
   useDashboard.mockClear()
+  useTransferSuggestions.mockReturnValue({ data: undefined })
+  useOverdueOccurrences.mockReturnValue({ data: undefined, isPending: false })
+  useCards.mockReturnValue({ data: [] })
 })
 
 describe('DashboardPage: seletor de dia do saldo', () => {
@@ -217,5 +229,93 @@ describe('DashboardPage: seletor de dia do saldo', () => {
 
     expect(screen.getByTestId('location')).toHaveTextContent('?mes=2026-10')
     expect(screen.getByTestId('location')).not.toHaveTextContent('dia=')
+  })
+})
+
+const account = { id: 1, name: 'Nubank', type: 'checking' as const, currency: 'BRL', color: null, icon: null, balance: 100000 }
+
+const cardWithOpenStatement = {
+  id: 1,
+  name: 'Nubank Mastercard',
+  currency: 'BRL',
+  color: null,
+  icon: null,
+  is_archived: false,
+  last_four: '1234',
+  credit_limit: 500000,
+  closing_day: 10,
+  due_day: 17,
+  balance: -120000,
+  limit: { used: 150000, projected: 0, available: 350000 },
+  used_limit: 150000,
+  available_limit: 350000,
+  current_statement: {
+    id: 10,
+    account_id: 1,
+    closing_date: '2026-10-10',
+    due_date: '2026-10-17',
+    reported_total: null,
+    total: 120000,
+    computed_total: 120000,
+    paid: 0,
+    remaining: 120000,
+    status: 'open' as const,
+    days_until_due: 14,
+    is_overdue: false,
+    has_divergence: false,
+  },
+}
+
+// `PendingCard` e `StatementsCard` (card e array vazio) ficam null por padrão nos testes acima
+// (e não chegam a importar — todos os outros casos usam `accounts: []`, que cai no estado vazio
+// antes de desenhar qualquer um dos cards); aqui os dois ganham dados de verdade para checar o
+// par "Pendências"/"Faturas" lado a lado (ver dashboard-page.tsx).
+describe('Início: Pendências e Faturas lado a lado', () => {
+  function cardRoot(headingText: string) {
+    const heading = screen.getByRole('heading', { name: headingText })
+    const card = heading.closest('[data-slot="card"]')
+    if (!card) throw new Error(`card não encontrado para "${headingText}"`)
+    return card
+  }
+
+  it('com as duas, ficam dentro do mesmo par lado a lado (lg:grid-cols-2)', () => {
+    mockDashboard(dashboardData({ accounts: [account] }))
+    useTransferSuggestions.mockReturnValue({ data: { pages: [{ data: [{ id: 1 }], meta: { next_cursor: null } }] } })
+    useCards.mockReturnValue({ data: [cardWithOpenStatement] })
+
+    renderPage('/?mes=2026-10')
+
+    const pendingRoot = cardRoot('Pendências')
+    const statementsRoot = cardRoot('Faturas')
+    const pair = pendingRoot.parentElement
+
+    expect(pair).toBe(statementsRoot.parentElement)
+    expect(pair).toHaveClass('lg:grid-cols-2')
+    expect(pair?.children).toHaveLength(2)
+  })
+
+  it('só com Faturas (sem pendência nenhuma), o par some e só o card de Faturas fica (volta a ocupar a largura toda)', () => {
+    mockDashboard(dashboardData({ accounts: [account] }))
+    useCards.mockReturnValue({ data: [cardWithOpenStatement] })
+
+    renderPage('/?mes=2026-10')
+
+    expect(screen.queryByRole('heading', { name: 'Pendências' })).not.toBeInTheDocument()
+    const statementsRoot = cardRoot('Faturas')
+    expect(statementsRoot.parentElement).toHaveClass('lg:[&>*:only-child]:col-span-2')
+    expect(statementsRoot.parentElement?.children).toHaveLength(1)
+  })
+
+  it('sem nenhuma das duas (mocks padrão: sem sugestão, sem previstas atrasadas, sem fatura aberta), o par some de vez (empty:hidden, sem sobrar o espaçamento do pai em cima de nada)', () => {
+    mockDashboard(dashboardData({ accounts: [account] }))
+
+    const { container } = renderPage('/?mes=2026-10')
+
+    expect(screen.queryByRole('heading', { name: 'Pendências' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Faturas' })).not.toBeInTheDocument()
+
+    const pair = container.querySelector('[class*="empty:hidden"]')
+    expect(pair).not.toBeNull()
+    expect(pair).toBeEmptyDOMElement()
   })
 })

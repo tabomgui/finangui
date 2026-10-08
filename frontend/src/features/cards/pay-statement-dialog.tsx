@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { isDateOnly, today } from '@/lib/date'
 import { applyFieldErrors, notifyError } from '@/lib/form-errors'
+import { pickDefaultAccountId, rememberLastUsedAccountId } from '@/lib/last-used-account'
 import { formatMoney } from '@/lib/money'
 
 const schema = z.object({
@@ -38,7 +39,10 @@ export function PayStatementDialog({ open, onOpenChange, statement, currency }: 
   // do React Query em vez de disparar um segundo fetch com uma chave diferente.
   const { data: accounts = [] } = useAccounts(true)
   const payableAccounts = accounts.filter((account) => !account.is_archived && account.type !== 'credit_card')
-  const defaultAccountId = payableAccounts[0]?.id ?? null
+  // A última conta usada (em qualquer lançamento ou pagamento), se ainda pagável; sem histórico,
+  // a primeira conta corrente/poupança/dinheiro não arquivada — nunca uma conta só porque é a
+  // primeira em ordem alfabética (mesmo critério de transaction-form-page.tsx).
+  const defaultAccountId = pickDefaultAccountId(payableAccounts)
   const hasPayableAccount = defaultAccountId !== null
 
   function defaultsFor(): PayStatementFormValues {
@@ -77,6 +81,7 @@ export function PayStatementDialog({ open, onOpenChange, statement, currency }: 
         id: statement.id,
         body: { from_account_id: values.from_account_id as number, amount: values.amount as number, date: values.date },
       })
+      rememberLastUsedAccountId(values.from_account_id as number)
       toast.success('Pagamento registrado.')
       onOpenChange(false)
     } catch (error) {

@@ -40,9 +40,13 @@ export function SpendingCategoryRow({ entry, currency, filters }: SpendingCatego
         onClick={() => setOpen((value) => !value)}
       >
         <CategoryIcon icon={entry.icon} color={entry.displayColor} size="sm" />
-        <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
-        <span className="text-xs text-muted-foreground">{transactionCountLabel(entry.count)}</span>
-        <span className="text-right">
+        <span className="min-w-0 flex-1 font-medium break-words line-clamp-2">{label}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {/* Nome tem prioridade no celular: aqui só o número, "N lançamentos" completo volta a partir de `sm`. */}
+          <span className="sm:hidden">{entry.count}</span>
+          <span className="hidden sm:inline">{transactionCountLabel(entry.count)}</span>
+        </span>
+        <span className="shrink-0 text-right">
           <span className="block font-semibold tabular-nums">{formatMoney(entry.amount, currency)}</span>
           <span className="block text-xs text-muted-foreground">{entry.percentLabel}</span>
         </span>

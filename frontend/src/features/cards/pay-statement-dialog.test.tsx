@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/errors'
 import type { Account, CardStatement } from '@/api/types'
 import { today } from '@/lib/date'
+import { getLastUsedAccountId, rememberLastUsedAccountId } from '@/lib/last-used-account'
 import { PayStatementDialog } from './pay-statement-dialog'
 
 const mutateAsync = vi.fn()
@@ -75,6 +76,7 @@ function renderDialog(target: CardStatement = statement(), onOpenChange: (open: 
 }
 
 beforeEach(() => {
+  window.localStorage.clear()
   mockAccounts = [cardAccount, walletAccount]
   mutateAsync.mockReset().mockResolvedValue(undefined)
   vi.mocked(toast.error).mockReset()
@@ -118,6 +120,39 @@ describe('PayStatementDialog', () => {
     )
     expect(toast.success).toHaveBeenCalledWith('Pagamento registrado.')
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('pagar grava a conta de origem como padrão para a próxima vez', async () => {
+    renderDialog()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pagar' }))
+
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled())
+    expect(getLastUsedAccountId()).toBe(2)
+  })
+
+  it('com uma conta pagável já usada antes, o padrão é ela, mesmo com outra alfabeticamente anterior', () => {
+    const olderAccount = account({ id: 3, name: 'Banco Antigo', type: 'checking', balance: 0 })
+    mockAccounts = [cardAccount, olderAccount, walletAccount]
+    rememberLastUsedAccountId(walletAccount.id)
+
+    renderDialog()
+
+    const trigger = screen.getByRole('combobox')
+    expect(trigger).toHaveTextContent('Carteira')
+
+    fireEvent.click(trigger)
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Banco Antigo', 'Carteira'])
+  })
+
+  it('com o cartão como última conta usada (num lançamento comum), o padrão continua sendo a conta pagável, nunca o cartão', () => {
+    rememberLastUsedAccountId(cardAccount.id)
+
+    renderDialog()
+
+    const trigger = screen.getByRole('combobox')
+    expect(trigger).toHaveTextContent('Carteira')
+    expect(trigger).not.toHaveTextContent('Nubank')
   })
 
   it('409 statement_already_paid mostra a mensagem do backend em toast e mantém o diálogo aberto', async () => {

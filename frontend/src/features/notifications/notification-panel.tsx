@@ -67,7 +67,10 @@ export function NotificationPanel({ variant, open, onOpenChange, unreadCount }: 
 
   if (variant === 'header') {
     return (
-      <SheetContent side="bottom" className="flex max-h-[85vh] flex-col rounded-t-2xl pb-[calc(1rem+env(safe-area-inset-bottom))]">
+      <SheetContent
+        side="bottom"
+        className="mx-auto flex max-h-[85vh] max-w-md flex-col overscroll-contain rounded-t-2xl pb-[calc(1rem+env(safe-area-inset-bottom))]"
+      >
         <SheetHeader className="flex-row items-center justify-between gap-2 pr-10">
           <SheetTitle>Notificações</SheetTitle>
           {markAllButton}

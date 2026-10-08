@@ -32,7 +32,7 @@ export function StatementNav({ statements, selectedId, onSelect }: StatementNavP
         className={cn(headerIconButton, 'disabled:pointer-events-none disabled:opacity-40')}
         onClick={() => previous && onSelect(previous.id)}
       >
-        <ChevronLeft className="h-5 w-5" />
+        <ChevronLeft className="h-5 w-5" aria-hidden="true" />
       </button>
       <div className="text-center" aria-live="polite">
         <p className="text-sm font-semibold">Fatura de {lowercaseMonth(selected.due_date.slice(0, 7))}</p>
@@ -45,7 +45,7 @@ export function StatementNav({ statements, selectedId, onSelect }: StatementNavP
         className={cn(headerIconButton, 'disabled:pointer-events-none disabled:opacity-40')}
         onClick={() => next && onSelect(next.id)}
       >
-        <ChevronRight className="h-5 w-5" />
+        <ChevronRight className="h-5 w-5" aria-hidden="true" />
       </button>
     </div>
   )

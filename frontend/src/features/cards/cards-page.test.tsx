@@ -108,4 +108,15 @@ describe('CardsPage', () => {
 
     expect(refetch).toHaveBeenCalled()
   })
+
+  it('a ação "Novo cartão" do cabeçalho encolhe para só o ícone no celular', () => {
+    mockData = [nubank]
+    mockIsPending = false
+    mockIsError = false
+
+    renderPage()
+
+    const label = screen.getByText('Novo cartão')
+    expect(label).toHaveClass('sr-only', 'sm:not-sr-only')
+  })
 })

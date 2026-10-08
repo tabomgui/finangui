@@ -1,9 +1,10 @@
-import { Trash2, Undo2, Wand2 } from 'lucide-react'
+import { CalendarOff, Info, Trash2, Undo2, Wand2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
+import { ApiError } from '@/api/errors'
 import { useAccounts } from '@/api/queries/accounts'
-import { useCreateRecurrence } from '@/api/queries/recurrences'
+import { useConfirmOccurrence, useCreateRecurrence, useSkipOccurrence } from '@/api/queries/recurrences'
 import { useUnlinkTransfer } from '@/api/queries/transfer-suggestions'
 import { useCreateTransaction, useDeleteTransaction, useTransaction, useUpdateTransaction } from '@/api/queries/transactions'
 import { useCreateTransfer, useTransfer, useUpdateTransfer } from '@/api/queries/transfers'
@@ -14,6 +15,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { FullPageSpinner } from '@/components/shared/full-page-spinner'
 import { today } from '@/lib/date'
 import { notifyError } from '@/lib/form-errors'
+import { pickDefaultAccountId, rememberLastUsedAccountId } from '@/lib/last-used-account'
 import { EntryForm } from './entry-form'
 import { editKind } from './edit-kind'
 import { entryDefaults, toTransactionBody, toTransferBody, transferDefaults } from './form-values'
@@ -51,7 +53,9 @@ function NewTransactionPage() {
   if (isPending || isPendingAll) return <FullPageSpinner />
   const contaParam = Number(searchParams.get('conta'))
   const accountFromParam = allAccounts?.find((account) => account.id === contaParam)
-  const firstAccountId = accountFromParam?.id ?? accounts?.[0]?.id ?? null
+  // Sem "?conta=" válido: a última conta usada num lançamento, não a primeira em ordem
+  // alfabética (ver lib/last-used-account.ts) — item "conta padrão errada" da auditoria.
+  const firstAccountId = accountFromParam?.id ?? pickDefaultAccountId(accounts)
   const backTo = backDestination(location.state?.from)
 
   const done = (message = 'Lançamento salvo.') => {
@@ -72,6 +76,7 @@ function NewTransactionPage() {
             autoFocusAmount
             onSubmit={async (values) => {
               await createTransfer.mutateAsync(toTransferBody(values))
+              rememberLastUsedAccountId(values.from_account_id as number)
               done()
             }}
           />
@@ -83,6 +88,7 @@ function NewTransactionPage() {
             autoFocusAmount
             onSubmit={async (values) => {
               const transaction = await createTransaction.mutateAsync(toTransactionBody(values))
+              rememberLastUsedAccountId(values.account_id as number)
               // Já tem recorrência (casou com uma prevista): criar outra a partir dela não faz
               // sentido e o backend rejeitaria (recurrence_transaction_ineligible).
               if (values.repeat && !transaction.recurrence) {
@@ -113,9 +119,12 @@ function EditTransactionPage({ id }: { id: number }) {
   const updateTransfer = useUpdateTransfer()
   const remove = useDeleteTransaction()
   const unlinkTransfer = useUnlinkTransfer()
+  const confirmOccurrence = useConfirmOccurrence()
+  const skipOccurrence = useSkipOccurrence()
   const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmUnlink, setConfirmUnlink] = useState(false)
+  const [confirmSkip, setConfirmSkip] = useState(false)
 
   const notFound = isError || (transferId !== null && transferError)
   // O toast dispara num efeito, guardado por ref, para não duplicar sob StrictMode
@@ -133,6 +142,10 @@ function EditTransactionPage({ id }: { id: number }) {
 
   const isTransfer = transferId !== null && transfer !== undefined
   const kind = isTransfer ? 'transfer' : editKind(transaction)
+  // Previsão de recorrência ainda não confirmada: só uma transação prevista com recorrência
+  // carregada (ver RecurrenceController::confirm/skip, que exige isso) pode ser confirmada/pulada
+  // aqui em vez de editada/excluída como um lançamento comum.
+  const isProjectedOccurrence = !isTransfer && transaction.status === 'projected' && transaction.recurrence !== undefined
   const backTo = backDestination(location.state?.from)
   const done = () => {
     toast.success('Lançamento atualizado.')
@@ -177,7 +190,7 @@ function EditTransactionPage({ id }: { id: number }) {
                 className={headerIconButton}
                 onClick={() => navigate(`/regras/nova?transacao=${id}`)}
               >
-                <Wand2 className="h-5 w-5" />
+                <Wand2 className="h-5 w-5" aria-hidden="true" />
               </button>
             )}
             {isTransfer && (
@@ -187,17 +200,37 @@ function EditTransactionPage({ id }: { id: number }) {
                 className={headerIconButton}
                 onClick={() => setConfirmUnlink(true)}
               >
-                <Undo2 className="h-5 w-5" />
+                <Undo2 className="h-5 w-5" aria-hidden="true" />
               </button>
             )}
-            <button type="button" aria-label="Excluir" className={headerIconButton} onClick={() => setConfirmDelete(true)}>
-              <Trash2 className="h-5 w-5" />
-            </button>
+            {isProjectedOccurrence ? (
+              <button
+                type="button"
+                aria-label="Pular esta ocorrência"
+                className={headerIconButton}
+                onClick={() => setConfirmSkip(true)}
+              >
+                <CalendarOff className="h-5 w-5" aria-hidden="true" />
+              </button>
+            ) : (
+              <button type="button" aria-label="Excluir" className={headerIconButton} onClick={() => setConfirmDelete(true)}>
+                <Trash2 className="h-5 w-5" aria-hidden="true" />
+              </button>
+            )}
           </>
         }
       />
       <PageBody className="max-w-2xl">
         <KindToggle value={isTransfer ? 'transfer' : transaction.direction} onChange={() => {}} disabled />
+        {isProjectedOccurrence && (
+          <div role="note" className="flex items-start gap-2 rounded-xl bg-muted p-3 text-sm text-muted-foreground">
+            <Info className="h-4 w-4 shrink-0" />
+            <p>
+              Esta é uma ocorrência prevista da recorrência "{transaction.recurrence?.description}". Ajuste os dados
+              se precisar e salve para confirmar que aconteceu, ou pule esta data se não aconteceu.
+            </p>
+          </div>
+        )}
         {isTransfer ? (
           <TransferForm
             defaultValues={transferDefaults({ transfer })}
@@ -210,20 +243,66 @@ function EditTransactionPage({ id }: { id: number }) {
         ) : (
           <EntryForm
             defaultValues={entryDefaults({ transaction })}
-            submitLabel="Salvar"
+            submitLabel={isProjectedOccurrence ? 'Confirmar' : 'Salvar'}
             showIgnore
             mode="edit"
             lockedReason={lockedReason}
             onSubmit={async (values) => {
-              await updateTransaction.mutateAsync({
-                id,
-                body: toTransactionBody(values, { initialStatementId: transaction.statement_id }),
-              })
-              doneAfterEntryEdit(values.category_id)
+              if (isProjectedOccurrence) {
+                // Confirma primeiro (com valor/data, como ConfirmOccurrenceDialog já faz): é a
+                // chamada à prova de corrida (lockForUpdate + isUnconfirmedOccurrence()) — se a
+                // ocorrência já foi confirmada por outro caminho (ex.: RecurrenceMatcher casou
+                // durante uma sincronização), nada mais é sobrescrito sem querer. Só depois de
+                // confirmada de verdade é que os outros campos (categoria, conta, tags, etc.)
+                // são gravados por cima.
+                try {
+                  await confirmOccurrence.mutateAsync({ id, body: { amount: values.amount as number, date: values.date } })
+                } catch (error) {
+                  if (error instanceof ApiError && error.code === 'occurrence_not_projected') {
+                    toast.error('Esta previsão já foi confirmada por outro processo. Atualize a página.')
+                    return
+                  }
+                  throw error
+                }
+                await updateTransaction.mutateAsync({
+                  id,
+                  body: toTransactionBody(values, { initialStatementId: transaction.statement_id }),
+                })
+                toast.success('Ocorrência confirmada.')
+                navigate(backTo, { replace: true })
+              } else {
+                await updateTransaction.mutateAsync({
+                  id,
+                  body: toTransactionBody(values, { initialStatementId: transaction.statement_id }),
+                })
+                doneAfterEntryEdit(values.category_id)
+              }
             }}
           />
         )}
       </PageBody>
+      {isProjectedOccurrence && (
+        <ConfirmDialog
+          open={confirmSkip}
+          onOpenChange={setConfirmSkip}
+          title="Pular esta ocorrência?"
+          description="Esta previsão não será lançada. A recorrência continua gerando as próximas normalmente."
+          confirmLabel="Pular"
+          onConfirm={async () => {
+            try {
+              await skipOccurrence.mutateAsync(id)
+            } catch (error) {
+              if (error instanceof ApiError && error.code === 'occurrence_not_projected') {
+                toast.error('Esta previsão já foi confirmada por outro processo. Atualize a página.')
+                return
+              }
+              throw error
+            }
+            toast.success('Ocorrência pulada.')
+            navigate(backTo, { replace: true })
+          }}
+        />
+      )}
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}

@@ -122,6 +122,26 @@ describe('SpendingCategoryRow', () => {
     expect(link).toHaveAttribute('href', '/transacoes?categoria=1&de=2026-10-01&ate=2026-10-31&tipo=out&moeda=BRL&relatorio=1')
   })
 
+  it('nome da categoria quebra em até duas linhas em vez de truncar', () => {
+    useTransactionsPreview.mockReturnValue({ isPending: true, isError: false, data: undefined, refetch: vi.fn() })
+
+    renderRow()
+
+    const name = screen.getByText('Alimentação')
+    expect(name).not.toHaveClass('truncate')
+    expect(name).toHaveClass('line-clamp-2')
+  })
+
+  it('rótulo de contagem mostra o número isolado para telas estreitas e o texto completo a partir de sm', () => {
+    useTransactionsPreview.mockReturnValue({ isPending: true, isError: false, data: undefined, refetch: vi.fn() })
+
+    renderRow()
+
+    const button = screen.getByRole('button', { name: /Alimentação/ })
+    expect(button).toHaveTextContent('3')
+    expect(button).toHaveTextContent('3 lançamentos')
+  })
+
   it('colapsar esconde o conteúdo de novo', () => {
     useTransactionsPreview.mockReturnValue({ isPending: false, isError: false, data: { data: [] }, refetch: vi.fn() })
 

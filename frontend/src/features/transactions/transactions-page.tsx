@@ -57,6 +57,7 @@ export function TransactionsPage() {
     <>
       <PageHeader
         title="Transações"
+        subtitle="Receitas, despesas e transferências"
         actions={
           <Button asChild className={`${headerButton} hidden md:inline-flex`}>
             <Link to="/transacoes/nova">

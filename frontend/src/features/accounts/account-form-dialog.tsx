@@ -135,7 +135,8 @@ export function AccountFormDialog({ open, onOpenChange, account, defaultType }: 
       } else {
         await create.mutateAsync(body)
       }
-      toast.success(account ? 'Conta atualizada.' : 'Conta criada.')
+      const isCard = values.type === 'credit_card'
+      toast.success(account ? (isCard ? 'Cartão atualizado.' : 'Conta atualizada.') : isCard ? 'Cartão criado.' : 'Conta criada.')
       onOpenChange(false)
     } catch (error) {
       if (

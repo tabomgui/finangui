@@ -78,6 +78,9 @@ Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`;
 ## UI
 
 - Sem emoji na interface. Ícones sempre do lucide (`lucide-react`); categorias guardam o nome do ícone lucide.
+- Ícone dentro de um controle que já tem rótulo visível ou `aria-label` próprio (botão, link de navegação, item de menu) é só decoração: leva `aria-hidden="true"`, para não duplicar a leitura do rótulo em leitor de tela.
+- Botão/link de navegação cujo estado visual depende só de cor (sidebar, bottom nav, "Mais", cabeçalho) também precisa de anel de foco visível (`focus-visible:ring-*`/`focus-visible:border-ring`, ou `headerIconButton` para o botão branco sobre a faixa esmeralda do `PageHeader`) — nenhum desses tinha antes.
+- Conta padrão de um formulário novo (nova transação, pagar fatura) é a última conta usada pelo usuário (`lib/last-used-account.ts`, guardada no `localStorage`), nunca `accounts[0]` (ordem alfabética do backend, muda sozinha quando uma conta nova entra antes no alfabeto).
 - shadcn/ui estilo new-york, base neutral.
 
 ## Fluxo de trabalho

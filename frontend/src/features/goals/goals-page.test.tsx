@@ -14,6 +14,9 @@ vi.mock('@/api/queries/goals', () => ({
   useDeleteGoal: () => ({ mutateAsync: deleteMutateAsync, isPending: false }),
   useCreateGoal: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateGoal: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateGoalContribution: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useGoalContributions: () => ({ data: [], isPending: false, isError: false, refetch: vi.fn() }),
+  useDeleteGoalContribution: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
 vi.mock('@/api/queries/auth', () => ({
@@ -60,6 +63,13 @@ beforeEach(() => {
 })
 
 describe('GoalsPage', () => {
+  it('mostra o subtítulo do cabeçalho', () => {
+    goalsState = { data: [], isPending: false, isError: false }
+    renderPage()
+
+    expect(screen.getByText('Objetivos, progresso e aportes')).toBeInTheDocument()
+  })
+
   it('mostra esqueletos de carregamento', () => {
     renderPage()
 

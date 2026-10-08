@@ -82,7 +82,7 @@ export function AccountsPage() {
               </Button>
             ))}
             <Button className={headerButton} onClick={openCreate}>
-              <Plus className="h-4 w-4" />
+              <Plus className="h-4 w-4" aria-hidden="true" />
               <span className="sr-only sm:not-sr-only">Nova conta</span>
             </Button>
           </>

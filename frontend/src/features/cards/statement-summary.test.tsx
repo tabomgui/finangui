@@ -29,18 +29,33 @@ function renderSummary(target: CardStatement, limit: LimitProps = { used_limit: 
 }
 
 describe('StatementSummary', () => {
-  it('fatura aberta com restante zero: "Pagar fatura" fica habilitado (sempre pode pagar uma fatura aberta)', () => {
-    renderSummary(statement({ status: 'open', remaining: 0 }))
+  it('fatura aberta já paga adiantado (paid > 0, restante zero): "Pagar fatura" fica habilitado (sempre pode pagar uma fatura aberta) e mostra o aviso de que está paga por enquanto', () => {
+    renderSummary(statement({ status: 'open', paid: 120000, remaining: 0 }))
 
     expect(screen.getByRole('button', { name: 'Pagar fatura' })).toBeEnabled()
+    expect(screen.getByText(/Paga por enquanto/)).toBeInTheDocument()
   })
 
-  it('fatura paga/fechada com restante zero: "Pagar fatura" fica desabilitado', () => {
+  it('fatura aberta com restante maior que zero: não mostra o aviso de paga por enquanto', () => {
+    renderSummary(statement({ status: 'open', remaining: 5000 }))
+
+    expect(screen.queryByText(/Paga por enquanto/)).not.toBeInTheDocument()
+  })
+
+  it('fatura aberta recém-criada, sem nenhuma compra nem pagamento ainda: não mostra o aviso de paga por enquanto', () => {
+    renderSummary(statement({ status: 'open', total: 0, computed_total: 0, paid: 0, remaining: 0 }))
+
+    expect(screen.queryByText(/Paga por enquanto/)).not.toBeInTheDocument()
+  })
+
+  it('fatura paga/fechada com restante zero: "Pagar fatura" fica desabilitado e não mostra o aviso de paga por enquanto (é fechada, não aberta)', () => {
     renderSummary(statement({ status: 'paid', remaining: 0 }))
     expect(screen.getByRole('button', { name: 'Pagar fatura' })).toBeDisabled()
+    expect(screen.queryByText(/Paga por enquanto/)).not.toBeInTheDocument()
 
     renderSummary(statement({ status: 'closed', remaining: 0 }))
     expect(screen.getAllByRole('button', { name: 'Pagar fatura' }).at(-1)).toBeDisabled()
+    expect(screen.queryByText(/Paga por enquanto/)).not.toBeInTheDocument()
   })
 
   it('restante maior que zero: "Pagar fatura" fica habilitado independente do status', () => {
