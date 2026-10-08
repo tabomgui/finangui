@@ -4,6 +4,7 @@ import { StrictMode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '@/api/errors'
 import { queryKeys } from '@/api/query-keys'
 import type { Account, Category, Transaction, Transfer } from '@/api/types'
 import { getLastUsedAccountId, rememberLastUsedAccountId } from '@/lib/last-used-account'
@@ -462,7 +463,7 @@ describe('TransactionFormPage', () => {
     expect(screen.queryByRole('button', { name: 'Excluir' })).not.toBeInTheDocument()
   })
 
-  it('ocorrência prevista: salvar grava os dados editados e confirma a ocorrência', async () => {
+  it('ocorrência prevista: confirma primeiro (valor/data) e só depois grava os outros campos editados', async () => {
     mockTransaction = transaction({ id: 1, status: 'projected', recurrence: { id: 2, description: 'Aluguel' } })
     mockTransactionError = false
 
@@ -471,9 +472,48 @@ describe('TransactionFormPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
 
     await waitFor(() => expect(updateTransactionMutateAsync).toHaveBeenCalled())
-    expect(confirmOccurrenceMutateAsync).toHaveBeenCalledWith({ id: 1, body: {} })
+    expect(confirmOccurrenceMutateAsync).toHaveBeenCalledWith({ id: 1, body: { amount: 1000, date: '2026-10-01' } })
+    // A chamada que gravaria categoria/conta/tags/etc. só pode acontecer depois da confirmação
+    // ter sido aceita: ela é a que protege contra sobrescrever uma ocorrência já confirmada por
+    // outro caminho (ex.: casada durante uma sincronização bancária).
+    expect(confirmOccurrenceMutateAsync.mock.invocationCallOrder[0]).toBeLessThan(
+      updateTransactionMutateAsync.mock.invocationCallOrder[0],
+    )
     expect(toast.success).toHaveBeenCalledWith('Ocorrência confirmada.')
     await waitFor(() => expect(screen.getByText('Lista')).toBeInTheDocument())
+  })
+
+  it('ocorrência prevista: confirmar falha, não grava os outros campos nem navega', async () => {
+    mockTransaction = transaction({ id: 1, status: 'projected', recurrence: { id: 2, description: 'Aluguel' } })
+    mockTransactionError = false
+    confirmOccurrenceMutateAsync.mockRejectedValueOnce(new ApiError(409, 'Conflito ao confirmar.', 'some_other_code'))
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+    await waitFor(() => expect(confirmOccurrenceMutateAsync).toHaveBeenCalled())
+    expect(updateTransactionMutateAsync).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith('Conflito ao confirmar.')
+    expect(toast.success).not.toHaveBeenCalledWith('Ocorrência confirmada.')
+    expect(screen.queryByText('Lista')).not.toBeInTheDocument()
+  })
+
+  it('ocorrência prevista: confirmar uma já confirmada em outro lugar mostra mensagem específica', async () => {
+    mockTransaction = transaction({ id: 1, status: 'projected', recurrence: { id: 2, description: 'Aluguel' } })
+    mockTransactionError = false
+    confirmOccurrenceMutateAsync.mockRejectedValueOnce(
+      new ApiError(409, 'Este lançamento não é uma ocorrência prevista de recorrência.', 'occurrence_not_projected'),
+    )
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+    await waitFor(() => expect(confirmOccurrenceMutateAsync).toHaveBeenCalled())
+    expect(updateTransactionMutateAsync).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith('Esta previsão já foi confirmada por outro processo. Atualize a página.')
+    expect(screen.queryByText('Lista')).not.toBeInTheDocument()
   })
 
   it('ocorrência prevista: pular explica o que faz e chama o endpoint de pular', async () => {
@@ -493,5 +533,34 @@ describe('TransactionFormPage', () => {
     expect(updateTransactionMutateAsync).not.toHaveBeenCalled()
     expect(toast.success).toHaveBeenCalledWith('Ocorrência pulada.')
     await waitFor(() => expect(screen.getByText('Lista')).toBeInTheDocument())
+  })
+
+  it('ocorrência prevista: pular uma já confirmada em outro lugar mostra mensagem específica', async () => {
+    mockTransaction = transaction({ id: 1, status: 'projected', recurrence: { id: 2, description: 'Aluguel' } })
+    mockTransactionError = false
+    skipOccurrenceMutateAsync.mockRejectedValueOnce(
+      new ApiError(409, 'Este lançamento não é uma ocorrência prevista de recorrência.', 'occurrence_not_projected'),
+    )
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pular esta ocorrência' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Pular' }))
+
+    await waitFor(() => expect(skipOccurrenceMutateAsync).toHaveBeenCalled())
+    expect(toast.error).toHaveBeenCalledWith('Esta previsão já foi confirmada por outro processo. Atualize a página.')
+    expect(toast.success).not.toHaveBeenCalledWith('Ocorrência pulada.')
+  })
+
+  it('status "projected" sem recorrência (ex.: previsão de parcela) não mostra o aviso nem as ações de ocorrência', () => {
+    mockTransaction = transaction({ status: 'projected' })
+    mockTransactionError = false
+
+    renderPage()
+
+    expect(screen.queryByText(/ocorrência prevista da recorrência/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Pular esta ocorrência' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Salvar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Excluir' })).toBeInTheDocument()
   })
 })

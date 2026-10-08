@@ -2,6 +2,7 @@ import { CalendarOff, Info, Trash2, Undo2, Wand2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
+import { ApiError } from '@/api/errors'
 import { useAccounts } from '@/api/queries/accounts'
 import { useConfirmOccurrence, useCreateRecurrence, useSkipOccurrence } from '@/api/queries/recurrences'
 import { useUnlinkTransfer } from '@/api/queries/transfer-suggestions'
@@ -222,8 +223,8 @@ function EditTransactionPage({ id }: { id: number }) {
       <PageBody className="max-w-2xl">
         <KindToggle value={isTransfer ? 'transfer' : transaction.direction} onChange={() => {}} disabled />
         {isProjectedOccurrence && (
-          <div className="flex items-start gap-2 rounded-xl bg-muted p-3 text-sm text-muted-foreground">
-            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <div role="note" className="flex items-start gap-2 rounded-xl bg-muted p-3 text-sm text-muted-foreground">
+            <Info className="h-4 w-4 shrink-0" />
             <p>
               Esta é uma ocorrência prevista da recorrência "{transaction.recurrence?.description}". Ajuste os dados
               se precisar e salve para confirmar que aconteceu, ou pule esta data se não aconteceu.
@@ -247,17 +248,33 @@ function EditTransactionPage({ id }: { id: number }) {
             mode="edit"
             lockedReason={lockedReason}
             onSubmit={async (values) => {
-              await updateTransaction.mutateAsync({
-                id,
-                body: toTransactionBody(values, { initialStatementId: transaction.statement_id }),
-              })
               if (isProjectedOccurrence) {
-                // O PATCH acima já gravou valor/data/categoria/etc. editados; falta só virar
-                // posted (ConfirmOccurrence, sem amount/date no corpo — já estão certos).
-                await confirmOccurrence.mutateAsync({ id, body: {} })
+                // Confirma primeiro (com valor/data, como ConfirmOccurrenceDialog já faz): é a
+                // chamada à prova de corrida (lockForUpdate + isUnconfirmedOccurrence()) — se a
+                // ocorrência já foi confirmada por outro caminho (ex.: RecurrenceMatcher casou
+                // durante uma sincronização), nada mais é sobrescrito sem querer. Só depois de
+                // confirmada de verdade é que os outros campos (categoria, conta, tags, etc.)
+                // são gravados por cima.
+                try {
+                  await confirmOccurrence.mutateAsync({ id, body: { amount: values.amount as number, date: values.date } })
+                } catch (error) {
+                  if (error instanceof ApiError && error.code === 'occurrence_not_projected') {
+                    toast.error('Esta previsão já foi confirmada por outro processo. Atualize a página.')
+                    return
+                  }
+                  throw error
+                }
+                await updateTransaction.mutateAsync({
+                  id,
+                  body: toTransactionBody(values, { initialStatementId: transaction.statement_id }),
+                })
                 toast.success('Ocorrência confirmada.')
                 navigate(backTo, { replace: true })
               } else {
+                await updateTransaction.mutateAsync({
+                  id,
+                  body: toTransactionBody(values, { initialStatementId: transaction.statement_id }),
+                })
                 doneAfterEntryEdit(values.category_id)
               }
             }}
@@ -272,7 +289,15 @@ function EditTransactionPage({ id }: { id: number }) {
           description="Esta previsão não será lançada. A recorrência continua gerando as próximas normalmente."
           confirmLabel="Pular"
           onConfirm={async () => {
-            await skipOccurrence.mutateAsync(id)
+            try {
+              await skipOccurrence.mutateAsync(id)
+            } catch (error) {
+              if (error instanceof ApiError && error.code === 'occurrence_not_projected') {
+                toast.error('Esta previsão já foi confirmada por outro processo. Atualize a página.')
+                return
+              }
+              throw error
+            }
             toast.success('Ocorrência pulada.')
             navigate(backTo, { replace: true })
           }}
