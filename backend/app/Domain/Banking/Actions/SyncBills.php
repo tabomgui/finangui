@@ -4,6 +4,8 @@ namespace App\Domain\Banking\Actions;
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Banking\Data\ProviderBill;
+use App\Domain\Banking\Data\ProviderBillPayment;
+use App\Domain\Banking\Support\CardPaymentMatcher;
 use App\Domain\Cards\Errors\NotACreditCard;
 use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Cards\Support\InvoiceCycle;
@@ -25,10 +27,23 @@ use Illuminate\Support\Facades\Log;
  * vizinhas e o vão de até 40 dias entre fechamento e vencimento — a mesma
  * validação de App\Domain\Cards\Actions\UpdateStatement, extraída para
  * App\Domain\Cards\Support\StatementOrdering. Quando não cabem: numa fatura
- * já existente, ela fica com as datas antigas (só `external_id`/`reported_total`
- * são gravados); numa fatura nova, adota a fatura local mais próxima em vez
- * de inserir fora de ordem, ou, sem nenhuma candidata, ignora com log — nunca
- * insere uma fatura que quebre a ordenação do cartão.
+ * já existente, ela fica com as datas antigas (só `external_id`/`reported_total`/
+ * `reported_paid` são gravados); numa fatura nova, adota a fatura local mais
+ * próxima em vez de inserir fora de ordem, ou, sem nenhuma candidata, ignora
+ * com log — nunca insere uma fatura que quebre a ordenação do cartão.
+ *
+ * `billClosingDate` ausente (comum em faturas antigas, de antes do cartão ter
+ * os dias atuais) é diferente de "não cabe na ordem": numa fatura já
+ * existente, o fechamento gravado NUNCA muda nesse caso (só o vencimento,
+ * quando ainda cabe — ver applyDueDateOnly()), mesmo que closing_day/due_day
+ * do cartão já tenham mudado desde que ela foi gravada — sem isso, um sync
+ * seguinte recalcularia o fechamento com os dias de HOJE e reescreveria uma
+ * fatura antiga já fechada, violando "nunca reescreve faturas já gravadas".
+ * Numa fatura nova, sem closing_date gravado para proteger, o calculado a
+ * partir dos dias atuais do cartão é o único palpite disponível mesmo.
+ *
+ * reported_paid grava a soma de payments[] da fatura do banco (null sem
+ * nenhum) — ver App\Domain\Cards\Models\CardStatement::paid().
  *
  * Por fim, a fatura mais recente deste lote (maior fechamento) define
  * closing_day/due_day do cartão para os próximos ciclos ainda não criados
@@ -52,10 +67,17 @@ final class SyncBills
             throw new NotACreditCard;
         }
 
+        // Atribui cada id de pagamento do banco à fatura preferida ANTES de
+        // gravar qualquer uma delas (mesma regra de App\Domain\Banking\Support\CardPaymentMatcher::preferredBillForPayment()):
+        // sem isso, um `payments[].id` repetido em mais de uma fatura deste
+        // lote (dado real da Pluggy) somaria o mesmo pagamento em
+        // reported_paid de duas faturas diferentes.
+        $preferredBillByPaymentId = CardPaymentMatcher::preferredBillForPayment($bills);
+
         $applied = 0;
 
         foreach ($bills as $bill) {
-            if ($this->applyBill($card, $bill)) {
+            if ($this->applyBill($card, $bill, $preferredBillByPaymentId)) {
                 $applied++;
             }
         }
@@ -158,7 +180,10 @@ final class SyncBills
         return $bestDay;
     }
 
-    private function applyBill(Account $card, ProviderBill $bill): bool
+    /**
+     * @param  array<string, string>  $preferredBillByPaymentId  ver CardPaymentMatcher::preferredBillForPayment()
+     */
+    private function applyBill(Account $card, ProviderBill $bill, array $preferredBillByPaymentId): bool
     {
         $due = CarbonImmutable::parse($bill->dueDate)->startOfDay();
         $closing = $bill->closingDate !== null
@@ -173,15 +198,18 @@ final class SyncBills
         $statement ??= $this->findAdoptionCandidate($card, $due, $closing, $bill->id);
 
         if ($statement === null) {
-            return $this->createOrAdopt($card, $bill, $due, $closing);
+            return $this->createOrAdopt($card, $bill, $due, $closing, $preferredBillByPaymentId);
         }
 
-        $this->applyToExisting($statement, $bill, $due, $closing);
+        $this->applyToExisting($statement, $bill, $due, $closing, $preferredBillByPaymentId);
 
         return true;
     }
 
-    private function createOrAdopt(Account $card, ProviderBill $bill, CarbonImmutable $due, CarbonImmutable $closing): bool
+    /**
+     * @param  array<string, string>  $preferredBillByPaymentId
+     */
+    private function createOrAdopt(Account $card, ProviderBill $bill, CarbonImmutable $due, CarbonImmutable $closing, array $preferredBillByPaymentId): bool
     {
         ['previous' => $previous, 'next' => $next] = StatementOrdering::neighborsForAccount($card->id, $closing);
 
@@ -193,6 +221,7 @@ final class SyncBills
                 'due_date' => $due,
                 'external_id' => $bill->id,
                 'reported_total' => $bill->totalCents,
+                'reported_paid' => self::reportedPaidCents($bill, $preferredBillByPaymentId),
             ]);
 
             return true;
@@ -209,7 +238,7 @@ final class SyncBills
         $nearest = $this->nearestAdoptable($card, $due, $bill->id);
 
         if ($nearest !== null) {
-            $this->applyToExisting($nearest, $bill, $nearest->due_date, $nearest->closing_date);
+            $this->applyToExisting($nearest, $bill, $nearest->due_date, $nearest->closing_date, $preferredBillByPaymentId);
 
             return true;
         }
@@ -224,21 +253,92 @@ final class SyncBills
         return false;
     }
 
-    private function applyToExisting(CardStatement $statement, ProviderBill $bill, CarbonImmutable $due, CarbonImmutable $closing): void
+    /**
+     * @param  array<string, string>  $preferredBillByPaymentId
+     */
+    private function applyToExisting(CardStatement $statement, ProviderBill $bill, CarbonImmutable $due, CarbonImmutable $closing, array $preferredBillByPaymentId): void
     {
-        $datesChanged = ! $statement->due_date->equalTo($due) || ! $statement->closing_date->equalTo($closing);
+        if ($bill->closingDate === null) {
+            // Banco não informa o fechamento desta fatura (comum em faturas
+            // antigas, de antes do cartão ter os dias atuais): $closing acima
+            // é só um palpite calculado com closing_day/due_day de HOJE, que
+            // pode já ter mudado desde que esta fatura foi gravada — nunca
+            // usado para reescrever o fechamento já gravado (violaria "nunca
+            // reescreve faturas já gravadas", ver a classe). Só o vencimento
+            // pode mudar, e só quando ainda cabe com o fechamento atual (sem
+            // mudar) e as vizinhas.
+            $this->applyDueDateOnly($statement, $due);
+        } else {
+            $datesChanged = ! $statement->due_date->equalTo($due) || ! $statement->closing_date->equalTo($closing);
 
-        if ($datesChanged) {
-            ['previous' => $previous, 'next' => $next] = StatementOrdering::neighbors($statement);
+            if ($datesChanged) {
+                ['previous' => $previous, 'next' => $next] = StatementOrdering::neighbors($statement);
 
-            if (StatementOrdering::fits($previous, $next, $closing, $due)) {
-                $statement->closing_date = $closing;
-                $statement->due_date = $due;
+                if (StatementOrdering::fits($previous, $next, $closing, $due)) {
+                    $statement->closing_date = $closing;
+                    $statement->due_date = $due;
+                }
             }
         }
 
-        $statement->fill(['external_id' => $bill->id, 'reported_total' => $bill->totalCents]);
+        $statement->fill([
+            'external_id' => $bill->id,
+            'reported_total' => $bill->totalCents,
+            'reported_paid' => self::reportedPaidCents($bill, $preferredBillByPaymentId),
+        ]);
         $statement->save();
+    }
+
+    /**
+     * Vencimento de uma fatura já existente cujo banco não informa o
+     * fechamento: só muda quando ainda fica depois do fechamento já gravado
+     * (que nunca muda aqui) e continua cabendo entre as vizinhas e dentro da
+     * janela de 40 dias — mesmas regras de App\Domain\Cards\Support\StatementOrdering::fits(),
+     * sem a parte de closingFitsNeighbors() (o fechamento não está mudando).
+     */
+    private function applyDueDateOnly(CardStatement $statement, CarbonImmutable $due): void
+    {
+        if ($statement->due_date->equalTo($due)) {
+            return;
+        }
+
+        ['previous' => $previous, 'next' => $next] = StatementOrdering::neighbors($statement);
+
+        if (StatementOrdering::dueAfterClosing($statement->closing_date, $due)
+            && StatementOrdering::dueFitsNeighbors($previous, $next, $due)
+            && StatementOrdering::withinMaxSpan($statement->closing_date, $due)) {
+            $statement->due_date = $due;
+        }
+    }
+
+    /**
+     * Soma de payments[] da fatura do banco, em centavos — só os pagamentos
+     * cuja fatura preferida (ver CardPaymentMatcher::preferredBillForPayment(),
+     * calculado uma vez para todo o lote em handle()) é ESTA fatura: um
+     * `payments[].id` repetido em mais de uma fatura deste lote (dado real
+     * da Pluggy — o mesmo pagamento aparece na fatura que ele quita e na
+     * seguinte) nunca pode contar duas vezes. Um pagamento sem entrada no
+     * mapa (id/data inválidos, descartados por CardPaymentMatcher) conta
+     * normalmente nesta fatura — mesmo comportamento de antes para esse caso
+     * raro. Null sem nenhum pagamento reconhecido para esta fatura (não
+     * zero: "o banco não disse nada" é diferente de "o banco disse que não
+     * há pagamento nenhum", embora hoje os dois se comportem igual em
+     * CardStatement::paid()). Gravado em reported_paid.
+     *
+     * @param  array<string, string>  $preferredBillByPaymentId
+     */
+    private static function reportedPaidCents(ProviderBill $bill, array $preferredBillByPaymentId): ?int
+    {
+        $claimed = array_filter(
+            $bill->payments,
+            fn (ProviderBillPayment $payment) => ($preferredBillByPaymentId[$payment->id] ?? $bill->id) === $bill->id,
+        );
+
+        if ($claimed === []) {
+            return null;
+        }
+
+        return (int) array_sum(array_map(fn (ProviderBillPayment $payment) => $payment->amountCents, $claimed));
     }
 
     /**

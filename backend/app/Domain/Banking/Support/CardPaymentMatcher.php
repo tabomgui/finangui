@@ -138,7 +138,40 @@ final class CardPaymentMatcher
      */
     private static function bankPaymentSlots(array $bills): array
     {
-        /** @var array<string, list<array{billId: string, closingDate: ?string, amountCents: int, date: string}>> $groups */
+        return array_map(self::preferredEntry(...), array_values(self::groupPaymentsById($bills)));
+    }
+
+    /**
+     * A mesma fatura preferida que bankPaymentSlots() usa internamente
+     * (preferredEntry()), exposta para quem precisa só da atribuição
+     * id-de-pagamento → fatura — hoje, App\Domain\Banking\Actions\SyncBills,
+     * para nunca somar o mesmo pagamento do banco (mesmo `payments[].id`
+     * repetido em mais de uma fatura — dado real da Pluggy) em reported_paid
+     * de duas faturas diferentes.
+     *
+     * @param  list<ProviderBill>  $bills
+     * @return array<string, string> id do pagamento => id da fatura preferida
+     */
+    public static function preferredBillForPayment(array $bills): array
+    {
+        $preferred = [];
+
+        foreach (self::groupPaymentsById($bills) as $paymentId => $entries) {
+            $preferred[$paymentId] = self::preferredEntry($entries)['billId'];
+        }
+
+        return $preferred;
+    }
+
+    /**
+     * Todas as ocorrências de payments[] de todas as faturas, agrupadas por
+     * `id` do pagamento — base de bankPaymentSlots() e preferredBillForPayment().
+     *
+     * @param  list<ProviderBill>  $bills
+     * @return array<string, list<array{billId: string, closingDate: ?string, amountCents: int, date: string}>>
+     */
+    private static function groupPaymentsById(array $bills): array
+    {
         $groups = [];
 
         foreach ($bills as $bill) {
@@ -156,7 +189,7 @@ final class CardPaymentMatcher
             }
         }
 
-        return array_map(self::preferredEntry(...), array_values($groups));
+        return $groups;
     }
 
     private static function isUsablePayment(ProviderBillPayment $payment): bool

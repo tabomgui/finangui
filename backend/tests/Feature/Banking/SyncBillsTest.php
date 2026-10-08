@@ -3,6 +3,7 @@
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Banking\Actions\SyncBills;
 use App\Domain\Banking\Data\ProviderBill;
+use App\Domain\Banking\Data\ProviderBillPayment;
 use App\Domain\Cards\Models\CardStatement;
 
 beforeEach(function () {
@@ -180,6 +181,90 @@ it('a vizinha mais próxima disponível para adotar, a mais de 45 dias do vencim
     expect($tooFar->external_id)->toBeNull()
         ->and($blocking->external_id)->toBe('other-bill')
         ->and(CardStatement::query()->where('account_id', $this->card->id)->count())->toBe(2);
+});
+
+it('grava reported_paid como a soma de payments[] da fatura do banco', function () {
+    $this->action->handle($this->card, [providerBill([
+        'payments' => [new ProviderBillPayment('pag-1', '2026-04-15', 12000), new ProviderBillPayment('pag-2', '2026-04-16', 3000)],
+    ])]);
+
+    $statement = CardStatement::query()->where('account_id', $this->card->id)->first();
+    expect($statement->reported_paid->cents)->toBe(15000);
+});
+
+it('o mesmo id de pagamento repetido em duas faturas do lote conta reported_paid só uma vez, na fatura preferida', function () {
+    $duplicatedPayment = new ProviderBillPayment('pag-dup', '2026-04-14', 30000);
+
+    $this->action->handle($this->card, [
+        providerBill(['id' => 'fatura-a', 'closingDate' => '2026-04-05', 'dueDate' => '2026-04-15', 'totalCents' => 50000, 'payments' => [$duplicatedPayment]]),
+        providerBill(['id' => 'fatura-b', 'closingDate' => '2026-05-05', 'dueDate' => '2026-05-15', 'totalCents' => 20000, 'payments' => [$duplicatedPayment]]),
+    ]);
+
+    $a = CardStatement::query()->where('account_id', $this->card->id)->where('external_id', 'fatura-a')->firstOrFail();
+    $b = CardStatement::query()->where('account_id', $this->card->id)->where('external_id', 'fatura-b')->firstOrFail();
+
+    // A fatura preferida (fechamento mais recente que ainda é <= a data do
+    // pagamento, mesma regra de CardPaymentMatcher) é fatura-a — ela leva o
+    // reported_paid; fatura-b nunca conta o mesmo pagamento de novo.
+    expect($a->reported_paid->cents)->toBe(30000)
+        ->and($b->reported_paid)->toBeNull();
+});
+
+it('sem payments[] na fatura do banco, reported_paid continua null', function () {
+    $this->action->handle($this->card, [providerBill()]);
+
+    $statement = CardStatement::query()->where('account_id', $this->card->id)->first();
+    expect($statement->reported_paid)->toBeNull();
+});
+
+it('fatura existente sem closingDate nunca tem o fechamento reescrito, mesmo depois do closing_day do cartão mudar', function () {
+    $old = CardStatement::factory()->create([
+        'account_id' => $this->card->id, 'closing_date' => '2026-01-10', 'due_date' => '2026-01-20', 'external_id' => 'bill-old',
+    ]);
+
+    // Fatura mais recente com fechamento informado muda closing_day/due_day do cartão (de 10/20 para 5/15).
+    $this->action->handle($this->card, [providerBill(['id' => 'bill-new', 'closingDate' => '2026-04-05', 'dueDate' => '2026-04-15'])]);
+    expect($this->card->refresh()->closing_day)->toBe(5);
+
+    // Sync seguinte: a fatura antiga chega de novo sem closingDate — o
+    // fechamento calculado agora usaria o dia 5, mas o já gravado não pode mudar.
+    $this->action->handle($this->card, [providerBill(['id' => 'bill-old', 'closingDate' => null, 'dueDate' => '2026-01-20', 'totalCents' => 12345])]);
+
+    $old->refresh();
+    expect($old->closing_date->toDateString())->toBe('2026-01-10')
+        ->and($old->due_date->toDateString())->toBe('2026-01-20')
+        ->and($old->reported_total->cents)->toBe(12345);
+});
+
+it('fatura adotada por proximidade de vencimento (ainda sem external_id) também preserva o fechamento quando o banco não informa closingDate', function () {
+    $local = CardStatement::factory()->create(['account_id' => $this->card->id, 'closing_date' => '2026-04-08', 'due_date' => '2026-04-23']);
+
+    $this->action->handle($this->card, [providerBill(['closingDate' => null, 'dueDate' => '2026-04-20'])]);
+
+    $local->refresh();
+    expect($local->external_id)->toBe('bill-1')
+        ->and($local->closing_date->toDateString())->toBe('2026-04-08');
+});
+
+it('fatura existente sem closingDate ainda pode ter o vencimento ajustado, desde que caiba com o fechamento gravado e as vizinhas', function () {
+    $old = CardStatement::factory()->create([
+        'account_id' => $this->card->id, 'closing_date' => '2026-01-10', 'due_date' => '2026-01-20', 'external_id' => 'bill-old',
+    ]);
+
+    $this->action->handle($this->card, [providerBill(['id' => 'bill-old', 'closingDate' => null, 'dueDate' => '2026-01-22'])]);
+
+    expect($old->refresh()->closing_date->toDateString())->toBe('2026-01-10')
+        ->and($old->due_date->toDateString())->toBe('2026-01-22');
+});
+
+it('fatura existente sem closingDate: vencimento que não caberia (antes do fechamento gravado) é ignorado', function () {
+    $old = CardStatement::factory()->create([
+        'account_id' => $this->card->id, 'closing_date' => '2026-01-10', 'due_date' => '2026-01-20', 'external_id' => 'bill-old',
+    ]);
+
+    $this->action->handle($this->card, [providerBill(['id' => 'bill-old', 'closingDate' => null, 'dueDate' => '2026-01-05'])]);
+
+    expect($old->refresh()->due_date->toDateString())->toBe('2026-01-20');
 });
 
 it('a fatura mais recente informada pelo banco (maior fechamento) define closing_day/due_day do cartão', function () {
