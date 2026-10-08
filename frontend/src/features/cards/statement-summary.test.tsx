@@ -58,6 +58,24 @@ describe('StatementSummary', () => {
     expect(screen.getByText(/O banco informou/)).toHaveTextContent('R$ 1.420,00')
   })
 
+  it('fatura de antes do histórico sincronizado mostra a nota neutra com a data, não o aviso de divergência', () => {
+    renderSummary(
+      statement({
+        status: 'closed', reported_total: 150000, total: 150000, computed_total: 0,
+        has_divergence: false, history_incomplete: true, history_incomplete_since: '2026-06-05',
+      }),
+    )
+
+    expect(screen.getByText(/anteriores ao histórico compartilhado pelo banco/)).toHaveTextContent('05/06/2026')
+    expect(screen.queryByText(/O banco informou/)).not.toBeInTheDocument()
+  })
+
+  it('sem history_incomplete, a nota neutra não aparece', () => {
+    renderSummary(statement())
+
+    expect(screen.queryByText(/histórico compartilhado pelo banco/)).not.toBeInTheDocument()
+  })
+
   it('mostra o limite usado do cartão ao lado do total', () => {
     renderSummary(statement(), { used_limit: 52000, available_limit: 748000, credit_limit: 800000 })
 

@@ -83,6 +83,11 @@ function SyncHistoryContent({ connectionId }: { connectionId: number }) {
         }
       />
       <PageBody>
+        {connection?.refresh_unsupported && (
+          <p className="text-sm text-muted-foreground">
+            Esta conexão é atualizada pela Pluggy uma vez por dia; "Sincronizar agora" traz o que a Pluggy já tem.
+          </p>
+        )}
         {isError ? (
           <EmptyState
             icon={TriangleAlert}
