@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { queryKeys } from '@/api/query-keys'
 import type { Account, Category, Transaction, Transfer } from '@/api/types'
+import { getLastUsedAccountId, rememberLastUsedAccountId } from '@/lib/last-used-account'
 import { TransactionFormPage } from './transaction-form-page'
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
@@ -45,10 +46,11 @@ vi.mock('@/api/queries/recurrences', () => ({
 
 let mockTransfer: Transfer | undefined
 const unlinkTransferMutateAsync = vi.fn()
+const createTransferMutateAsync = vi.fn()
 
 vi.mock('@/api/queries/transfers', () => ({
   useTransfer: () => ({ data: mockTransfer, isPending: false, isError: false }),
-  useCreateTransfer: () => ({ mutateAsync: vi.fn() }),
+  useCreateTransfer: () => ({ mutateAsync: createTransferMutateAsync }),
   useUpdateTransfer: () => ({ mutateAsync: vi.fn() }),
 }))
 
@@ -160,6 +162,7 @@ function renderPage(
 }
 
 beforeEach(() => {
+  window.localStorage.clear()
   mockAccounts = []
   mockTransaction = undefined
   mockTransactionError = true
@@ -169,6 +172,7 @@ beforeEach(() => {
   updateTransactionMutateAsync.mockReset().mockResolvedValue(undefined)
   deleteTransactionMutateAsync.mockReset().mockResolvedValue(undefined)
   unlinkTransferMutateAsync.mockReset().mockResolvedValue(undefined)
+  createTransferMutateAsync.mockReset().mockResolvedValue(transfer())
   vi.mocked(toast.error).mockReset()
   vi.mocked(toast.success).mockReset()
 })
@@ -222,6 +226,44 @@ describe('TransactionFormPage', () => {
     renderPage(['/transacoes/nova'])
 
     expect(screen.getByLabelText('Conta')).toHaveTextContent('Inter')
+  })
+
+  it('criação: com uma conta já usada antes, o padrão é ela, mesmo com outra conta alfabeticamente anterior', () => {
+    rememberLastUsedAccountId(2)
+    mockAccounts = [account({ id: 1, name: 'Acai' }), account({ id: 2, name: 'Inter' })]
+
+    renderPage(['/transacoes/nova'])
+
+    expect(screen.getByLabelText('Conta')).toHaveTextContent('Inter')
+  })
+
+  it('criação: salvar uma despesa grava a conta usada como padrão para a próxima vez', async () => {
+    mockAccounts = [account({ id: 1, name: 'Inter' })]
+
+    renderPage(['/transacoes/nova'])
+
+    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '10,00' } })
+    fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Compra' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))
+
+    await waitFor(() => expect(createTransactionMutateAsync).toHaveBeenCalled())
+    expect(getLastUsedAccountId()).toBe(1)
+  })
+
+  it('criação: salvar uma transferência grava a conta de origem como padrão para a próxima vez', async () => {
+    mockAccounts = [account({ id: 1, name: 'Inter' }), account({ id: 2, name: 'Nubank' })]
+
+    renderPage(['/transacoes/nova?tipo=transferencia'])
+
+    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '10,00' } })
+    const toTrigger = screen.getByLabelText('Para')
+    fireEvent.pointerDown(toTrigger, { button: 0, pointerType: 'mouse' })
+    fireEvent.click(toTrigger)
+    fireEvent.click(await screen.findByRole('option', { name: 'Nubank' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar transferência' }))
+
+    await waitFor(() => expect(createTransferMutateAsync).toHaveBeenCalled())
+    expect(getLastUsedAccountId()).toBe(1)
   })
 
   it('salvar volta para o location.state.from', async () => {

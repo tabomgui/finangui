@@ -156,6 +156,7 @@ describe('AccountFormDialog', () => {
         last_four: '1234',
       }),
     )
+    expect(toast.success).toHaveBeenCalledWith('Cartão criado.')
   })
 
   it('enviar conta corrente não inclui chaves de cartão no corpo', async () => {
@@ -170,6 +171,7 @@ describe('AccountFormDialog', () => {
     expect(body).not.toHaveProperty('closing_day')
     expect(body).not.toHaveProperty('due_day')
     expect(body).not.toHaveProperty('last_four')
+    expect(toast.success).toHaveBeenCalledWith('Conta criada.')
   })
 
   it('com defaultType credit_card abre com o tipo cartão selecionado', () => {
@@ -193,6 +195,7 @@ describe('AccountFormDialog', () => {
       id: cardAccount.id,
       body: expect.objectContaining({ closing_day: 3, due_day: 10, credit_limit: 500000, last_four: '1234' }),
     })
+    expect(toast.success).toHaveBeenCalledWith('Cartão atualizado.')
   })
 
   it('editando um cartão e trocando para conta corrente não envia chaves de cartão', async () => {
@@ -207,6 +210,7 @@ describe('AccountFormDialog', () => {
     expect(body).not.toHaveProperty('closing_day')
     expect(body).not.toHaveProperty('due_day')
     expect(body).not.toHaveProperty('last_four')
+    expect(toast.success).toHaveBeenCalledWith('Conta atualizada.')
   })
 
   it('erro 409 account_type_locked mostra toast e mantém o diálogo aberto', async () => {

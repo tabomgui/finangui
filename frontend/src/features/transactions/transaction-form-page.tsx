@@ -14,6 +14,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { FullPageSpinner } from '@/components/shared/full-page-spinner'
 import { today } from '@/lib/date'
 import { notifyError } from '@/lib/form-errors'
+import { pickDefaultAccountId, rememberLastUsedAccountId } from '@/lib/last-used-account'
 import { EntryForm } from './entry-form'
 import { editKind } from './edit-kind'
 import { entryDefaults, toTransactionBody, toTransferBody, transferDefaults } from './form-values'
@@ -51,7 +52,9 @@ function NewTransactionPage() {
   if (isPending || isPendingAll) return <FullPageSpinner />
   const contaParam = Number(searchParams.get('conta'))
   const accountFromParam = allAccounts?.find((account) => account.id === contaParam)
-  const firstAccountId = accountFromParam?.id ?? accounts?.[0]?.id ?? null
+  // Sem "?conta=" válido: a última conta usada num lançamento, não a primeira em ordem
+  // alfabética (ver lib/last-used-account.ts) — item "conta padrão errada" da auditoria.
+  const firstAccountId = accountFromParam?.id ?? pickDefaultAccountId(accounts)
   const backTo = backDestination(location.state?.from)
 
   const done = (message = 'Lançamento salvo.') => {
@@ -72,6 +75,7 @@ function NewTransactionPage() {
             autoFocusAmount
             onSubmit={async (values) => {
               await createTransfer.mutateAsync(toTransferBody(values))
+              rememberLastUsedAccountId(values.from_account_id as number)
               done()
             }}
           />
@@ -83,6 +87,7 @@ function NewTransactionPage() {
             autoFocusAmount
             onSubmit={async (values) => {
               const transaction = await createTransaction.mutateAsync(toTransactionBody(values))
+              rememberLastUsedAccountId(values.account_id as number)
               // Já tem recorrência (casou com uma prevista): criar outra a partir dela não faz
               // sentido e o backend rejeitaria (recurrence_transaction_ineligible).
               if (values.repeat && !transaction.recurrence) {
