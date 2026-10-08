@@ -190,7 +190,7 @@ function EditTransactionPage({ id }: { id: number }) {
                 className={headerIconButton}
                 onClick={() => navigate(`/regras/nova?transacao=${id}`)}
               >
-                <Wand2 className="h-5 w-5" />
+                <Wand2 className="h-5 w-5" aria-hidden="true" />
               </button>
             )}
             {isTransfer && (
@@ -200,7 +200,7 @@ function EditTransactionPage({ id }: { id: number }) {
                 className={headerIconButton}
                 onClick={() => setConfirmUnlink(true)}
               >
-                <Undo2 className="h-5 w-5" />
+                <Undo2 className="h-5 w-5" aria-hidden="true" />
               </button>
             )}
             {isProjectedOccurrence ? (
@@ -210,11 +210,11 @@ function EditTransactionPage({ id }: { id: number }) {
                 className={headerIconButton}
                 onClick={() => setConfirmSkip(true)}
               >
-                <CalendarOff className="h-5 w-5" />
+                <CalendarOff className="h-5 w-5" aria-hidden="true" />
               </button>
             ) : (
               <button type="button" aria-label="Excluir" className={headerIconButton} onClick={() => setConfirmDelete(true)}>
-                <Trash2 className="h-5 w-5" />
+                <Trash2 className="h-5 w-5" aria-hidden="true" />
               </button>
             )}
           </>
