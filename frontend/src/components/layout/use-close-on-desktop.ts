@@ -16,6 +16,14 @@ export function useCloseOnDesktop(open: boolean, setOpen: (open: boolean) => voi
     if (!open || typeof window.matchMedia !== 'function') return
 
     const media = window.matchMedia(DESKTOP_MEDIA_QUERY)
+    // Cobre abrir já em desktop (não devia acontecer, já que o gatilho está escondido ali, mas é
+    // barato garantir) e, principalmente, a mudança de breakpoint ocorrer entre o render e a
+    // inscrição no `change` logo abaixo — sem checar aqui, essa mudança passaria despercebida.
+    if (media.matches) {
+      setOpen(false)
+      return
+    }
+
     const handleChange = (event: MediaQueryListEvent) => {
       if (event.matches) setOpen(false)
     }

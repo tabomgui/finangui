@@ -12,10 +12,15 @@ import { MoreSheet } from './more-sheet'
  */
 function stubMatchMedia() {
   const listeners = new Set<(event: MediaQueryListEvent) => void>()
+  let matches = false
 
   window.matchMedia = ((query: string) =>
     ({
-      matches: false,
+      // getter: o hook também lê `media.matches` de forma síncrona (ao montar/reabrir), não só
+      // pelo evento `change` — o stub precisa refletir o estado atual nas duas formas.
+      get matches() {
+        return matches
+      },
       media: query,
       onchange: null,
       addListener: () => {},
@@ -25,13 +30,21 @@ function stubMatchMedia() {
       dispatchEvent: () => false,
     }) as unknown as MediaQueryList) as typeof window.matchMedia
 
+  // O listener chama `setOpen`, fora de qualquer handler do Testing Library: sem `act()`, a
+  // atualização fica agendada e o teste não veria o resultado ainda na mesma sincronia.
+  function setMatches(next: boolean) {
+    matches = next
+    act(() => {
+      for (const listener of listeners) listener({ matches: next } as MediaQueryListEvent)
+    })
+  }
+
   return {
-    // O listener chama `setOpen`, fora de qualquer handler do Testing Library: sem `act()`, a
-    // atualização fica agendada e o teste não veria o resultado ainda na mesma sincronia.
     crossToDesktop() {
-      act(() => {
-        for (const listener of listeners) listener({ matches: true } as MediaQueryListEvent)
-      })
+      setMatches(true)
+    },
+    crossToMobile() {
+      setMatches(false)
     },
   }
 }
@@ -64,6 +77,24 @@ describe('MoreSheet', () => {
 
     media.crossToDesktop()
 
+    expect(screen.queryByText('Contas')).not.toBeInTheDocument()
+  })
+
+  it('fecha ao cruzar para desktop e continua fechando depois de voltar ao mobile e reabrir', () => {
+    const media = stubMatchMedia()
+    renderMoreSheet()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mais' }))
+    expect(screen.getByText('Contas')).toBeInTheDocument()
+
+    media.crossToDesktop()
+    expect(screen.queryByText('Contas')).not.toBeInTheDocument()
+
+    media.crossToMobile()
+    fireEvent.click(screen.getByRole('button', { name: 'Mais' }))
+    expect(screen.getByText('Contas')).toBeInTheDocument()
+
+    media.crossToDesktop()
     expect(screen.queryByText('Contas')).not.toBeInTheDocument()
   })
 })

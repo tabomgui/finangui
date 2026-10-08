@@ -35,7 +35,10 @@ export function MoreSheet() {
           Mais
         </button>
       </SheetTrigger>
-      <SheetContent side="bottom" className="rounded-t-2xl pb-[calc(1rem+env(safe-area-inset-bottom))]">
+      <SheetContent
+        side="bottom"
+        className="mx-auto max-w-md overscroll-contain rounded-t-2xl pb-[calc(1rem+env(safe-area-inset-bottom))]"
+      >
         <SheetHeader>
           <SheetTitle>Mais</SheetTitle>
         </SheetHeader>
@@ -49,12 +52,12 @@ export function MoreSheet() {
                 onClick={() => setOpen(false)}
                 className={({ isActive }) =>
                   cn(
-                    'flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium',
+                    'flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
                     isActive ? 'bg-primary/15 text-primary' : 'hover:bg-muted',
                   )
                 }
               >
-                <Icon className="h-5 w-5" />
+                <Icon className="h-5 w-5" aria-hidden="true" />
                 {item.label}
               </NavLink>
             )
@@ -72,9 +75,9 @@ export function MoreSheet() {
               setOpen(false)
               void signOut()
             }}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-destructive hover:bg-muted"
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-destructive outline-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
-            <LogOut className="h-5 w-5" />
+            <LogOut className="h-5 w-5" aria-hidden="true" />
             Sair
           </button>
         </div>
