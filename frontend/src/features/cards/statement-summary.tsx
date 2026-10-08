@@ -18,6 +18,10 @@ type StatementSummaryProps = {
 }
 
 export function StatementSummary({ statement, currency, limit, onPay, onEditDates }: StatementSummaryProps) {
+  // Fatura aberta com restante zerado: já está em dia, mas continua aberta — uma nova compra
+  // pode voltar a aumentar o restante, então o botão de pagar segue habilitado (ver PayStatement).
+  const isSettledOpen = statement.status === 'open' && statement.remaining === 0
+
   return (
     <Card className="space-y-4 rounded-2xl p-4 shadow-card">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -47,6 +51,13 @@ export function StatementSummary({ statement, currency, limit, onPay, onEditDate
           <MoneyText cents={statement.remaining} currency={currency} />
         </dd>
       </dl>
+
+      {isSettledOpen && (
+        <p className="flex items-start gap-2 text-sm text-muted-foreground">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          Paga por enquanto: a fatura continua aberta e novas compras aumentam o restante.
+        </p>
+      )}
 
       {statement.has_divergence && statement.reported_total !== null && (
         <div className="flex items-start gap-2 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
