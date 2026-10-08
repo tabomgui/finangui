@@ -1,9 +1,9 @@
-import { Trash2, Undo2, Wand2 } from 'lucide-react'
+import { CalendarOff, Info, Trash2, Undo2, Wand2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAccounts } from '@/api/queries/accounts'
-import { useCreateRecurrence } from '@/api/queries/recurrences'
+import { useConfirmOccurrence, useCreateRecurrence, useSkipOccurrence } from '@/api/queries/recurrences'
 import { useUnlinkTransfer } from '@/api/queries/transfer-suggestions'
 import { useCreateTransaction, useDeleteTransaction, useTransaction, useUpdateTransaction } from '@/api/queries/transactions'
 import { useCreateTransfer, useTransfer, useUpdateTransfer } from '@/api/queries/transfers'
@@ -118,9 +118,12 @@ function EditTransactionPage({ id }: { id: number }) {
   const updateTransfer = useUpdateTransfer()
   const remove = useDeleteTransaction()
   const unlinkTransfer = useUnlinkTransfer()
+  const confirmOccurrence = useConfirmOccurrence()
+  const skipOccurrence = useSkipOccurrence()
   const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmUnlink, setConfirmUnlink] = useState(false)
+  const [confirmSkip, setConfirmSkip] = useState(false)
 
   const notFound = isError || (transferId !== null && transferError)
   // O toast dispara num efeito, guardado por ref, para não duplicar sob StrictMode
@@ -138,6 +141,10 @@ function EditTransactionPage({ id }: { id: number }) {
 
   const isTransfer = transferId !== null && transfer !== undefined
   const kind = isTransfer ? 'transfer' : editKind(transaction)
+  // Previsão de recorrência ainda não confirmada: só uma transação prevista com recorrência
+  // carregada (ver RecurrenceController::confirm/skip, que exige isso) pode ser confirmada/pulada
+  // aqui em vez de editada/excluída como um lançamento comum.
+  const isProjectedOccurrence = !isTransfer && transaction.status === 'projected' && transaction.recurrence !== undefined
   const backTo = backDestination(location.state?.from)
   const done = () => {
     toast.success('Lançamento atualizado.')
@@ -195,14 +202,34 @@ function EditTransactionPage({ id }: { id: number }) {
                 <Undo2 className="h-5 w-5" />
               </button>
             )}
-            <button type="button" aria-label="Excluir" className={headerIconButton} onClick={() => setConfirmDelete(true)}>
-              <Trash2 className="h-5 w-5" />
-            </button>
+            {isProjectedOccurrence ? (
+              <button
+                type="button"
+                aria-label="Pular esta ocorrência"
+                className={headerIconButton}
+                onClick={() => setConfirmSkip(true)}
+              >
+                <CalendarOff className="h-5 w-5" />
+              </button>
+            ) : (
+              <button type="button" aria-label="Excluir" className={headerIconButton} onClick={() => setConfirmDelete(true)}>
+                <Trash2 className="h-5 w-5" />
+              </button>
+            )}
           </>
         }
       />
       <PageBody className="max-w-2xl">
         <KindToggle value={isTransfer ? 'transfer' : transaction.direction} onChange={() => {}} disabled />
+        {isProjectedOccurrence && (
+          <div className="flex items-start gap-2 rounded-xl bg-muted p-3 text-sm text-muted-foreground">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>
+              Esta é uma ocorrência prevista da recorrência "{transaction.recurrence?.description}". Ajuste os dados
+              se precisar e salve para confirmar que aconteceu, ou pule esta data se não aconteceu.
+            </p>
+          </div>
+        )}
         {isTransfer ? (
           <TransferForm
             defaultValues={transferDefaults({ transfer })}
@@ -215,7 +242,7 @@ function EditTransactionPage({ id }: { id: number }) {
         ) : (
           <EntryForm
             defaultValues={entryDefaults({ transaction })}
-            submitLabel="Salvar"
+            submitLabel={isProjectedOccurrence ? 'Confirmar' : 'Salvar'}
             showIgnore
             mode="edit"
             lockedReason={lockedReason}
@@ -224,11 +251,33 @@ function EditTransactionPage({ id }: { id: number }) {
                 id,
                 body: toTransactionBody(values, { initialStatementId: transaction.statement_id }),
               })
-              doneAfterEntryEdit(values.category_id)
+              if (isProjectedOccurrence) {
+                // O PATCH acima já gravou valor/data/categoria/etc. editados; falta só virar
+                // posted (ConfirmOccurrence, sem amount/date no corpo — já estão certos).
+                await confirmOccurrence.mutateAsync({ id, body: {} })
+                toast.success('Ocorrência confirmada.')
+                navigate(backTo, { replace: true })
+              } else {
+                doneAfterEntryEdit(values.category_id)
+              }
             }}
           />
         )}
       </PageBody>
+      {isProjectedOccurrence && (
+        <ConfirmDialog
+          open={confirmSkip}
+          onOpenChange={setConfirmSkip}
+          title="Pular esta ocorrência?"
+          description="Esta previsão não será lançada. A recorrência continua gerando as próximas normalmente."
+          confirmLabel="Pular"
+          onConfirm={async () => {
+            await skipOccurrence.mutateAsync(id)
+            toast.success('Ocorrência pulada.')
+            navigate(backTo, { replace: true })
+          }}
+        />
+      )}
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}

@@ -39,9 +39,13 @@ vi.mock('@/api/queries/transactions', () => ({
 }))
 
 const createRecurrenceMutateAsync = vi.fn()
+const confirmOccurrenceMutateAsync = vi.fn()
+const skipOccurrenceMutateAsync = vi.fn()
 
 vi.mock('@/api/queries/recurrences', () => ({
   useCreateRecurrence: () => ({ mutateAsync: createRecurrenceMutateAsync }),
+  useConfirmOccurrence: () => ({ mutateAsync: confirmOccurrenceMutateAsync }),
+  useSkipOccurrence: () => ({ mutateAsync: skipOccurrenceMutateAsync }),
 }))
 
 let mockTransfer: Transfer | undefined
@@ -169,6 +173,8 @@ beforeEach(() => {
   mockTransfer = undefined
   createTransactionMutateAsync.mockReset().mockResolvedValue(transaction({ id: 9 }))
   createRecurrenceMutateAsync.mockReset().mockResolvedValue({ id: 1 })
+  confirmOccurrenceMutateAsync.mockReset().mockResolvedValue(undefined)
+  skipOccurrenceMutateAsync.mockReset().mockResolvedValue(undefined)
   updateTransactionMutateAsync.mockReset().mockResolvedValue(undefined)
   deleteTransactionMutateAsync.mockReset().mockResolvedValue(undefined)
   unlinkTransferMutateAsync.mockReset().mockResolvedValue(undefined)
@@ -442,5 +448,50 @@ describe('TransactionFormPage', () => {
     expect(createTransactionMutateAsync).toHaveBeenCalledTimes(1)
     expect(toast.error).toHaveBeenCalledWith('Lançamento salvo, mas não foi possível criar a recorrência.')
     expect(toast.success).toHaveBeenCalledWith('Lançamento salvo.')
+  })
+
+  it('ocorrência prevista: mostra o aviso e as ações de confirmar e pular', () => {
+    mockTransaction = transaction({ status: 'projected', recurrence: { id: 2, description: 'Aluguel' } })
+    mockTransactionError = false
+
+    renderPage()
+
+    expect(screen.getByText(/ocorrência prevista da recorrência "Aluguel"/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pular esta ocorrência' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Excluir' })).not.toBeInTheDocument()
+  })
+
+  it('ocorrência prevista: salvar grava os dados editados e confirma a ocorrência', async () => {
+    mockTransaction = transaction({ id: 1, status: 'projected', recurrence: { id: 2, description: 'Aluguel' } })
+    mockTransactionError = false
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+    await waitFor(() => expect(updateTransactionMutateAsync).toHaveBeenCalled())
+    expect(confirmOccurrenceMutateAsync).toHaveBeenCalledWith({ id: 1, body: {} })
+    expect(toast.success).toHaveBeenCalledWith('Ocorrência confirmada.')
+    await waitFor(() => expect(screen.getByText('Lista')).toBeInTheDocument())
+  })
+
+  it('ocorrência prevista: pular explica o que faz e chama o endpoint de pular', async () => {
+    mockTransaction = transaction({ id: 1, status: 'projected', recurrence: { id: 2, description: 'Aluguel' } })
+    mockTransactionError = false
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pular esta ocorrência' }))
+
+    expect(screen.getByText('Pular esta ocorrência?')).toBeInTheDocument()
+    expect(screen.getByText(/Esta previsão não será lançada/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pular' }))
+
+    await waitFor(() => expect(skipOccurrenceMutateAsync).toHaveBeenCalledWith(1))
+    expect(updateTransactionMutateAsync).not.toHaveBeenCalled()
+    expect(toast.success).toHaveBeenCalledWith('Ocorrência pulada.')
+    await waitFor(() => expect(screen.getByText('Lista')).toBeInTheDocument())
   })
 })
