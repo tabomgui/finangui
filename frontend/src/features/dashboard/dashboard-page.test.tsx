@@ -305,4 +305,17 @@ describe('Início: Pendências e Faturas lado a lado', () => {
     expect(statementsRoot.parentElement).toHaveClass('lg:[&>*:only-child]:col-span-2')
     expect(statementsRoot.parentElement?.children).toHaveLength(1)
   })
+
+  it('sem nenhuma das duas (mocks padrão: sem sugestão, sem previstas atrasadas, sem fatura aberta), o par some de vez (empty:hidden, sem sobrar o espaçamento do pai em cima de nada)', () => {
+    mockDashboard(dashboardData({ accounts: [account] }))
+
+    const { container } = renderPage('/?mes=2026-10')
+
+    expect(screen.queryByRole('heading', { name: 'Pendências' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Faturas' })).not.toBeInTheDocument()
+
+    const pair = container.querySelector('[class*="empty:hidden"]')
+    expect(pair).not.toBeNull()
+    expect(pair).toBeEmptyDOMElement()
+  })
 })

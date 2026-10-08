@@ -157,9 +157,10 @@ export function DashboardPage() {
               (`items-start`, sem estirar o mais curto). Qualquer um dos dois pode não renderizar
               nada (`PendingCard`/`StatementsCard` retornam `null` sem pendência/fatura aberta) —
               `:only-child` detecta isso no DOM de verdade e devolve a largura toda ao que restou,
-              sem os dois precisarem saber um do outro.
+              sem os dois precisarem saber um do outro; `empty:hidden` cobre o caso dos dois
+              nulos, pra não sobrar um espaçamento (`space-y-4` do pai) em cima de nada.
             */}
-            <div className="grid gap-4 lg:grid-cols-2 lg:items-start lg:[&>*:only-child]:col-span-2">
+            <div className="grid gap-4 empty:hidden lg:grid-cols-2 lg:items-start lg:[&>*:only-child]:col-span-2">
               <PendingCard onOpenOverdue={() => setOverdueOpen(true)} />
               <StatementsCard />
             </div>
