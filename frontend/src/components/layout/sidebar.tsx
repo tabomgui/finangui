@@ -42,7 +42,7 @@ export function Sidebar() {
           </NavLink>
         </Button>
       </div>
-      <nav aria-label="Navegação principal" className="mt-4 flex flex-1 flex-col gap-1 px-3">
+      <nav aria-label="Navegação principal" className="mt-4 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 pb-3">
         {primaryNav.map((item) => (
           <SidebarLink key={item.to} item={item} />
         ))}
@@ -51,13 +51,15 @@ export function Sidebar() {
           <SidebarLink key={item.to} item={item} />
         ))}
       </nav>
-      <div className="flex items-center gap-2 border-t border-border p-3">
-        <div className="flex-1">
-          <UserSummary />
+      {/* Resumo e ações em linhas separadas: na mesma linha, os três botões deixam uns 80px para
+          nome/email, e um email comum já não cabe. */}
+      <div className="space-y-2 border-t border-border p-3">
+        <UserSummary />
+        <div className="flex items-center gap-1">
+          <NotificationBell variant="sidebar" />
+          <ThemeToggle />
+          <SignOutButton className="ml-auto" />
         </div>
-        <NotificationBell variant="sidebar" />
-        <ThemeToggle />
-        <SignOutButton />
       </div>
     </aside>
   )

@@ -15,12 +15,21 @@ export function UserSummary() {
   )
 }
 
-export function SignOutButton() {
+export function SignOutButton({ className }: { className?: string }) {
   const { signOut, pending } = useSignOut()
 
   return (
-    <Button type="button" variant="ghost" size="icon" aria-label="Sair" title="Sair" disabled={pending} onClick={signOut}>
-      <LogOut className="h-4 w-4" />
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label="Sair"
+      title="Sair"
+      disabled={pending}
+      onClick={signOut}
+      className={className}
+    >
+      <LogOut className="h-4 w-4" aria-hidden="true" />
     </Button>
   )
 }
