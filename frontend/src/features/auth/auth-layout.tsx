@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react'
 import { Logo } from '@/components/layout/logo'
 import { ThemeToggle } from '@/components/layout/theme-toggle'
+import { WallpaperCarousel } from './wallpaper-carousel'
 
 export function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="grid min-h-dvh lg:grid-cols-2">
-      <section className="hidden flex-col justify-between bg-linear-to-br from-emerald-500 to-emerald-700 p-10 text-white lg:flex dark:from-emerald-600 dark:to-emerald-800">
+    <div className="relative isolate grid min-h-dvh overflow-hidden lg:grid-cols-2">
+      <WallpaperCarousel />
+      <section className="hidden flex-col justify-between p-10 text-white lg:flex">
         <Logo inverted />
         <div className="space-y-3">
           <h1 className="text-4xl font-bold tracking-tight">Suas finanças, organizadas.</h1>
@@ -13,10 +15,14 @@ export function AuthLayout({ children }: { children: ReactNode }) {
         </div>
         <p className="text-sm text-white/60">Self-hosted e open source.</p>
       </section>
-      <section className="relative flex items-center justify-center px-4 py-10">
-        <ThemeToggle className="absolute right-4 top-4" />
+      <section className="relative flex items-center justify-center px-4 pt-10 pb-16">
+        {/* O anel de foco do `headerIconButton` tem offset esmeralda; aqui o fundo é foto, então sem offset colorido. */}
+        <ThemeToggle
+          variant="header"
+          className="absolute top-4 right-4 focus-visible:ring-offset-black/50 dark:focus-visible:ring-offset-black/50"
+        />
         <div className="w-full max-w-sm space-y-6">
-          <Logo className="justify-center lg:hidden" />
+          <Logo inverted className="justify-center lg:hidden" />
           {children}
         </div>
       </section>
