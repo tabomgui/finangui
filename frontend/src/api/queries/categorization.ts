@@ -5,19 +5,25 @@ import type { components } from '@/api/schema'
 
 type ApplyCategorizationRequest = components['schemas']['ApplyCategorizationRequest']
 
-/** Contagem leve (sem carregar os lançamentos), usada no aviso da Início e no link de Transações. */
-export function usePendingCategorizationCount() {
+/**
+ * Contagem leve (sem carregar os lançamentos), usada no aviso da Início, no link de Transações e
+ * no progresso da tela `/categorizar`. `options` deixa quem chama ajustar o refetch: a tela
+ * `/categorizar` passa `refetchOnMount: 'always'` para tirar o baseline do progresso de uma
+ * contagem fresca, mesmo com a do cache ainda dentro do `staleTime`.
+ */
+export function usePendingCategorizationCount(options: { refetchOnMount?: boolean | 'always' } = {}) {
   return useQuery({
     queryKey: queryKeys.pendingCategorizationCount(),
     queryFn: async () => (await unwrap(api.GET('/categorization/pending-count'))).data,
+    ...options,
   })
 }
 
 /**
  * Pendentes agrupados por contraparte, para a tela `/categorizar`. `keepPreviousData` evita o
- * flash de skeleton a cada busca/filtro: a lista anterior continua visível (ver
- * `isPlaceholderData`, usado tanto pelo estado de carregamento quanto para não podar a seleção
- * com base numa resposta que ainda é a antiga).
+ * flash de skeleton a cada busca/filtro: a lista anterior continua visível, com
+ * `isPlaceholderData` ligado, até a nova chegar. A tela usa esse sinal para não podar a seleção
+ * com base na lista antiga e para esmaecer a lista enquanto isso.
  */
 export function usePendingCategorization(filters: PendingCategorizationFilters = {}) {
   return useQuery({

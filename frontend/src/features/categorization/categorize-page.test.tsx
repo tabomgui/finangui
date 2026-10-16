@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Category, PendingCategorizationGroup } from '@/api/types'
 import { CategorizePage } from './categorize-page'
 
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+vi.mock('sonner', () => ({
+  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+}))
 
 const usePendingCategorizationCount = vi.fn()
 const usePendingCategorization = vi.fn()
@@ -250,6 +252,26 @@ describe('CategorizePage', () => {
     expect(screen.queryByText(/selecionados?$/)).not.toBeInTheDocument()
   })
 
+  it('não poda a seleção com uma resposta placeholder que não tem o lançamento marcado', () => {
+    const transactions = [tx({ id: 1 }), tx({ id: 2, description: 'Pix enviado - Shpp Brasil 2' })]
+    mockCount(2, 1)
+    mockPending([group({ transactions, out_count: 2, net: -2000 })])
+
+    const view = renderPage()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar grupo Shpp Brasil' }))
+    expect(screen.getByText('2 selecionados')).toBeInTheDocument()
+
+    // Placeholder sem o id 2: a seleção não pode ser podada com base nele.
+    mockPending([group({ transactions: [tx({ id: 1 })], out_count: 1 })], { isPlaceholderData: true })
+    view.rerender(page())
+    expect(screen.getByText('1 selecionado')).toBeInTheDocument()
+
+    // A resposta real volta a ter o id 2, que continua marcado.
+    mockPending([group({ transactions, out_count: 2, net: -2000 })])
+    view.rerender(page())
+    expect(screen.getByText('2 selecionados')).toBeInTheDocument()
+  })
+
   it('progresso conta desde a abertura: de 10 para 7 pendentes mostra "3 de 10"', () => {
     mockCount(10, 3)
     mockPending([group()])
@@ -304,7 +326,8 @@ describe('CategorizePage', () => {
     renderPage()
     fireEvent.click(screen.getByRole('button', { name: 'Aplicar a 1' }))
 
-    await vi.waitFor(() => expect(toast.success).toHaveBeenCalledWith('Esses lançamentos já tinham categoria.'))
+    await vi.waitFor(() => expect(toast).toHaveBeenCalledWith('Esses lançamentos já tinham categoria.'))
+    expect(toast.success).not.toHaveBeenCalled()
   })
 
   it('erro ao aplicar a sugestão avisa e não mexe na seleção', async () => {

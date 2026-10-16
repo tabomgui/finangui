@@ -43,6 +43,12 @@ function GroupCheckbox({ state, label, onClick }: GroupCheckboxProps) {
 type GroupCardProps = {
   group: PendingCategorizationGroup
   checkState: GroupCheckState
+  /** Quantos lançamentos deste grupo estão marcados (já calculado pela página). */
+  selectedCount: number
+  /**
+   * Seleção usada só nas linhas do grupo aberto. Cards fechados recebem um Set vazio
+   * compartilhado, para que marcar um lançamento não mude as props deles.
+   */
   selectedIds: ReadonlySet<number>
   expanded: boolean
   /** Caminho "Pai › Sub" da categoria sugerida pelo histórico, ou `null` sem sugestão. */
@@ -59,12 +65,15 @@ type GroupCardProps = {
 }
 
 /**
- * Memoizado: a página passa callbacks estáveis que recebem o grupo/chave, então abrir um grupo
- * ou aplicar uma sugestão não re-renderiza os outros cards.
+ * Memoizado: com callbacks estáveis (recebem o grupo/chave) e, nos cards fechados, a contagem e o
+ * estado do checkbox já calculados no lugar da seleção, marcar/desmarcar lançamentos ou abrir e
+ * fechar um grupo só re-renderiza os cards cujo estado mudou. Iniciar ou terminar uma aplicação
+ * muda `suggestionDisabled` de todos, então aí todos re-renderizam.
  */
 export const GroupCard = memo(function GroupCard({
   group,
   checkState,
+  selectedCount,
   selectedIds,
   expanded,
   suggestionLabel,
@@ -81,7 +90,6 @@ export const GroupCard = memo(function GroupCard({
 
   const outs = group.transactions.filter((transaction) => transaction.direction === 'out')
   const ins = group.transactions.filter((transaction) => transaction.direction === 'in')
-  const selectedCount = group.transactions.filter((transaction) => selectedIds.has(transaction.id)).length
   const visible = showAll ? group.transactions : group.transactions.slice(0, VISIBLE_LIMIT)
   const hiddenCount = group.transactions.length - visible.length
 
