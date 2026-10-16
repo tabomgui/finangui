@@ -356,6 +356,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/categorization/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["categorization.apply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/categories": {
         parameters: {
             query?: never;
@@ -1137,6 +1153,33 @@ export interface components {
          * @enum {string}
          */
         AccountType: "checking" | "savings" | "cash" | "credit_card";
+        /** ApplyCategorizationRequest */
+        ApplyCategorizationRequest: {
+            transaction_ids: number[];
+            category_id: number;
+            rule?: {
+                name?: string;
+                /** @enum {string} */
+                match?: "all" | "any";
+                conditions?: {
+                    /** @enum {string} */
+                    field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                    /** @enum {string} */
+                    op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
+                    value?: string;
+                    /** @enum {string} */
+                    match?: "all" | "any";
+                    conditions?: {
+                        /** @enum {string} */
+                        field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                        /** @enum {string} */
+                        op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
+                        value?: string;
+                    }[];
+                }[];
+                apply_to_pending?: boolean;
+            };
+        };
         /** ApplyRuleRequest */
         ApplyRuleRequest: {
             overwrite?: boolean;
@@ -1283,6 +1326,16 @@ export interface components {
             has_divergence: boolean;
             history_incomplete?: boolean;
             history_incomplete_since?: string;
+        };
+        /** CategorizationApplyResource */
+        CategorizationApplyResource: {
+            categorized: number;
+            rule_applied?: number | null;
+            skipped: number;
+            rule?: {
+                id: number | null;
+                name: string | null;
+            };
         };
         /** CategoryComparisonResource */
         CategoryComparisonResource: {
@@ -3334,6 +3387,34 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["PendingCategorizationResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "categorization.apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyCategorizationRequest"];
+            };
+        };
+        responses: {
+            /** @description `CategorizationApplyResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["CategorizationApplyResource"];
                     };
                 };
             };

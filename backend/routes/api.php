@@ -70,6 +70,8 @@ Route::prefix('v1')->group(function () {
         // literais, sem parâmetro de rota, então não colidem de fato.
         Route::get('categorization/pending-count', [CategorizationController::class, 'pendingCount']);
         Route::get('categorization/pending', [CategorizationController::class, 'pending']);
+        // Prefixo próprio no throttle: mesmo motivo do rules/preview acima.
+        Route::post('categorization/apply', [CategorizationController::class, 'apply'])->middleware('throttle:30,1,categorization-apply');
 
         // Updates são parciais (PATCH): apiResource()->except('update') tira o
         // PUT/PATCH padrão (que registraria os dois verbos) e o Route::patch
