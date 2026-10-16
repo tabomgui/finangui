@@ -48,9 +48,9 @@ final class ApplyCategorization
      * @param  list<int>  $transactionIds
      * @param  array{name: string, match: string, conditions: list<array<string, mixed>>, apply_to_pending?: bool}|null  $ruleInput  dados já validados (ApplyCategorizationRequest)
      */
-    public function handle(int $userId, array $transactionIds, int $categoryId, ?array $ruleInput): CategorizationApplyResult
+    public function handle(int $userId, array $transactionIds, int $categoryId, Direction $direction, ?array $ruleInput): CategorizationApplyResult
     {
-        return DB::transaction(function () use ($userId, $transactionIds, $categoryId, $ruleInput): CategorizationApplyResult {
+        return DB::transaction(function () use ($userId, $transactionIds, $categoryId, $direction, $ruleInput): CategorizationApplyResult {
             User::query()->whereKey($userId)->lockForUpdate()->first();
 
             /** @var Collection<int, Transaction> $pendingTransactions */
@@ -59,7 +59,7 @@ final class ApplyCategorization
                 ->whereIn('id', $transactionIds)
                 ->orderBy('id')
                 ->lockForUpdate()
-                ->get(['id', 'direction']);
+                ->get(['id']);
 
             $pendingIds = $pendingTransactions->pluck('id')->all();
 
@@ -76,7 +76,7 @@ final class ApplyCategorization
             $rule = $ruleInput !== null ? $this->createRuleFor($categoryId, $ruleInput) : null;
 
             $ruleApplied = $rule !== null && ($ruleInput['apply_to_pending'] ?? false)
-                ? $this->applyToPending($rule, $this->selectionDirection($pendingTransactions))
+                ? $this->applyToPending($rule, $direction)
                 : null;
 
             return new CategorizationApplyResult(
@@ -103,47 +103,31 @@ final class ApplyCategorization
     }
 
     /**
-     * Direção de verdade da seleção categorizada agora (nunca a de
-     * $transactionIds original: um id "skipped" pode ser de qualquer
-     * direção). Nula quando nada foi categorizado — não há seleção para
-     * restringir, e applyToPending() roda sem o filtro de direção nesse
-     * caso. ApplyCategorizationRequest já garante uma única direção em todo
-     * o conjunto antes de chegar aqui; quem chama a action direto (fora do
-     * request) é responsável por essa mesma garantia.
-     *
-     * @param  Collection<int, Transaction>  $pendingTransactions
-     */
-    private function selectionDirection(Collection $pendingTransactions): ?Direction
-    {
-        $directions = $pendingTransactions->map(fn (Transaction $transaction) => $transaction->direction)->unique();
-
-        return $directions->count() === 1 ? $directions->first() : null;
-    }
-
-    /**
      * Aplica $rule aos demais pendentes do usuário (scopePendingCategorization
      * já garante category_id nulo — nunca sobrescreve quem já tem categoria;
      * os que acabaram de ser categorizados acima já saem desse escopo, sem
      * precisar de um whereNotIn à parte).
      *
-     * Restringe à mesma direção da seleção (quando conhecida): uma regra
-     * personalizada sem condição de direção (ex.: só "descrição contém X")
-     * não pode, sozinha, jogar a categoria escolhida para a seleção de
-     * saídas num pendente de entrada que só por coincidência bate na mesma
-     * condição de texto.
+     * Sempre restringe à direção já validada da seleção (ApplyCategorizationRequest
+     * confere que todo $transactionIds, inclusive os que acabam "skipped",
+     * é de uma única direção; quem chama a action direto, fora do request,
+     * precisa garantir isso antes) — mesmo quando nada foi categorizado
+     * agora (todo id "skipped"), $direction segue valendo, porque veio do
+     * conjunto original de ids, não dos pendentes de fato categorizados.
+     * Nunca roda sem esse filtro: uma regra personalizada sem condição de
+     * direção (ex.: só "descrição contém X") não pode, sozinha, jogar a
+     * categoria escolhida para a seleção de saídas num pendente de entrada
+     * que só por coincidência bate na mesma condição de texto.
      */
-    private function applyToPending(Rule $rule, ?Direction $direction): int
+    private function applyToPending(Rule $rule, Direction $direction): int
     {
         $definition = RuleDefinition::fromRule($rule);
         $changed = 0;
 
-        $query = Transaction::query()->pendingCategorization();
-
-        if ($direction !== null) {
-            $query->where('direction', $direction->value);
-        }
-
-        $query->lockForUpdate()
+        Transaction::query()
+            ->pendingCategorization()
+            ->where('direction', $direction->value)
+            ->lockForUpdate()
             ->lazyById(500)
             ->each(function (Transaction $transaction) use ($definition, &$changed): void {
                 $context = RuleContext::forExisting($transaction, overwrite: false);

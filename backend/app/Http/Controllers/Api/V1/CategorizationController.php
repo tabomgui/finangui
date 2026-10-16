@@ -37,6 +37,7 @@ final class CategorizationController extends Controller
             userId: $user->id,
             transactionIds: $validated['transaction_ids'],
             categoryId: $validated['category_id'],
+            direction: $request->direction(),
             ruleInput: $validated['rule'] ?? null,
         ));
     }

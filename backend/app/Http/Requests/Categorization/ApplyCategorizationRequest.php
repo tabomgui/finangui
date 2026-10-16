@@ -24,6 +24,8 @@ final class ApplyCategorizationRequest extends ApiRequest
 {
     use DocumentsConditionsAndActions;
 
+    private ?Direction $direction = null;
+
     /**
      * @return array<string, mixed>
      */
@@ -43,6 +45,21 @@ final class ApplyCategorizationRequest extends ApiRequest
             ...self::conditionItemRules('rule.conditions.*'),
             'rule.apply_to_pending' => ['sometimes', 'boolean'],
         ];
+    }
+
+    /**
+     * Direção já conferida como única em checkDirection() — cobre todos os
+     * ids enviados, inclusive os que acabam "skipped" (ex.: já categorizados
+     * por outro caminho): o apply precisa dela mesmo quando nenhum id segue
+     * pendente, para nunca aplicar a regra sem filtro de direção. Só chame
+     * depois de validated() não ter lançado (direction() nunca fica nula
+     * numa requisição que passou da validação).
+     */
+    public function direction(): Direction
+    {
+        assert($this->direction !== null);
+
+        return $this->direction;
     }
 
     /**
@@ -102,6 +119,8 @@ final class ApplyCategorizationRequest extends ApiRequest
 
         /** @var Direction $direction */
         $direction = $directions->first();
+
+        $this->direction = $direction;
 
         return $direction;
     }

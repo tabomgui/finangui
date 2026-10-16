@@ -180,6 +180,38 @@ describe('autenticado', function () {
             ->and($inPending->refresh()->category_id)->toBeNull();
     });
 
+    it('apply_to_pending ainda restringe pela direção da seleção quando todo id enviado é skipped', function () {
+        $category = Category::factory()->create();
+        $otherCategory = Category::factory()->create();
+        // Todo id enviado já tem categoria — nada é categorizado agora
+        // (categorized = 0), mas a direção original (out) ainda precisa
+        // valer para o apply_to_pending.
+        $alreadyCategorized = Transaction::factory()->create([
+            'direction' => 'out', 'description' => 'Fulano', 'original_description' => 'Fulano', 'category_id' => $otherCategory->id,
+        ]);
+        $outPending = Transaction::factory()->create(['direction' => 'out', 'description' => 'Fulano Dois', 'original_description' => 'Fulano Dois']);
+        $inPending = Transaction::factory()->income()->create(['description' => 'Fulano Tres', 'original_description' => 'Fulano Tres']);
+
+        $response = $this->postJson('/api/v1/categorization/apply', [
+            'transaction_ids' => [$alreadyCategorized->id],
+            'category_id' => $category->id,
+            'rule' => [
+                'name' => 'Fulano -> Categoria',
+                'match' => 'any',
+                'conditions' => [
+                    ['field' => 'original_description', 'op' => 'contains', 'value' => 'Fulano'],
+                ],
+                'apply_to_pending' => true,
+            ],
+        ])->assertOk();
+
+        $response->assertJson(['data' => ['categorized' => 0, 'skipped' => 1, 'rule_applied' => 1]]);
+
+        expect($outPending->refresh()->category_id)->toBe($category->id)
+            ->and($inPending->refresh()->category_id)->toBeNull()
+            ->and($alreadyCategorized->refresh()->category_id)->toBe($otherCategory->id);
+    });
+
     it('apply_to_pending nunca categoriza pendente de outro usuário, mesmo que a regra bata', function () {
         $category = Category::factory()->create();
         $transaction = Transaction::factory()->create(['description' => 'Pix enviado - Fulano', 'original_description' => 'Pix enviado - Fulano']);
