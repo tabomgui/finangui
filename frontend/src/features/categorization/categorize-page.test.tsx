@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { toast } from 'sonner'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Category, PendingCategorizationGroup } from '@/api/types'
 import { CategorizePage } from './categorize-page'
 
@@ -80,13 +80,32 @@ function mockPending(groups: PendingCategorizationGroup[], overrides: Partial<Re
   })
 }
 
-function renderPage() {
-  return render(
+function mockCount(totalPending: number, groupCount: number) {
+  usePendingCategorizationCount.mockReturnValue({
+    data: { total_pending: totalPending, group_count: groupCount },
+    isFetchedAfterMount: true,
+  })
+}
+
+function page() {
+  return (
     <MemoryRouter initialEntries={['/categorizar']}>
       <CategorizePage />
-    </MemoryRouter>,
+    </MemoryRouter>
   )
 }
+
+function renderPage() {
+  return render(page())
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  useCategories.mockReset()
+  useCategories.mockReturnValue({ data: [] })
+  mutateAsync.mockReset()
+  useApplyCategorization.mockReturnValue({ mutateAsync, isPending: false })
+})
 
 describe('CategorizePage', () => {
   it('abre e fecha um grupo', () => {
@@ -197,5 +216,134 @@ describe('CategorizePage', () => {
     renderPage()
 
     expect(screen.getByText('5 lançamentos sem categoria · 2 grupos')).toBeInTheDocument()
+  })
+
+  it('seleção vem só do que está carregado: marcar um grupo de entradas e filtrar "Saídas" esvazia a barra', () => {
+    const entries = group({
+      key: 'salario',
+      name: 'Salário ACME',
+      out_count: 0,
+      in_count: 1,
+      net: 500000,
+      transactions: [tx({ id: 10, direction: 'in', description: 'Salário ACME', amount: 500000 })],
+    })
+    const outs = group()
+    mockCount(2, 2)
+    usePendingCategorization.mockImplementation((filters: { direction?: string } = {}) => {
+      const groups = filters.direction === 'out' ? [outs] : [entries, outs]
+      return {
+        data: { total_pending: 2, group_count: groups.length, groups },
+        isPending: false,
+        isError: false,
+        isPlaceholderData: false,
+        refetch: vi.fn(),
+      }
+    })
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar grupo Salário ACME' }))
+    expect(screen.getByText('1 selecionado')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Saídas' }))
+
+    expect(screen.queryByText(/selecionados?$/)).not.toBeInTheDocument()
+  })
+
+  it('progresso conta desde a abertura: de 10 para 7 pendentes mostra "3 de 10"', () => {
+    mockCount(10, 3)
+    mockPending([group()])
+
+    const view = renderPage()
+    expect(screen.getByText('0 de 10 (0%)')).toBeInTheDocument()
+
+    mockCount(7, 2)
+    view.rerender(page())
+    expect(screen.getByText('3 de 10 (30%)')).toBeInTheDocument()
+  })
+
+  it('progresso fica oculto até a contagem ser buscada de novo nesta abertura', () => {
+    usePendingCategorizationCount.mockReturnValue({ data: { total_pending: 10, group_count: 3 }, isFetchedAfterMount: false })
+    mockPending([group()])
+
+    renderPage()
+
+    expect(screen.queryByText(/ de 10/)).not.toBeInTheDocument()
+  })
+
+  it('aplicar a sugestão desmarca só os lançamentos daquele grupo e mostra o caminho da categoria', async () => {
+    const suggested = group({ transactions: [tx({ id: 1 }), tx({ id: 2 })], out_count: 2, net: -2000, suggestion: { category_id: 50 } })
+    const other = group({ key: 'uber', name: 'Uber', transactions: [tx({ id: 3, description: 'Uber trip' })] })
+    mockCount(3, 2)
+    mockPending([suggested, other])
+    useCategories.mockReturnValue({
+      data: [category({ id: 40, name: 'Casa' }), category({ id: 50, parent_id: 40, name: 'Compras' })],
+    })
+    mutateAsync.mockResolvedValue({ categorized: 2, skipped: 0 })
+
+    renderPage()
+
+    expect(screen.getByText('Casa › Compras')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar grupo Shpp Brasil' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar grupo Uber' }))
+    expect(screen.getByText('3 selecionados')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar a 2' }))
+
+    await vi.waitFor(() => expect(toast.success).toHaveBeenCalledWith('2 lançamentos → Casa › Compras'))
+    expect(screen.getByText('1 selecionado')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Selecionar grupo Uber' })).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('aplicar a sugestão sem nada categorizado mostra uma mensagem neutra', async () => {
+    mockCount(1, 1)
+    mockPending([group({ suggestion: { category_id: 50 } })])
+    useCategories.mockReturnValue({ data: [category({ id: 50 })] })
+    mutateAsync.mockResolvedValue({ categorized: 0, skipped: 1 })
+
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar a 1' }))
+
+    await vi.waitFor(() => expect(toast.success).toHaveBeenCalledWith('Esses lançamentos já tinham categoria.'))
+  })
+
+  it('erro ao aplicar a sugestão avisa e não mexe na seleção', async () => {
+    mockCount(2, 1)
+    mockPending([group({ transactions: [tx({ id: 1 }), tx({ id: 2 })], out_count: 2, net: -2000, suggestion: { category_id: 50 } })])
+    useCategories.mockReturnValue({ data: [category({ id: 50 })] })
+    mutateAsync.mockRejectedValue(new Error('boom'))
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar grupo Shpp Brasil' }))
+    expect(screen.getByText('2 selecionados')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar a 2' }))
+
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalled())
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(screen.getByText('2 selecionados')).toBeInTheDocument()
+  })
+
+  it('trava os botões de sugestão enquanto alguma aplicação está em andamento', () => {
+    mockCount(1, 1)
+    mockPending([group({ suggestion: { category_id: 50 } })])
+    useCategories.mockReturnValue({ data: [category({ id: 50 })] })
+    useApplyCategorization.mockReturnValue({ mutateAsync, isPending: true })
+
+    renderPage()
+
+    expect(screen.getByRole('button', { name: 'Aplicar a 1' })).toBeDisabled()
+  })
+
+  it('"+ N lançamentos" fica no singular com um só escondido', () => {
+    const transactions = Array.from({ length: 9 }, (_, i) => tx({ id: i + 1, description: `Lançamento ${i + 1}` }))
+    mockCount(9, 1)
+    mockPending([group({ transactions, out_count: 9, net: -9000 })])
+
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: /Shpp Brasil/ }))
+
+    expect(screen.getByRole('button', { name: '+ 1 lançamento' })).toBeInTheDocument()
   })
 })

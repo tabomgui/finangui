@@ -1,6 +1,6 @@
 import { Check, ChevronDown, LoaderCircle, Minus, Sparkles } from 'lucide-react'
-import { useId, useState } from 'react'
-import type { Category, Direction, PendingCategorizationGroup } from '@/api/types'
+import { memo, useId, useState } from 'react'
+import type { Direction, PendingCategorizationGroup } from '@/api/types'
 import { CategoryIcon } from '@/components/shared/category-icon'
 import { MoneyText } from '@/components/shared/money-text'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,8 @@ import { cn } from '@/lib/utils'
 import type { GroupCheckState } from './selection'
 
 const VISIBLE_LIMIT = 8
+
+const FOCUS_RING = 'outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
 type GroupCheckboxProps = { state: GroupCheckState; label: string; onClick: () => void }
 
@@ -43,23 +45,31 @@ type GroupCardProps = {
   checkState: GroupCheckState
   selectedIds: ReadonlySet<number>
   expanded: boolean
-  suggestionCategory: Category | null
+  /** Caminho "Pai › Sub" da categoria sugerida pelo histórico, ou `null` sem sugestão. */
+  suggestionLabel: string | null
   /** Pendente de aplicação (a sugestão deste grupo, nunca de outro). */
   applying: boolean
-  onToggleExpand: () => void
-  onToggleGroup: () => void
+  /** Alguma aplicação em andamento (de qualquer grupo): trava todos os botões de sugestão. */
+  suggestionDisabled: boolean
+  onToggleExpand: (key: string) => void
+  onToggleGroup: (group: PendingCategorizationGroup) => void
   onToggleTransaction: (id: number) => void
-  onSelectDirection: (direction: Direction) => void
-  onApplySuggestion: () => void
+  onSelectDirection: (group: PendingCategorizationGroup, direction: Direction) => void
+  onApplySuggestion: (group: PendingCategorizationGroup) => void
 }
 
-export function GroupCard({
+/**
+ * Memoizado: a página passa callbacks estáveis que recebem o grupo/chave, então abrir um grupo
+ * ou aplicar uma sugestão não re-renderiza os outros cards.
+ */
+export const GroupCard = memo(function GroupCard({
   group,
   checkState,
   selectedIds,
   expanded,
-  suggestionCategory,
+  suggestionLabel,
   applying,
+  suggestionDisabled,
   onToggleExpand,
   onToggleGroup,
   onToggleTransaction,
@@ -78,23 +88,32 @@ export function GroupCard({
   const countParts = [`${group.transactions.length} lançamento${group.transactions.length === 1 ? '' : 's'}`]
   if (outs.length > 0) countParts.push(`${outs.length} saída${outs.length === 1 ? '' : 's'}`)
   if (ins.length > 0) countParts.push(`${ins.length} entrada${ins.length === 1 ? '' : 's'}`)
-  if (selectedCount > 0) countParts.push(`${selectedCount} marcado${selectedCount === 1 ? '' : 's'}`)
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
       <div className={cn('flex items-center gap-3 px-3 py-3', expanded && 'border-b border-border')}>
-        <GroupCheckbox state={checkState} label={`Selecionar grupo ${group.name}`} onClick={onToggleGroup} />
+        <GroupCheckbox state={checkState} label={`Selecionar grupo ${group.name}`} onClick={() => onToggleGroup(group)} />
         <button
           type="button"
           aria-expanded={expanded}
-          aria-controls={contentId}
-          onClick={onToggleExpand}
-          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          aria-controls={expanded ? contentId : undefined}
+          onClick={() => onToggleExpand(group.key)}
+          className={cn('flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left', FOCUS_RING)}
         >
           <CategoryIcon icon={null} color={null} />
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium">{group.name}</span>
-            <span className="block truncate text-xs text-muted-foreground">{countParts.join(' · ')}</span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {countParts.join(' · ')}
+              {selectedCount > 0 && (
+                <>
+                  {' · '}
+                  <span className="text-primary">
+                    {selectedCount} marcado{selectedCount === 1 ? '' : 's'}
+                  </span>
+                </>
+              )}
+            </span>
           </span>
           <span className="hidden shrink-0 text-right text-sm font-semibold sm:block">
             <MoneyText cents={Math.abs(group.net)} direction={group.net >= 0 ? 'in' : 'out'} />
@@ -106,17 +125,17 @@ export function GroupCard({
         </button>
       </div>
 
-      {!expanded && suggestionCategory && (
+      {!expanded && suggestionLabel !== null && (
         <div className="flex items-center gap-2 border-t border-border bg-muted/30 px-3 py-2 text-xs">
           <Sparkles aria-hidden className="h-3.5 w-3.5 text-primary" />
           <span className="text-muted-foreground">Sugestão pelo histórico:</span>
-          <span className="truncate font-medium">{suggestionCategory.name}</span>
+          <span className="truncate font-medium">{suggestionLabel}</span>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            disabled={applying}
-            onClick={onApplySuggestion}
+            disabled={applying || suggestionDisabled}
+            onClick={() => onApplySuggestion(group)}
             className="ml-auto h-6 shrink-0 gap-1 rounded-full px-2.5 text-xs"
           >
             {applying && <LoaderCircle aria-hidden className="h-3 w-3 animate-spin" />}
@@ -132,15 +151,15 @@ export function GroupCard({
               <span>Marcar:</span>
               <button
                 type="button"
-                onClick={() => onSelectDirection('out')}
-                className="rounded-full border border-border px-2 py-0.5 hover:bg-muted"
+                onClick={() => onSelectDirection(group, 'out')}
+                className={cn('rounded-full border border-border px-2 py-0.5 hover:bg-muted', FOCUS_RING)}
               >
                 só saídas ({outs.length})
               </button>
               <button
                 type="button"
-                onClick={() => onSelectDirection('in')}
-                className="rounded-full border border-border px-2 py-0.5 hover:bg-muted"
+                onClick={() => onSelectDirection(group, 'in')}
+                className={cn('rounded-full border border-border px-2 py-0.5 hover:bg-muted', FOCUS_RING)}
               >
                 só entradas ({ins.length})
               </button>
@@ -172,8 +191,12 @@ export function GroupCard({
           </ul>
           {hiddenCount > 0 && (
             <div className="px-3 py-2 text-center">
-              <button type="button" onClick={() => setShowAll(true)} className="text-xs font-medium text-primary hover:underline">
-                + {hiddenCount} lançamentos
+              <button
+                type="button"
+                onClick={() => setShowAll(true)}
+                className={cn('rounded-md px-1 text-xs font-medium text-primary hover:underline', FOCUS_RING)}
+              >
+                + {hiddenCount} {hiddenCount === 1 ? 'lançamento' : 'lançamentos'}
               </button>
             </div>
           )}
@@ -181,4 +204,4 @@ export function GroupCard({
       )}
     </div>
   )
-}
+})

@@ -99,6 +99,8 @@ function invalidate(queryClient: QueryClient, roots: string[]) {
  * mudam as previstas, que aparecem nas transações, no saldo previsto e nas pendências do Início.
  * `budgets`, `goals` e `reports` entram porque gasto, progresso de meta e os relatórios dependem
  * de lançamentos: qualquer mutação que já chame isto mantém essas telas em dia também.
+ * `categorization` entra porque categorizar um lançamento (manual, em lote ou por regra) muda
+ * quem ainda está pendente: cobre `pendingCategorization` e `pendingCategorizationCount` de uma vez.
  */
 export function invalidateLedger(queryClient: QueryClient) {
   return invalidate(queryClient, [
@@ -116,6 +118,7 @@ export function invalidateLedger(queryClient: QueryClient) {
     'budgets',
     'goals',
     'reports',
+    'categorization',
   ])
 }
 
@@ -156,11 +159,6 @@ export function invalidateImportBatchesList(queryClient: QueryClient) {
 
 export function invalidateBankConnections(queryClient: QueryClient) {
   return invalidate(queryClient, ['bank-connections'])
-}
-
-/** Cobre `pendingCategorization` e `pendingCategorizationCount` (mesmo prefixo `'categorization'`). */
-export function invalidateCategorization(queryClient: QueryClient) {
-  return invalidate(queryClient, ['categorization'])
 }
 
 /**

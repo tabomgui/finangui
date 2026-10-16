@@ -1,9 +1,9 @@
 import { PartyPopper, Search, Tags, TriangleAlert } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useApplyCategorization, usePendingCategorization, usePendingCategorizationCount } from '@/api/queries/categorization'
 import { useCategories } from '@/api/queries/categories'
-import type { Direction, PendingCategorizationGroup } from '@/api/types'
+import type { Category, Direction, PendingCategorizationGroup } from '@/api/types'
 import { PageBody } from '@/components/layout/page-body'
 import { PageHeader } from '@/components/layout/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
@@ -14,11 +14,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { notifyError } from '@/lib/form-errors'
+import { categoryPath } from './category-path'
 import { GroupCard } from './group-card'
 import { pendingCategorizationLabel } from './pending-label'
 import { groupCheckState, selectGroupDirection, toggleGroupSelection } from './selection'
 
 type FilterValue = 'all' | 'out' | 'in'
+
+const NO_CATEGORIES: Category[] = []
 
 export function CategorizePage() {
   const [search, setSearch] = useState('')
@@ -26,75 +29,103 @@ export function CategorizePage() {
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set())
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [applyingGroupKey, setApplyingGroupKey] = useState<string | null>(null)
-  // Baseline da barra de progresso: capturado na primeira resposta e nunca mais tocado por
-  // filtro/busca — só avança quando lançamentos são de fato categorizados (ver `done` abaixo).
+  // Baseline da barra de progresso: capturado na primeira resposta *fresca* (não a de cache de
+  // montagem) e nunca mais tocado por filtro/busca — só avança quando lançamentos são de fato
+  // categorizados (ver `done` abaixo). Enquanto não existe, a barra fica oculta.
   const [initialTotal, setInitialTotal] = useState<number | null>(null)
 
   const countQuery = usePendingCategorizationCount()
   const direction: Direction | undefined = filterValue === 'all' ? undefined : filterValue
   const debouncedSearch = useDebouncedValue(search, 350)
   const pendingQuery = usePendingCategorization({ direction, search: debouncedSearch.trim() || undefined })
-  const { data: categories = [] } = useCategories()
-  const applyCategorization = useApplyCategorization()
+  const { data: categories = NO_CATEGORIES } = useCategories()
+  // `mutateAsync` é estável entre renders (o objeto do `useMutation` não é): os callbacks
+  // passados ao `GroupCard` memoizado dependem só dele.
+  const { mutateAsync: applyCategorization, isPending: applyPending } = useApplyCategorization()
 
-  if (initialTotal === null && countQuery.data) setInitialTotal(countQuery.data.total_pending)
+  const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category] as const)), [categories])
+
+  if (initialTotal === null && countQuery.data && countQuery.isFetchedAfterMount) {
+    setInitialTotal(countQuery.data.total_pending)
+  }
 
   const totalPending = countQuery.data?.total_pending ?? 0
   const done = initialTotal === null ? 0 : Math.max(initialTotal - totalPending, 0)
-  const progressTotal = initialTotal ?? totalPending
-  const progressPercent = progressTotal > 0 ? Math.round((done / progressTotal) * 100) : 100
+  const progressPercent = initialTotal !== null && initialTotal > 0 ? Math.round((done / initialTotal) * 100) : 100
 
   const groups = pendingQuery.data?.groups ?? []
+  const loaded = groups.flatMap((group) => group.transactions)
   const filtered = search.trim() !== '' || filterValue !== 'all'
 
-  const toggleExpand = (key: string) => {
+  // Poda a seleção para os ids da resposta atual: um lançamento que saiu da lista (filtro, busca
+  // ou categorizado por outro caminho) não volta marcado depois. Nunca com a resposta anterior
+  // mantida por `keepPreviousData` (`isPlaceholderData`), que ainda é a lista velha. Só chama o
+  // setState quando há o que podar, então não entra em loop.
+  if (pendingQuery.data && !pendingQuery.isPlaceholderData) {
+    const loadedIds = new Set(loaded.map((transaction) => transaction.id))
+    if ([...selectedIds].some((id) => !loadedIds.has(id))) {
+      setSelectedIds(new Set([...selectedIds].filter((id) => loadedIds.has(id))))
+    }
+  }
+
+  const selected = loaded.filter((transaction) => selectedIds.has(transaction.id))
+
+  const toggleExpand = useCallback((key: string) => {
     setExpandedKeys((current) => {
       const next = new Set(current)
       if (next.has(key)) next.delete(key)
       else next.add(key)
       return next
     })
-  }
+  }, [])
 
-  const toggleTransaction = (id: number) => {
+  const toggleTransaction = useCallback((id: number) => {
     setSelectedIds((current) => {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
       else next.add(id)
       return next
     })
-  }
+  }, [])
 
-  const toggleGroup = (group: PendingCategorizationGroup) => {
+  const toggleGroup = useCallback((group: PendingCategorizationGroup) => {
     setSelectedIds((current) => toggleGroupSelection(current, group))
-  }
+  }, [])
 
-  const selectDirection = (group: PendingCategorizationGroup, groupDirection: Direction) => {
+  const selectDirection = useCallback((group: PendingCategorizationGroup, groupDirection: Direction) => {
     setSelectedIds((current) => selectGroupDirection(current, group, groupDirection))
-  }
+  }, [])
 
-  const applySuggestion = async (group: PendingCategorizationGroup) => {
-    if (!group.suggestion) return
-    const categoryId = group.suggestion.category_id
-    const category = categories.find((each) => each.id === categoryId)
-    const ids = group.transactions.map((transaction) => transaction.id)
+  const applySuggestion = useCallback(
+    async (group: PendingCategorizationGroup) => {
+      if (!group.suggestion) return
+      const categoryId = group.suggestion.category_id
+      const category = categoriesById.get(categoryId)
+      const ids = group.transactions.map((transaction) => transaction.id)
 
-    setApplyingGroupKey(group.key)
-    try {
-      const result = await applyCategorization.mutateAsync({ transaction_ids: ids, category_id: categoryId })
-      setSelectedIds((current) => {
-        const groupIds = new Set(ids)
-        const next = new Set([...current].filter((id) => !groupIds.has(id)))
-        return next.size === current.size ? current : next
-      })
-      const count = result.categorized
-      toast.success(`${count} ${count === 1 ? 'lançamento' : 'lançamentos'} → ${category?.name ?? 'categoria'}`)
-    } catch (error) {
-      notifyError(error)
-    } finally {
-      setApplyingGroupKey(null)
-    }
-  }
+      setApplyingGroupKey(group.key)
+      try {
+        const result = await applyCategorization({ transaction_ids: ids, category_id: categoryId })
+        setSelectedIds((current) => {
+          const groupIds = new Set(ids)
+          const next = new Set([...current].filter((id) => !groupIds.has(id)))
+          return next.size === current.size ? current : next
+        })
+        const count = result.categorized
+        if (count === 0) {
+          toast.success('Esses lançamentos já tinham categoria.')
+        } else {
+          const label = category ? categoryPath(category, categoriesById) : 'categoria'
+          toast.success(`${count} ${count === 1 ? 'lançamento' : 'lançamentos'} → ${label}`)
+        }
+      } catch (error) {
+        notifyError(error)
+      } finally {
+        setApplyingGroupKey(null)
+      }
+    },
+    [applyCategorization, categoriesById],
+  )
 
   return (
     <>
@@ -105,16 +136,18 @@ export function CategorizePage() {
       />
       <PageBody className="space-y-3 pb-28">
         <div className="space-y-3 rounded-2xl border border-border bg-card p-3 shadow-card">
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-              <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progressPercent}%` }} />
+          {initialTotal !== null && (
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progressPercent}%` }} />
+              </div>
+              <span>
+                {done} de {initialTotal} ({progressPercent}%)
+              </span>
             </div>
-            <span>
-              {done} de {progressTotal} ({progressPercent}%)
-            </span>
-          </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-0 flex-1">
+            <div className="relative min-w-0 flex-1 basis-full sm:basis-auto">
               <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
@@ -178,23 +211,24 @@ export function CategorizePage() {
               checkState={groupCheckState(group, selectedIds)}
               selectedIds={selectedIds}
               expanded={expandedKeys.has(group.key)}
-              suggestionCategory={group.suggestion ? (categories.find((each) => each.id === group.suggestion?.category_id) ?? null) : null}
-              applying={applyingGroupKey === group.key && applyCategorization.isPending}
-              onToggleExpand={() => toggleExpand(group.key)}
-              onToggleGroup={() => toggleGroup(group)}
+              suggestionLabel={suggestionLabelFor(group, categoriesById)}
+              applying={applyingGroupKey === group.key}
+              suggestionDisabled={applyPending}
+              onToggleExpand={toggleExpand}
+              onToggleGroup={toggleGroup}
               onToggleTransaction={toggleTransaction}
-              onSelectDirection={(groupDirection) => selectDirection(group, groupDirection)}
-              onApplySuggestion={() => applySuggestion(group)}
+              onSelectDirection={selectDirection}
+              onApplySuggestion={applySuggestion}
             />
           ))
         )}
       </PageBody>
 
-      {selectedIds.size > 0 && (
+      {selected.length > 0 && (
         <div className="fixed inset-x-0 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-40 px-4 md:bottom-6 md:pl-60">
           <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-2xl border border-border bg-card p-3 shadow-lg">
             <span className="flex-1 text-sm font-medium">
-              {selectedIds.size} selecionado{selectedIds.size === 1 ? '' : 's'}
+              {selected.length} selecionado{selected.length === 1 ? '' : 's'}
             </span>
             <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
               Limpar
@@ -204,4 +238,10 @@ export function CategorizePage() {
       )}
     </>
   )
+}
+
+function suggestionLabelFor(group: PendingCategorizationGroup, categoriesById: ReadonlyMap<number, Category>): string | null {
+  if (!group.suggestion) return null
+  const category = categoriesById.get(group.suggestion.category_id)
+  return category ? categoryPath(category, categoriesById) : null
 }
