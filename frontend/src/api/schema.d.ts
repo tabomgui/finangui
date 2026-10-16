@@ -1684,7 +1684,7 @@ export interface components {
                     date: string;
                     description: string;
                     amount: number;
-                    direction: string;
+                    direction: components["schemas"]["Direction"];
                     account_id: number;
                     account_name: string;
                 }[];

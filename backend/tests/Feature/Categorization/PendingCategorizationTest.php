@@ -115,6 +115,49 @@ describe('autenticado', function () {
         expect($group->suggestionCategoryId)->toBeNull();
     });
 
+    it('não sugere nada quando as description_keys do grupo divergem sobre a categoria', function () {
+        $categoryA = Category::factory()->create();
+        $categoryB = Category::factory()->create();
+
+        // histórico: duas description_keys diferentes, mesma contraparte
+        // (mesmo prefixo removido), mesma direção, categorias diferentes.
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Pix enviado - Fulano De Tal', 'direction' => 'out',
+            'category_id' => $categoryA->id, 'date' => '2026-01-01',
+        ]);
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Compra no débito - Fulano De Tal', 'direction' => 'out',
+            'category_id' => $categoryB->id, 'date' => '2026-01-02',
+        ]);
+
+        Transaction::factory()->for($this->account)->create(['description' => 'Pix enviado - Fulano De Tal', 'direction' => 'out']);
+        Transaction::factory()->for($this->account)->create(['description' => 'Compra no débito - Fulano De Tal', 'direction' => 'out']);
+
+        $result = app(PendingCategorization::class)->pending();
+
+        $group = collect($result->groups)->firstWhere('key', 'FULANO DE TAL');
+        expect($group->suggestionCategoryId)->toBeNull();
+    });
+
+    it('um filtro de direção pode revelar uma sugestão que o grupo misto não teria sem o filtro', function () {
+        $category = Category::factory()->create();
+
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Pix enviado - Fulano De Tal', 'direction' => 'out',
+            'category_id' => $category->id, 'date' => '2026-01-01',
+        ]);
+        Transaction::factory()->for($this->account)->create(['description' => 'Pix enviado - Fulano De Tal', 'direction' => 'out']);
+        Transaction::factory()->for($this->account)->create(['description' => 'Pix recebido - Fulano De Tal', 'direction' => 'in']);
+
+        $query = app(PendingCategorization::class);
+
+        $unfiltered = collect($query->pending()->groups)->firstWhere('key', 'FULANO DE TAL');
+        $filtered = collect($query->pending(direction: Direction::Out)->groups)->firstWhere('key', 'FULANO DE TAL');
+
+        expect($unfiltered->suggestionCategoryId)->toBeNull()
+            ->and($filtered->suggestionCategoryId)->toBe($category->id);
+    });
+
     it('não sugere nada quando não há histórico para a chave', function () {
         Transaction::factory()->for($this->account)->create(['description' => 'Pix enviado - Fulano De Tal', 'direction' => 'out']);
 
@@ -134,6 +177,30 @@ describe('autenticado', function () {
         $result = app(PendingCategorization::class)->pending();
 
         expect($result->groups[0]->name)->toBe('Loja 99 Exemplo');
+    });
+
+    it('tira o nome de original_description, não de description (apelido editado não conta)', function () {
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Apelido', 'original_description' => 'PIX ENVIADO FULANO',
+        ]);
+
+        $result = app(PendingCategorization::class)->pending();
+
+        expect($result->groups[0]->name)->toBe('Fulano');
+    });
+
+    it('o nome do grupo é sempre achável (sem caixa) dentro do original_description do lançamento mais recente', function () {
+        Transaction::factory()->for($this->account)->create([
+            'original_description' => 'Compra no débito - Padaria Teste Chapeco Bra', 'date' => '2026-01-01',
+        ]);
+        $mostRecent = Transaction::factory()->for($this->account)->create([
+            'original_description' => 'Compra no débito - Padaria Teste 2 Chapeco Bra', 'date' => '2026-02-01',
+        ]);
+
+        $result = app(PendingCategorization::class)->pending();
+
+        $name = $result->groups[0]->name;
+        expect(mb_stripos($mostRecent->original_description, $name))->not->toBeFalse();
     });
 
     it('filtra por direção', function () {
@@ -164,7 +231,9 @@ describe('autenticado', function () {
         $result = app(PendingCategorization::class)->pending(limit: 2);
 
         expect($result->truncated)->toBeTrue()
-            ->and($result->totalPending)->toBe(2)
+            // total_pending é o total de verdade (3), não o recorte
+            // truncado (2) — igual ao que /pending-count devolveria.
+            ->and($result->totalPending)->toBe(3)
             ->and(collect($result->groups)->flatMap(fn ($g) => $g->transactions)->pluck('id'))->toContain($mostRecent->id);
     });
 
@@ -174,6 +243,15 @@ describe('autenticado', function () {
         $result = app(PendingCategorization::class)->pending(limit: 5000);
 
         expect($result->truncated)->toBeFalse();
+    });
+
+    it('descrição só de dígito não agrupa lançamentos sem relação entre si', function () {
+        Transaction::factory()->for($this->account)->create(['description' => '11111']);
+        Transaction::factory()->for($this->account)->create(['description' => '22222']);
+
+        $result = app(PendingCategorization::class)->pending();
+
+        expect($result->groupCount)->toBe(2);
     });
 
     it('isola pendentes entre usuários', function () {
@@ -187,6 +265,35 @@ describe('autenticado', function () {
 
         expect($result->groupCount)->toBe(1)
             ->and($result->groups[0]->key)->toBe('BELTRANO');
+    });
+
+    it('a contagem leve exclui os mesmos critérios que a listagem', function () {
+        Transaction::factory()->for($this->account)->create(['description' => 'Padaria Teste']);
+
+        Transaction::factory()->for($this->account)->create(['description' => 'Padaria Teste', 'status' => 'projected']);
+        Transaction::factory()->for($this->account)->create(['description' => 'Padaria Teste', 'status' => 'pending']);
+        Transaction::factory()->for($this->account)->create(['description' => 'Padaria Teste', 'is_ignored' => true]);
+        Transaction::factory()->for($this->account)->create(['description' => 'Padaria Teste', 'transfer_id' => (string) Str::uuid()]);
+
+        $statement = CardStatement::factory()->create();
+        Transaction::factory()->create([
+            'account_id' => $statement->account_id,
+            'description' => 'Pagamento fatura',
+            'direction' => 'in',
+            'statement_id' => $statement->id,
+            'card_payment_statement_id' => $statement->id,
+        ]);
+
+        $archived = Account::factory()->archived()->create();
+        Transaction::factory()->for($archived)->create(['description' => 'Padaria Teste']);
+
+        $category = Category::factory()->create();
+        Transaction::factory()->for($this->account)->create(['description' => 'Padaria Teste', 'category_id' => $category->id]);
+
+        $result = app(PendingCategorization::class)->count();
+
+        expect($result->totalPending)->toBe(1)
+            ->and($result->groupCount)->toBe(1);
     });
 
     it('a contagem leve bate com os totais da listagem', function () {
@@ -217,6 +324,22 @@ describe('autenticado', function () {
         expect($group)->not->toHaveKey('suggestion')
             ->and($response->json('data'))->not->toHaveKey('truncated')
             ->and($group['transactions'][0])->toHaveKeys(['id', 'date', 'description', 'amount', 'direction', 'account_id', 'account_name']);
+    });
+
+    it('GET /categorization/pending expõe suggestion.category_id quando há sugestão', function () {
+        $category = Category::factory()->create();
+
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Pix enviado - Fulano De Tal', 'direction' => 'out',
+            'category_id' => $category->id, 'date' => '2026-01-01',
+        ]);
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Pix enviado - Fulano De Tal', 'direction' => 'out', 'date' => '2026-02-01',
+        ]);
+
+        $response = $this->getJson('/api/v1/categorization/pending')->assertOk();
+
+        expect($response->json('data.groups.0.suggestion.category_id'))->toBe($category->id);
     });
 
     it('GET /categorization/pending-count devolve os totais', function () {

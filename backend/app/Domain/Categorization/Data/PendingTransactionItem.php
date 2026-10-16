@@ -2,6 +2,8 @@
 
 namespace App\Domain\Categorization\Data;
 
+use App\Domain\Transactions\Enums\Direction;
+
 /**
  * Um lançamento de App\Domain\Categorization\Data\PendingGroup::$transactions.
  */
@@ -12,7 +14,7 @@ final readonly class PendingTransactionItem
         public string $date,
         public string $description,
         public int $amount,
-        public string $direction,
+        public Direction $direction,
         public int $accountId,
         public string $accountName,
     ) {}

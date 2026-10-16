@@ -81,3 +81,67 @@ it('cai no título da chave quando a extração da descrição original não sob
 
     expect(CounterpartyKey::displayName($key, 'Resgate'))->toBe('Resgate');
 });
+
+it('extrai da descrição original - PIX ENVIADO FULANO vira Fulano, mesmo com apelido salvo', function () {
+    $key = CounterpartyKey::fromDescriptionKey(TextNormalizer::key('PIX ENVIADO FULANO'));
+
+    expect(CounterpartyKey::displayName($key, 'PIX ENVIADO FULANO'))->toBe('Fulano');
+});
+
+it('o nome extraído preserva o "*" interno de um token, sem reconstruir a partir de palavras soltas', function () {
+    $original = 'SHPP*BRASIL INSTITUICAO';
+    $key = CounterpartyKey::fromDescriptionKey(TextNormalizer::key($original));
+
+    $name = CounterpartyKey::displayName($key, $original);
+
+    // a extração é sempre um recorte de verdade do texto original: dá para
+    // achar $name de volta dentro de $original comparando sem caixa.
+    expect(mb_stripos($original, $name))->not->toBeFalse()
+        ->and($name)->toContain('*');
+});
+
+it('preserva o hífen interno de um token ao extrair o nome', function () {
+    $original = 'Auto-Posto Exemplo Chapeco BRA';
+    $key = CounterpartyKey::fromDescriptionKey(TextNormalizer::key($original));
+
+    expect(CounterpartyKey::displayName($key, $original))->toBe('Auto-Posto Exemplo');
+});
+
+it('não mantém o prefixo na extração, mesmo com vírgula colada nele', function () {
+    $original = 'Compra no débito, Padaria Teste Chapecó BRA';
+    $key = CounterpartyKey::fromDescriptionKey(TextNormalizer::key($original));
+
+    expect(CounterpartyKey::displayName($key, $original))->toBe('Padaria Teste')
+        ->and(CounterpartyKey::displayName($key, $original))->not->toContain('ébito');
+});
+
+it('ignora um token só de dígito logo depois do prefixo', function () {
+    $original = '12/10 COMPRA NO DEBITO PADARIA';
+    $key = CounterpartyKey::fromDescriptionKey(TextNormalizer::key($original));
+
+    expect(CounterpartyKey::displayName($key, $original))->toBe('Padaria');
+});
+
+it('ignora um número tipo CPF entre o prefixo e o nome, sem virar parte do nome', function () {
+    $original = 'PIX ENVIADO 123.456.789-00 FULANO';
+    $key = CounterpartyKey::fromDescriptionKey(TextNormalizer::key($original));
+
+    $name = CounterpartyKey::displayName($key, $original);
+
+    expect($name)->toBe('Fulano')
+        ->and($name)->not->toContain('123');
+});
+
+it('não trata palavra comum com o mesmo começo do prefixo como prefixo', function () {
+    expect(CounterpartyKey::fromDescriptionKey('RESGATELAND'))->toBe('RESGATELAND');
+});
+
+it('não tira cidade sem o país depois', function () {
+    expect(CounterpartyKey::fromDescriptionKey('LOJA SANTOS'))->toBe('LOJA SANTOS');
+});
+
+it('reconhece sufixo de cidade e UF/país estrangeiro, ex.: San Francisco CA', function () {
+    $key = CounterpartyKey::fromDescriptionKey(TextNormalizer::key('Loja Exemplo San Francisco CA'));
+
+    expect($key)->toBe('LOJA EXEMPLO');
+});

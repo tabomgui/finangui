@@ -5,6 +5,7 @@ namespace App\Http\Resources;
 use App\Domain\Categorization\Data\PendingCategorizationResult;
 use App\Domain\Categorization\Data\PendingGroup;
 use App\Domain\Categorization\Data\PendingTransactionItem;
+use App\Domain\Transactions\Enums\Direction;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -17,7 +18,28 @@ use Illuminate\Http\Resources\Json\JsonResource;
 final class PendingCategorizationResource extends JsonResource
 {
     /**
-     * @return array{total_pending: int, group_count: int, truncated?: true, groups: list<array<string, mixed>>}
+     * @return array{
+     *     total_pending: int,
+     *     group_count: int,
+     *     truncated?: true,
+     *     groups: list<array{
+     *         key: string,
+     *         name: string,
+     *         out_count: int,
+     *         in_count: int,
+     *         net: int,
+     *         suggestion?: array{category_id: int},
+     *         transactions: list<array{
+     *             id: int,
+     *             date: string,
+     *             description: string,
+     *             amount: int,
+     *             direction: Direction,
+     *             account_id: int,
+     *             account_name: string,
+     *         }>,
+     *     }>,
+     * }
      */
     public function toArray(Request $request): array
     {
@@ -38,7 +60,23 @@ final class PendingCategorizationResource extends JsonResource
      * suggestion some quando o grupo não tem uma sugestão confiável pelo
      * histórico — ver App\Domain\Categorization\Data\PendingGroup.
      *
-     * @return array<string, mixed>
+     * @return array{
+     *     key: string,
+     *     name: string,
+     *     out_count: int,
+     *     in_count: int,
+     *     net: int,
+     *     suggestion?: array{category_id: int},
+     *     transactions: list<array{
+     *         id: int,
+     *         date: string,
+     *         description: string,
+     *         amount: int,
+     *         direction: Direction,
+     *         account_id: int,
+     *         account_name: string,
+     *     }>,
+     * }
      */
     private function groupToArray(PendingGroup $group): array
     {
@@ -61,7 +99,15 @@ final class PendingCategorizationResource extends JsonResource
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array{
+     *     id: int,
+     *     date: string,
+     *     description: string,
+     *     amount: int,
+     *     direction: Direction,
+     *     account_id: int,
+     *     account_name: string,
+     * }
      */
     private function transactionToArray(PendingTransactionItem $item): array
     {
