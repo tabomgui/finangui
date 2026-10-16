@@ -1741,6 +1741,7 @@ export interface components {
                     id: number;
                     date: string;
                     description: string;
+                    original_description: string;
                     amount: number;
                     direction: components["schemas"]["Direction"];
                     account_id: number;

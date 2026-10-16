@@ -104,7 +104,8 @@ function formatConditionValue(condition: RuleSimpleCondition, lookups: RuleLooku
   return `“${value}”`
 }
 
-function describeSimpleCondition(condition: RuleSimpleCondition, lookups: RuleLookups): string {
+/** "Campo operador valor" de uma condição simples, no mesmo vocabulário da lista de regras. */
+export function describeSimpleCondition(condition: RuleSimpleCondition, lookups: RuleLookups): string {
   const field = FIELD_LABELS[condition.field] ?? condition.field
   const operator = OPERATOR_LABELS[condition.op] ?? condition.op
   return `${field} ${operator} ${formatConditionValue(condition, lookups)}`

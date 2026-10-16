@@ -210,7 +210,7 @@ export function ruleDefaultsFromTransaction(transaction: Transaction): RuleFormV
   }
 }
 
-function toConditionInput(condition: ConditionValues): RuleConditionInput {
+export function toConditionInput(condition: ConditionValues): RuleConditionInput {
   const value = condition.field === 'amount' || condition.field === 'account_id' ? Number(condition.value) : condition.value
   return { field: condition.field, op: condition.op, value }
 }

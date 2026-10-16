@@ -16,6 +16,7 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { notifyError } from '@/lib/form-errors'
 import { cn } from '@/lib/utils'
 import { categoryPath } from './category-path'
+import { CategorizeActionBar } from './categorize-action-bar'
 import { GroupCard } from './group-card'
 import { pendingCategorizationLabel } from './pending-label'
 import { groupCheckState, selectGroupDirection, toggleGroupSelection } from './selection'
@@ -74,6 +75,8 @@ export function CategorizePage() {
   }
 
   const selected = loaded.filter((transaction) => selectedIds.has(transaction.id))
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), [])
 
   const toggleExpand = useCallback((key: string) => {
     setExpandedKeys((current) => {
@@ -139,7 +142,9 @@ export function CategorizePage() {
         back
         subtitle={countQuery.data ? pendingCategorizationLabel(countQuery.data.total_pending, countQuery.data.group_count) : undefined}
       />
-      <PageBody className="space-y-3 pb-28">
+      {/* Com a barra de ação aberta (mais alta, com o bloco da regra), o fim da lista precisa de
+          mais espaço para não ficar escondido atrás dela. */}
+      <PageBody className={cn('space-y-3', selected.length > 0 ? 'pb-96' : 'pb-28')}>
         <div className="space-y-3 rounded-2xl border border-border bg-card p-3 shadow-card">
           {initialTotal !== null && (
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -239,16 +244,17 @@ export function CategorizePage() {
       </PageBody>
 
       {selected.length > 0 && (
-        <div className="fixed inset-x-0 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-40 px-4 md:bottom-6 md:pl-60">
-          <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-2xl border border-border bg-card p-3 shadow-lg">
-            <span className="flex-1 text-sm font-medium">
-              {selected.length} selecionado{selected.length === 1 ? '' : 's'}
-            </span>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
-              Limpar
-            </Button>
-          </div>
-        </div>
+        <CategorizeActionBar
+          groups={groups}
+          transactions={loaded}
+          selected={selected}
+          selectedIds={selectedIds}
+          categoriesById={categoriesById}
+          applyCategorization={applyCategorization}
+          applyPending={applyPending}
+          onClear={clearSelection}
+          onApplied={clearSelection}
+        />
       )}
     </>
   )

@@ -33,6 +33,7 @@ final class PendingCategorizationResource extends JsonResource
      *             id: int,
      *             date: string,
      *             description: string,
+     *             original_description: string,
      *             amount: int,
      *             direction: Direction,
      *             account_id: int,
@@ -71,6 +72,7 @@ final class PendingCategorizationResource extends JsonResource
      *         id: int,
      *         date: string,
      *         description: string,
+     *         original_description: string,
      *         amount: int,
      *         direction: Direction,
      *         account_id: int,
@@ -99,10 +101,15 @@ final class PendingCategorizationResource extends JsonResource
     }
 
     /**
+     * original_description (texto do banco) é o campo que a regra padrão do
+     * frontend casa: a tela conta localmente quantos pendentes uma regra
+     * casaria, sem chamar /rules/preview.
+     *
      * @return array{
      *     id: int,
      *     date: string,
      *     description: string,
+     *     original_description: string,
      *     amount: int,
      *     direction: Direction,
      *     account_id: int,
@@ -115,6 +122,7 @@ final class PendingCategorizationResource extends JsonResource
             'id' => $item->id,
             'date' => $item->date,
             'description' => $item->description,
+            'original_description' => $item->originalDescription,
             'amount' => $item->amount,
             'direction' => $item->direction,
             'account_id' => $item->accountId,

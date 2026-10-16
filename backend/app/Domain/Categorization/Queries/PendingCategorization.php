@@ -244,6 +244,7 @@ final class PendingCategorization
             id: $transaction->id,
             date: $transaction->date->toDateString(),
             description: $transaction->description,
+            originalDescription: $transaction->original_description,
             amount: $transaction->amount->cents,
             direction: $transaction->direction,
             accountId: $transaction->account_id,

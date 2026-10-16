@@ -179,6 +179,17 @@ describe('autenticado', function () {
         expect($result->groups[0]->name)->toBe('Loja 99 Exemplo');
     });
 
+    it('expõe original_description de cada lançamento, não só description', function () {
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Apelido', 'original_description' => 'PIX ENVIADO FULANO',
+        ]);
+
+        $transaction = $this->getJson('/api/v1/categorization/pending')->assertOk()->json('data.groups.0.transactions.0');
+
+        expect($transaction['description'])->toBe('Apelido')
+            ->and($transaction['original_description'])->toBe('PIX ENVIADO FULANO');
+    });
+
     it('tira o nome de original_description, não de description (apelido editado não conta)', function () {
         Transaction::factory()->for($this->account)->create([
             'description' => 'Apelido', 'original_description' => 'PIX ENVIADO FULANO',
@@ -323,7 +334,7 @@ describe('autenticado', function () {
         $group = $response->json('data.groups.0');
         expect($group)->not->toHaveKey('suggestion')
             ->and($response->json('data'))->not->toHaveKey('truncated')
-            ->and($group['transactions'][0])->toHaveKeys(['id', 'date', 'description', 'amount', 'direction', 'account_id', 'account_name']);
+            ->and($group['transactions'][0])->toHaveKeys(['id', 'date', 'description', 'original_description', 'amount', 'direction', 'account_id', 'account_name']);
     });
 
     it('GET /categorization/pending expõe suggestion.category_id quando há sugestão', function () {

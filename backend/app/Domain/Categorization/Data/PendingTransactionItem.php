@@ -13,6 +13,7 @@ final readonly class PendingTransactionItem
         public int $id,
         public string $date,
         public string $description,
+        public string $originalDescription,
         public int $amount,
         public Direction $direction,
         public int $accountId,

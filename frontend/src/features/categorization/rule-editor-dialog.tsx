@@ -1,0 +1,203 @@
+import { Plus, ScanSearch } from 'lucide-react'
+import { useState } from 'react'
+import type { Direction } from '@/api/types'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ConditionRow, type ConditionErrors } from '@/features/rules/condition-row'
+import { pluralize } from '@/features/rules/rule-labels'
+import { emptyCondition, type ConditionValues } from '@/features/rules/rule-form-values'
+import { emptyAlternative, type MatchableTransaction, type RuleAlternative } from './default-rule'
+import { useRuleMatchCount, type RuleMatchState } from './use-rule-match-count'
+
+/**
+ * Erros por caminho, no formato do corpo da regra (`conditions.0.conditions.1.value`,
+ * `conditions.0.conditions`, `conditions`, `match`) — o mesmo dos 422 de `rule.*` do apply, sem o
+ * prefixo `rule.`.
+ */
+export type RuleErrors = Record<string, string>
+
+type RuleEditorDialogProps = {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** Regra atual (padrão ou já personalizada), ponto de partida do editor a cada abertura. */
+  initial: RuleAlternative[]
+  /** Erros vindos do servidor ao aplicar, mostrados nas condições correspondentes. */
+  errors: RuleErrors
+  transactions: MatchableTransaction[]
+  selectedIds: ReadonlySet<number>
+  direction: Direction
+  categoryId: number | null
+  onSave: (alternatives: RuleAlternative[]) => void
+}
+
+export function RuleEditorDialog({ open, onOpenChange, ...props }: RuleEditorDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Regra de categorização</DialogTitle>
+          <DialogDescription>
+            Começa pelo padrão sugerido. Cada bloco é uma alternativa (“ou”); dentro do bloco, tudo precisa bater (“e”).
+          </DialogDescription>
+        </DialogHeader>
+        {/* Montado só com o diálogo aberto: o rascunho recomeça de `initial` a cada abertura. */}
+        {open && <RuleEditorBody {...props} onCancel={() => onOpenChange(false)} />}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+type RuleEditorBodyProps = Omit<RuleEditorDialogProps, 'open' | 'onOpenChange'> & { onCancel: () => void }
+
+function copyAlternatives(alternatives: RuleAlternative[]): RuleAlternative[] {
+  return alternatives.map((alternative) => ({ ...alternative, conditions: alternative.conditions.map((condition) => ({ ...condition })) }))
+}
+
+function validate(alternatives: RuleAlternative[]): RuleErrors {
+  const errors: RuleErrors = {}
+  if (alternatives.length === 0) errors.conditions = 'Adicione pelo menos uma alternativa.'
+  alternatives.forEach((alternative, i) => {
+    alternative.conditions.forEach((condition, j) => {
+      if (condition.value.trim() === '') errors[`conditions.${i}.conditions.${j}.value`] = 'Informe um valor.'
+    })
+  })
+  return errors
+}
+
+function rowErrors(errors: RuleErrors, i: number, j: number): ConditionErrors {
+  const at = (key: string) => {
+    const message = errors[`conditions.${i}.conditions.${j}.${key}`]
+    return message ? { message } : undefined
+  }
+  return { field: at('field'), op: at('op'), value: at('value') }
+}
+
+/** Mensagens que não pertencem a nenhum campo de uma condição (lista inteira, alternativa, índice). */
+function looseErrors(errors: RuleErrors, prefix: string): string[] {
+  return Object.entries(errors)
+    .filter(([path]) => {
+      if (prefix === '') return path === 'match' || path === 'conditions'
+      if (!path.startsWith(prefix)) return false
+      const rest = path.slice(prefix.length)
+      return rest === '' || rest === '.conditions' || /^\.conditions\.\d+$/.test(rest)
+    })
+    .map(([, message]) => message)
+}
+
+function RuleEditorBody({ initial, errors: serverErrors, transactions, selectedIds, direction, categoryId, onSave, onCancel }: RuleEditorBodyProps) {
+  const [alternatives, setAlternatives] = useState(() => copyAlternatives(initial))
+  const [errors, setErrors] = useState<RuleErrors>(serverErrors)
+  const count = useRuleMatchCount({ alternatives, transactions, selectedIds, direction, categoryId, enabled: true })
+
+  // Mudar a estrutura (adicionar/remover) desloca os índices dos caminhos de erro: descarta todos.
+  const restructure = (next: RuleAlternative[]) => {
+    setAlternatives(next)
+    setErrors({})
+  }
+
+  const updateCondition = (i: number, j: number, next: ConditionValues) =>
+    setAlternatives((current) =>
+      current.map((alternative, index) =>
+        index === i ? { ...alternative, conditions: alternative.conditions.map((condition, k) => (k === j ? next : condition)) } : alternative,
+      ),
+    )
+
+  // Remover a última condição de uma alternativa remove a alternativa inteira.
+  const removeCondition = (i: number, j: number) =>
+    restructure(
+      alternatives
+        .map((alternative, index) => (index === i ? { ...alternative, conditions: alternative.conditions.filter((_, k) => k !== j) } : alternative))
+        .filter((alternative) => alternative.conditions.length > 0),
+    )
+
+  const addCondition = (i: number) =>
+    restructure(alternatives.map((alternative, index) => (index === i ? { ...alternative, conditions: [...alternative.conditions, emptyCondition()] } : alternative)))
+
+  const save = () => {
+    const found = validate(alternatives)
+    if (Object.keys(found).length > 0) return setErrors(found)
+    onSave(alternatives)
+  }
+
+  const rootMessages = looseErrors(errors, '')
+
+  return (
+    <>
+      <div className="space-y-3">
+        {rootMessages.map((message) => (
+          <p key={message} role="alert" className="text-sm text-destructive">
+            {message}
+          </p>
+        ))}
+        {alternatives.map((alternative, i) => (
+          <div key={alternative.uid} className="space-y-3 rounded-xl border border-border p-3">
+            <p className="text-xs font-semibold text-muted-foreground">{i === 0 ? 'Se' : 'Ou se'}</p>
+            {looseErrors(errors, `conditions.${i}`).map((message) => (
+              <p key={message} role="alert" className="text-sm text-destructive">
+                {message}
+              </p>
+            ))}
+            {alternative.conditions.map((condition, j) => (
+              <ConditionRow
+                key={condition.uid ?? j}
+                idPrefix={`categorize-rule-${i}-${j}`}
+                rowLabel={`condição ${j + 1} da alternativa ${i + 1}`}
+                value={condition}
+                onChange={(next) => updateCondition(i, j, next)}
+                onRemove={() => removeCondition(i, j)}
+                errors={rowErrors(errors, i, j)}
+              />
+            ))}
+            <Button type="button" variant="link" size="sm" className="h-auto px-0" onClick={() => addCondition(i)}>
+              <Plus aria-hidden className="h-4 w-4" />
+              condição
+            </Button>
+          </div>
+        ))}
+        <Button type="button" variant="link" size="sm" className="h-auto px-0" onClick={() => restructure([...alternatives, emptyAlternative()])}>
+          <Plus aria-hidden className="h-4 w-4" />
+          alternativa (“ou”)
+        </Button>
+      </div>
+
+      <p className="flex items-center gap-2 rounded-xl bg-muted/50 p-3 text-sm" aria-live="polite">
+        <ScanSearch aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <DialogCount count={count} />
+      </p>
+
+      <DialogFooter>
+        <Button type="button" variant="ghost" onClick={onCancel}>
+          Cancelar
+        </Button>
+        <Button type="button" onClick={save}>
+          Usar esta regra
+        </Button>
+      </DialogFooter>
+    </>
+  )
+}
+
+function DialogCount({ count }: { count: RuleMatchState }) {
+  switch (count.status) {
+    case 'local':
+      return (
+        <span>
+          Casaria <strong>{count.matched}</strong> {pluralize(count.matched, 'lançamento pendente', 'lançamentos pendentes')} hoje.
+        </span>
+      )
+    case 'server':
+      return (
+        <span>
+          Casaria <strong>{count.matched}</strong> {pluralize(count.matched, 'lançamento sem categoria', 'lançamentos sem categoria')} hoje.
+        </span>
+      )
+    case 'loading':
+      return <span className="text-muted-foreground">Contando…</span>
+    case 'needs-category':
+      return <span className="text-muted-foreground">Escolha a categoria para contar quantos lançamentos a regra casaria.</span>
+    case 'incomplete':
+      return <span className="text-muted-foreground">Complete as condições para ver quantos lançamentos a regra casaria.</span>
+    case 'error':
+      return <span className="text-muted-foreground">Não foi possível contar agora.</span>
+  }
+}

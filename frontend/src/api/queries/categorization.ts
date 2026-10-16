@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { api, unwrap } from '@/api/client'
 import { invalidateCategories, invalidateLedger, invalidateRules, queryKeys, type PendingCategorizationFilters } from '@/api/query-keys'
 import type { components } from '@/api/schema'
+import type { RuleConditionNodeInput } from '@/api/types'
 
 type ApplyCategorizationRequest = components['schemas']['ApplyCategorizationRequest']
 
@@ -34,17 +35,34 @@ export function usePendingCategorization(filters: PendingCategorizationFilters =
 }
 
 /**
+ * Regra opcional do apply, na forma precisa que a tela monta. O tipo gerado para
+ * `ApplyCategorizationRequest.rule` vem das regras de validação, achatadas como as de `/rules`
+ * (sem discriminar condição de grupo, `value` só string) — ver `asRequestBody` em `rules.ts`: o
+ * JSON é o mesmo, só não "bate" estruturalmente com o tipo gerado, daí o único cast abaixo.
+ */
+export type ApplyCategorizationRule = {
+  name: string
+  match: 'all' | 'any'
+  conditions: RuleConditionNodeInput[]
+  apply_to_pending: boolean
+}
+
+/**
  * `categoryCreated` é informado por quem chama quando a categoria aplicada acabou de ser criada
  * na hora (pelo `CategoryPicker`, com a opção "Criar…"): só nesse caso `invalidateCategories`
  * entra, para não invalidar a lista de categorias à toa a cada aplicação.
  */
-type ApplyCategorizationVariables = ApplyCategorizationRequest & { categoryCreated?: boolean }
+export type ApplyCategorizationVariables = Omit<ApplyCategorizationRequest, 'rule'> & {
+  rule?: ApplyCategorizationRule
+  categoryCreated?: boolean
+}
 
 export function useApplyCategorization() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async ({ transaction_ids, category_id, rule }: ApplyCategorizationVariables) =>
-      (await unwrap(api.POST('/categorization/apply', { body: { transaction_ids, category_id, rule } }))).data,
+      (await unwrap(api.POST('/categorization/apply', { body: { transaction_ids, category_id, rule: rule as ApplyCategorizationRequest['rule'] } })))
+        .data,
     // `invalidateLedger` já cobre `categorization` (pendentes e contagem) — ver query-keys.ts.
     onSuccess: (_result, variables) => {
       void invalidateLedger(queryClient)

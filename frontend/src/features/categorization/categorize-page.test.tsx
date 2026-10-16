@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -23,6 +23,15 @@ vi.mock('@/api/queries/categorization', () => ({
 
 vi.mock('@/api/queries/categories', () => ({
   useCategories: () => useCategories(),
+  useCreateCategory: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}))
+
+vi.mock('@/api/queries/rules', () => ({
+  useRulePreview: () => ({ data: undefined, isPending: true, isPlaceholderData: false, isError: false }),
+}))
+
+vi.mock('@/api/queries/accounts', () => ({
+  useAccounts: () => ({ data: [], isPending: false }),
 }))
 
 vi.mock('@/api/queries/notifications', () => ({
@@ -52,6 +61,7 @@ function tx(overrides: Partial<PendingCategorizationGroup['transactions'][number
     id: 1,
     date: '2026-10-10',
     description: 'Pix enviado - Shpp Brasil',
+    original_description: overrides.description ?? 'Pix enviado - Shpp Brasil',
     amount: 1000,
     direction: 'out',
     account_id: 1,
@@ -341,7 +351,9 @@ describe('CategorizePage', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar grupo Shpp Brasil' }))
     expect(screen.getByText('2 selecionados')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Aplicar a 2' }))
+    // A barra de ação também tem um "Aplicar a 2": o da sugestão fica na faixa do grupo.
+    const suggestion = screen.getByText('Sugestão pelo histórico:').parentElement as HTMLElement
+    fireEvent.click(within(suggestion).getByRole('button', { name: 'Aplicar a 2' }))
 
     await vi.waitFor(() => expect(toast.error).toHaveBeenCalled())
     expect(toast.success).not.toHaveBeenCalled()
