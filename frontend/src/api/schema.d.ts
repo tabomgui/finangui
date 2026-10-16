@@ -1155,6 +1155,11 @@ export interface components {
         AccountType: "checking" | "savings" | "cash" | "credit_card";
         /** ApplyCategorizationRequest */
         ApplyCategorizationRequest: {
+            /**
+             * @description Dono de cada id é conferido em checkDirection() (um único
+             *     SELECT, ver ali) — mandar um "exists" por item em até 5000
+             *     ids seria uma query a mais por lançamento selecionado.
+             */
             transaction_ids: number[];
             category_id: number;
             rule?: {
@@ -1330,11 +1335,11 @@ export interface components {
         /** CategorizationApplyResource */
         CategorizationApplyResource: {
             categorized: number;
-            rule_applied?: number | null;
+            rule_applied?: number;
             skipped: number;
             rule?: {
-                id: number | null;
-                name: string | null;
+                id: number;
+                name: string;
             };
         };
         /** CategoryComparisonResource */

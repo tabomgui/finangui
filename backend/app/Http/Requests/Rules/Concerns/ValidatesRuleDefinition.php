@@ -2,10 +2,9 @@
 
 namespace App\Http\Requests\Rules\Concerns;
 
-use App\Domain\Accounts\Models\Account;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Rules\Enums\RuleActionType;
-use App\Domain\Rules\Enums\RuleField;
+use App\Domain\Rules\Support\RuleConditionOwnershipValidator;
 use App\Domain\Rules\Support\RuleDefinitionValidator;
 use App\Domain\Tags\Models\Tag;
 use Illuminate\Validation\Validator;
@@ -71,28 +70,8 @@ trait ValidatesRuleDefinition
      */
     private function checkConditions(Validator $validator, array $conditions, string $path): void
     {
-        foreach ($conditions as $i => $condition) {
-            if (! is_array($condition)) {
-                continue;
-            }
-
-            $itemPath = "{$path}.{$i}";
-
-            if (array_key_exists('conditions', $condition) && is_array($condition['conditions'])) {
-                $this->checkConditions($validator, array_values($condition['conditions']), "{$itemPath}.conditions");
-
-                continue;
-            }
-
-            if (($condition['field'] ?? null) !== RuleField::AccountId->value) {
-                continue;
-            }
-
-            $accountId = $condition['value'] ?? null;
-
-            if (is_int($accountId) && ! Account::query()->whereKey($accountId)->exists()) {
-                $validator->errors()->add("{$itemPath}.value", 'Conta não encontrada.');
-            }
+        foreach (RuleConditionOwnershipValidator::errors($conditions, $path) as $errorPath => $message) {
+            $validator->errors()->add($errorPath, $message);
         }
     }
 

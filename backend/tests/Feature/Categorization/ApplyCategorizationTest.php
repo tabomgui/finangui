@@ -2,11 +2,10 @@
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Categories\Models\Category;
-use App\Domain\Categorization\Actions\ApplyCategorization;
 use App\Domain\Rules\Models\Rule;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
-use Illuminate\Database\QueryException;
+use Illuminate\Support\Str;
 
 function applyCategorizationPayload(array $overrides = []): array
 {
@@ -57,6 +56,24 @@ describe('autenticado', function () {
             ->and($alreadyCategorized->refresh()->category_id)->toBe($otherCategory->id);
     });
 
+    it('um lançamento que virou perna de transferência antes do apply é skipped e não é alterado', function () {
+        $category = Category::factory()->create();
+        $transaction = Transaction::factory()->create();
+
+        // Simula a corrida: entre a tela carregar e o apply rodar, o
+        // lançamento virou perna de transferência por outro caminho
+        // (LinkTransfer) — deixa de ser pendente sem passar pelo apply.
+        $transaction->update(['transfer_id' => (string) Str::uuid()]);
+
+        $response = $this->postJson('/api/v1/categorization/apply', [
+            'transaction_ids' => [$transaction->id],
+            'category_id' => $category->id,
+        ])->assertOk();
+
+        $response->assertJson(['data' => ['categorized' => 0, 'skipped' => 1]]);
+        expect($transaction->refresh()->category_id)->toBeNull();
+    });
+
     it('cria a regra com as condições recebidas, ação set_category e prioridade no fim', function () {
         $category = Category::factory()->create();
         Rule::factory()->create(['priority' => 0]);
@@ -85,6 +102,27 @@ describe('autenticado', function () {
             ->and($rule->actions[0])->toMatchArray(['type' => 'set_category', 'category_id' => $category->id])
             ->and($rule->priority)->toBe(1)
             ->and($rule->is_active)->toBeTrue();
+    });
+
+    it('rule sem apply_to_pending: cria a regra mas não a aplica aos demais pendentes (rule_applied ausente)', function () {
+        $category = Category::factory()->create();
+        $transaction = Transaction::factory()->create(['description' => 'Pix enviado - Fulano', 'original_description' => 'Pix enviado - Fulano']);
+        $otherPending = Transaction::factory()->create(['description' => 'Pix enviado - Fulano 2', 'original_description' => 'Pix enviado - Fulano 2']);
+
+        $response = $this->postJson('/api/v1/categorization/apply', [
+            'transaction_ids' => [$transaction->id],
+            'category_id' => $category->id,
+            'rule' => [
+                'name' => 'Fulano -> Categoria',
+                'match' => 'any',
+                'conditions' => [
+                    ['field' => 'original_description', 'op' => 'contains', 'value' => 'Fulano'],
+                ],
+            ],
+        ])->assertOk();
+
+        expect($response->json('data'))->toHaveKey('rule')->not->toHaveKey('rule_applied');
+        expect($otherPending->refresh()->category_id)->toBeNull();
     });
 
     it('apply_to_pending categoriza outros pendentes que a regra casa, sem sobrescrever quem já tem categoria, e devolve rule_applied', function () {
@@ -119,6 +157,56 @@ describe('autenticado', function () {
             ->and($unrelated->refresh()->category_id)->toBeNull();
     });
 
+    it('apply_to_pending só categoriza pendentes da mesma direção da seleção, mesmo quando a regra não tem condição de direção', function () {
+        $category = Category::factory()->create();
+        $outSelected = Transaction::factory()->create(['direction' => 'out', 'description' => 'Fulano', 'original_description' => 'Fulano']);
+        $outPending = Transaction::factory()->create(['direction' => 'out', 'description' => 'Fulano Dois', 'original_description' => 'Fulano Dois']);
+        $inPending = Transaction::factory()->income()->create(['description' => 'Fulano Tres', 'original_description' => 'Fulano Tres']);
+
+        $this->postJson('/api/v1/categorization/apply', [
+            'transaction_ids' => [$outSelected->id],
+            'category_id' => $category->id,
+            'rule' => [
+                'name' => 'Fulano -> Categoria',
+                'match' => 'any',
+                'conditions' => [
+                    ['field' => 'original_description', 'op' => 'contains', 'value' => 'Fulano'],
+                ],
+                'apply_to_pending' => true,
+            ],
+        ])->assertOk();
+
+        expect($outPending->refresh()->category_id)->toBe($category->id)
+            ->and($inPending->refresh()->category_id)->toBeNull();
+    });
+
+    it('apply_to_pending nunca categoriza pendente de outro usuário, mesmo que a regra bata', function () {
+        $category = Category::factory()->create();
+        $transaction = Transaction::factory()->create(['description' => 'Pix enviado - Fulano', 'original_description' => 'Pix enviado - Fulano']);
+
+        $other = User::factory()->create();
+        $otherAccount = Account::factory()->create(['user_id' => $other->id]);
+        $otherPending = Transaction::factory()->create([
+            'user_id' => $other->id, 'account_id' => $otherAccount->id,
+            'description' => 'Pix enviado - Fulano', 'original_description' => 'Pix enviado - Fulano',
+        ]);
+
+        $this->postJson('/api/v1/categorization/apply', [
+            'transaction_ids' => [$transaction->id],
+            'category_id' => $category->id,
+            'rule' => [
+                'name' => 'Fulano -> Categoria',
+                'match' => 'any',
+                'conditions' => [
+                    ['field' => 'original_description', 'op' => 'contains', 'value' => 'Fulano'],
+                ],
+                'apply_to_pending' => true,
+            ],
+        ])->assertOk();
+
+        expect($otherPending->refresh()->category_id)->toBeNull();
+    });
+
     it('sem rule, a resposta omite rule e rule_applied', function () {
         $category = Category::factory()->create();
         $transaction = Transaction::factory()->create();
@@ -131,26 +219,25 @@ describe('autenticado', function () {
         expect($response->json('data'))->not->toHaveKeys(['rule', 'rule_applied']);
     });
 
-    it('é atômico: um erro na criação da regra não deixa nada gravado', function () {
+    it('é atômico: um erro ao criar a regra não deixa nada gravado (500)', function () {
         $category = Category::factory()->create();
         $transaction = Transaction::factory()->create();
 
-        // Chama a action direto (sem passar pela validação de 80 caracteres
-        // do ApplyCategorizationRequest), para a coluna rules.name
-        // (string(80) no banco) rejeitar a gravação e provar que a
-        // categorização já feita acima também é desfeita.
-        expect(fn () => app(ApplyCategorization::class)->handle(
-            transactionIds: [$transaction->id],
-            categoryId: $category->id,
-            ruleInput: [
-                'name' => str_repeat('x', 81),
+        Rule::creating(function (): void {
+            throw new RuntimeException('falha forçada');
+        });
+
+        $this->postJson('/api/v1/categorization/apply', [
+            'transaction_ids' => [$transaction->id],
+            'category_id' => $category->id,
+            'rule' => [
+                'name' => 'Nome',
                 'match' => 'any',
                 'conditions' => [
                     ['field' => 'description', 'op' => 'contains', 'value' => 'x'],
                 ],
-                'apply_to_pending' => false,
             ],
-        ))->toThrow(QueryException::class);
+        ])->assertStatus(500);
 
         expect($transaction->refresh()->category_id)->toBeNull()
             ->and(Rule::count())->toBe(0);
@@ -248,6 +335,48 @@ describe('autenticado', function () {
                 ],
             ],
         ])->assertStatus(422)->assertJsonValidationErrors('rule.conditions.0.op');
+    });
+
+    it('422 em rule.conditions.0.value quando a condição account_id referencia conta de outro usuário', function () {
+        $category = Category::factory()->create();
+        $other = User::factory()->create();
+        $otherAccount = Account::factory()->create(['user_id' => $other->id]);
+        $transaction = Transaction::factory()->create();
+
+        $this->postJson('/api/v1/categorization/apply', [
+            'transaction_ids' => [$transaction->id],
+            'category_id' => $category->id,
+            'rule' => [
+                'name' => 'Nome',
+                'match' => 'any',
+                'conditions' => [
+                    ['field' => 'account_id', 'op' => 'equals', 'value' => $otherAccount->id],
+                ],
+            ],
+        ])->assertStatus(422)->assertJsonValidationErrors('rule.conditions.0.value');
+    });
+
+    it('422 quando rule vem vazio ou com match inválido', function () {
+        $category = Category::factory()->create();
+        $transaction = Transaction::factory()->create();
+
+        $this->postJson('/api/v1/categorization/apply', [
+            'transaction_ids' => [$transaction->id],
+            'category_id' => $category->id,
+            'rule' => [],
+        ])->assertStatus(422)->assertJsonValidationErrors(['rule.match', 'rule.conditions']);
+
+        $this->postJson('/api/v1/categorization/apply', [
+            'transaction_ids' => [$transaction->id],
+            'category_id' => $category->id,
+            'rule' => [
+                'name' => 'Nome',
+                'match' => 'xor',
+                'conditions' => [
+                    ['field' => 'description', 'op' => 'contains', 'value' => 'x'],
+                ],
+            ],
+        ])->assertStatus(422)->assertJsonValidationErrors('rule.match');
     });
 
     it('throttle próprio de categorization-apply', function () {

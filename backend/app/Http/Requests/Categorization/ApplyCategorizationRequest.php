@@ -4,20 +4,22 @@ namespace App\Http\Requests\Categorization;
 
 use App\Domain\Categories\Enums\CategoryKind;
 use App\Domain\Categories\Models\Category;
+use App\Domain\Rules\Support\RuleConditionOwnershipValidator;
 use App\Domain\Rules\Support\RuleDefinitionValidator;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Models\Transaction;
 use App\Http\Requests\ApiRequest;
 use App\Http\Requests\Rules\Concerns\DocumentsConditionsAndActions;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 // Corpo de POST /categorization/apply: ids pendentes + categoria, com uma
 // regra opcional (mesmo formato de /rules, sem "actions" — a ação é sempre
 // set_category = category_id, calculada aqui). As checagens que dependem de
-// consultar o banco (direção misturada, tipo da categoria x direção,
-// condições.*) ficam no after(), na mesma ordem em que fariam sentido para o
-// usuário corrigir.
+// consultar o banco (existência/dono dos ids, direção misturada, tipo da
+// categoria x direção, condições.*) ficam no after(), na mesma ordem em que
+// fariam sentido para o usuário corrigir.
 final class ApplyCategorizationRequest extends ApiRequest
 {
     use DocumentsConditionsAndActions;
@@ -27,11 +29,12 @@ final class ApplyCategorizationRequest extends ApiRequest
      */
     public function rules(): array
     {
-        $ownTransaction = Rule::exists('transactions', 'id')->where('user_id', $this->userId());
-
         return [
-            'transaction_ids' => ['required', 'array', 'min:1'],
-            'transaction_ids.*' => ['required', 'integer', 'distinct', $ownTransaction],
+            // Dono de cada id é conferido em checkDirection() (um único
+            // SELECT, ver ali) — mandar um "exists" por item em até 5000
+            // ids seria uma query a mais por lançamento selecionado.
+            'transaction_ids' => ['required', 'array', 'min:1', 'max:5000'],
+            'transaction_ids.*' => ['required', 'integer', 'distinct'],
             'category_id' => ['required', 'integer', Rule::exists('categories', 'id')->where('user_id', $this->userId())],
             'rule' => ['sometimes', 'array'],
             'rule.name' => ['required_with:rule', 'string', 'max:80'],
@@ -64,14 +67,32 @@ final class ApplyCategorizationRequest extends ApiRequest
         }];
     }
 
+    /**
+     * Um único SELECT (direction, chaveado por id) para o conjunto inteiro
+     * de ids — nunca um "exists" por item nem o model inteiro (sem "raw"):
+     * id ausente do mapa (não existe ou é de outro usuário — a consulta já
+     * escopa por dono, ver App\Models\Concerns\BelongsToUser) rende um erro
+     * em "transaction_ids.{i}"; a direção vem do mesmo mapa.
+     */
     private function checkDirection(Validator $validator): ?Direction
     {
         /** @var list<int> $ids */
         $ids = $this->input('transaction_ids');
 
-        $directions = Transaction::query()->whereIn('id', $ids)->get()
-            ->map(fn (Transaction $transaction) => $transaction->direction)
-            ->unique();
+        /** @var Collection<int, Direction> $directionsById */
+        $directionsById = Transaction::query()->whereIn('id', $ids)->pluck('direction', 'id');
+
+        foreach ($ids as $i => $id) {
+            if (! $directionsById->has($id)) {
+                $validator->errors()->add("transaction_ids.{$i}", 'Lançamento não encontrado.');
+            }
+        }
+
+        if ($validator->errors()->isNotEmpty()) {
+            return null;
+        }
+
+        $directions = $directionsById->unique();
 
         if ($directions->count() > 1) {
             $validator->errors()->add('transaction_ids', 'Selecione lançamentos de uma única direção (entrada ou saída).');
@@ -114,7 +135,10 @@ final class ApplyCategorizationRequest extends ApiRequest
      * Mesma validação de forma de /rules (RuleDefinitionValidator), com
      * "actions" sintetizado a partir de category_id — essa ação em si nunca
      * gera erro (category_id já foi validado acima), então só os erros de
-     * "match"/"conditions" importam aqui.
+     * "match"/"conditions" importam aqui. Só confere dono de account_id
+     * (RuleConditionOwnershipValidator, a mesma de /rules) quando a forma já
+     * está certa, senão um índice inválido (ex.: grupo malformado) poderia
+     * gerar os dois erros sobre o mesmo caminho.
      */
     private function checkRuleConditions(Validator $validator): void
     {
@@ -124,10 +148,24 @@ final class ApplyCategorizationRequest extends ApiRequest
             'actions' => [['type' => 'set_category', 'category_id' => (int) $this->input('category_id')]],
         ];
 
+        $hasShapeError = false;
+
         foreach (RuleDefinitionValidator::errors($definition) as $path => $message) {
             if ($path === 'match' || str_starts_with($path, 'conditions')) {
                 $validator->errors()->add("rule.{$path}", $message);
+                $hasShapeError = true;
             }
+        }
+
+        if ($hasShapeError) {
+            return;
+        }
+
+        /** @var list<array<string, mixed>> $conditions */
+        $conditions = array_values($this->input('rule.conditions'));
+
+        foreach (RuleConditionOwnershipValidator::errors($conditions, 'rule.conditions') as $path => $message) {
+            $validator->errors()->add($path, $message);
         }
     }
 }

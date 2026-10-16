@@ -70,7 +70,7 @@ Route::prefix('v1')->group(function () {
         // literais, sem parâmetro de rota, então não colidem de fato.
         Route::get('categorization/pending-count', [CategorizationController::class, 'pendingCount']);
         Route::get('categorization/pending', [CategorizationController::class, 'pending']);
-        // Prefixo próprio no throttle: mesmo motivo do rules/preview acima.
+        // Prefixo próprio no throttle: mesmo motivo do rules/preview, mais abaixo neste arquivo.
         Route::post('categorization/apply', [CategorizationController::class, 'apply'])->middleware('throttle:30,1,categorization-apply');
 
         // Updates são parciais (PATCH): apiResource()->except('update') tira o
@@ -96,7 +96,7 @@ Route::prefix('v1')->group(function () {
         Route::post('transfers/{transfer}/unlink', [TransferController::class, 'unlink'])->whereUuid('transfer');
 
         Route::get('transfer-suggestions', [TransferSuggestionController::class, 'index']);
-        // Prefixo próprio no throttle: mesmo motivo do rules/preview acima.
+        // Prefixo próprio no throttle: mesmo motivo do rules/preview, mais abaixo neste arquivo.
         Route::post('transfer-suggestions/detect', [TransferSuggestionController::class, 'detect'])->middleware('throttle:6,1,transfer-detect');
         Route::post('transfer-suggestions/{suggestion}/accept', [TransferSuggestionController::class, 'accept'])->whereNumber('suggestion');
         Route::post('transfer-suggestions/{suggestion}/dismiss', [TransferSuggestionController::class, 'dismiss'])->whereNumber('suggestion');

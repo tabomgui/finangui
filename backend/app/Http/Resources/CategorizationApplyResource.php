@@ -23,11 +23,11 @@ final class CategorizationApplyResource extends JsonResource
     {
         return [
             'categorized' => $this->categorized,
-            'rule_applied' => $this->when($this->ruleApplied !== null, fn () => $this->ruleApplied),
+            'rule_applied' => $this->when($this->ruleApplied !== null, fn () => (int) $this->ruleApplied),
             'skipped' => $this->skipped,
             'rule' => $this->when($this->ruleId !== null, fn () => [
-                'id' => $this->ruleId,
-                'name' => $this->ruleName,
+                'id' => (int) $this->ruleId,
+                'name' => (string) $this->ruleName,
             ]),
         ];
     }

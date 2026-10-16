@@ -10,6 +10,7 @@ use App\Http\Requests\Categorization\IndexPendingCategorizationRequest;
 use App\Http\Resources\CategorizationApplyResource;
 use App\Http\Resources\PendingCategorizationCountResource;
 use App\Http\Resources\PendingCategorizationResource;
+use App\Models\User;
 
 final class CategorizationController extends Controller
 {
@@ -29,7 +30,11 @@ final class CategorizationController extends Controller
     {
         $validated = $request->validated();
 
+        /** @var User $user */
+        $user = $request->user();
+
         return CategorizationApplyResource::make($applyCategorization->handle(
+            userId: $user->id,
             transactionIds: $validated['transaction_ids'],
             categoryId: $validated['category_id'],
             ruleInput: $validated['rule'] ?? null,
