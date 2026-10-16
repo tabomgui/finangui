@@ -324,6 +324,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/categorization/pending-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["categorization.pendingCount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/categorization/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["categorization.pending"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/categories": {
         parameters: {
             query?: never;
@@ -1627,6 +1659,36 @@ export interface components {
             /** Format: date */
             date: string;
             description?: string | null;
+        };
+        /** PendingCategorizationCountResource */
+        PendingCategorizationCountResource: {
+            total_pending: number;
+            group_count: number;
+        };
+        /** PendingCategorizationResource */
+        PendingCategorizationResource: {
+            total_pending: number;
+            group_count: number;
+            truncated?: boolean;
+            groups: {
+                key: string;
+                name: string;
+                out_count: number;
+                in_count: number;
+                net: number;
+                suggestion?: {
+                    category_id: number;
+                };
+                transactions: {
+                    id: number;
+                    date: string;
+                    description: string;
+                    amount: number;
+                    direction: string;
+                    account_id: number;
+                    account_name: string;
+                }[];
+            }[];
         };
         /** PreviewRuleRequest */
         PreviewRuleRequest: {
@@ -3226,6 +3288,56 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "categorization.pendingCount": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `PendingCategorizationCountResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["PendingCategorizationCountResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
+    "categorization.pending": {
+        parameters: {
+            query?: {
+                direction?: components["schemas"]["Direction"];
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `PendingCategorizationResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["PendingCategorizationResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
             422: components["responses"]["ValidationException"];
         };
     };
