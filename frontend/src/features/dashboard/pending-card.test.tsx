@@ -7,6 +7,9 @@ import { PendingCard } from './pending-card'
 
 const useTransferSuggestions = vi.fn()
 const useOverdueOccurrences = vi.fn((): { data: Transaction[] } => ({ data: [] }))
+const usePendingCategorizationCount = vi.fn((): { data?: { total_pending: number; group_count: number } } => ({
+  data: { total_pending: 0, group_count: 0 },
+}))
 
 vi.mock('@/api/queries/transfer-suggestions', () => ({
   useTransferSuggestions: () => useTransferSuggestions(),
@@ -14,6 +17,10 @@ vi.mock('@/api/queries/transfer-suggestions', () => ({
 
 vi.mock('@/api/queries/recurrences', () => ({
   useOverdueOccurrences: () => useOverdueOccurrences(),
+}))
+
+vi.mock('@/api/queries/categorization', () => ({
+  usePendingCategorizationCount: () => usePendingCategorizationCount(),
 }))
 
 function overdueOccurrence(id: number): Transaction {
@@ -46,6 +53,7 @@ function overdueOccurrence(id: number): Transaction {
 
 beforeEach(() => {
   useOverdueOccurrences.mockReturnValue({ data: [] })
+  usePendingCategorizationCount.mockReturnValue({ data: { total_pending: 0, group_count: 0 } })
 })
 
 function renderCard(onOpenOverdue: () => void = vi.fn()) {
@@ -145,5 +153,24 @@ describe('PendingCard', () => {
     const { container } = renderCard()
 
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('com lançamentos sem categoria, mostra o item "Categorizar" com o link certo', () => {
+    useTransferSuggestions.mockReturnValue({ data: { pages: [{ data: [], meta: { next_cursor: null } }] } })
+    usePendingCategorizationCount.mockReturnValue({ data: { total_pending: 7, group_count: 3 } })
+
+    renderCard()
+
+    expect(screen.getByText('7 lançamentos sem categoria · 3 grupos')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /lançamentos sem categoria/ })).toHaveAttribute('href', '/categorizar')
+  })
+
+  it('sem lançamentos sem categoria, não mostra o item "Categorizar"', () => {
+    useTransferSuggestions.mockReturnValue({ data: { pages: [{ data: [{ id: 1 }], meta: { next_cursor: null } }] } })
+    usePendingCategorizationCount.mockReturnValue({ data: { total_pending: 0, group_count: 0 } })
+
+    renderCard()
+
+    expect(screen.queryByText(/sem categoria/)).not.toBeInTheDocument()
   })
 })

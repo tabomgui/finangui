@@ -1,6 +1,7 @@
 import { ArrowRight, List, Plus, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { usePendingCategorizationCount } from '@/api/queries/categorization'
 import { useTransferSuggestions } from '@/api/queries/transfer-suggestions'
 import { useTransactions } from '@/api/queries/transactions'
 import { PageBody } from '@/components/layout/page-body'
@@ -30,6 +31,7 @@ export function TransactionsPage() {
   const filtered = activeFilterCount(filters) > 0 || filters.search !== undefined
 
   const pendingSuggestions = firstPageSuggestionsCount(useTransferSuggestions().data?.pages[0])
+  const pendingCategorization = usePendingCategorizationCount()
 
   const [selecting, setSelecting] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -68,6 +70,15 @@ export function TransactionsPage() {
         }
       />
       <PageBody>
+        {(pendingCategorization.data?.total_pending ?? 0) > 0 && (
+          <Link
+            to="/categorizar"
+            className="flex items-center justify-between gap-2 rounded-xl bg-muted px-4 py-2 text-sm font-medium hover:bg-accent"
+          >
+            <span>Categorizar pendentes</span>
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        )}
         {pendingSuggestions.count > 0 && (
           <Link
             to="/transferencias/sugestoes"

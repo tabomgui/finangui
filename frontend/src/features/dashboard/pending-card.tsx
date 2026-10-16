@@ -1,8 +1,10 @@
-import { ArrowLeftRight, Hourglass } from 'lucide-react'
+import { ArrowLeftRight, Hourglass, Tags } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { usePendingCategorizationCount } from '@/api/queries/categorization'
 import { useOverdueOccurrences } from '@/api/queries/recurrences'
 import { useTransferSuggestions } from '@/api/queries/transfer-suggestions'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { pendingCategorizationLabel } from '../categorization/pending-label'
 import { firstPageSuggestionsCount, suggestionsCountLabel } from '../transfers/suggestions-count'
 
 /** "1 lançamento previsto não confirmado" / "N lançamentos previstos não confirmados". */
@@ -29,8 +31,10 @@ export function PendingCard({ onOpenOverdue }: PendingCardProps) {
   const { count, hasMore } = firstPageSuggestionsCount(data?.pages[0])
   const { data: overdue } = useOverdueOccurrences()
   const overdueCount = overdue?.length ?? 0
+  const { data: categorization } = usePendingCategorizationCount()
+  const categorizationCount = categorization?.total_pending ?? 0
 
-  if (count === 0 && overdueCount === 0) return null
+  if (count === 0 && overdueCount === 0 && categorizationCount === 0) return null
 
   return (
     <Card className="rounded-2xl shadow-card">
@@ -40,6 +44,19 @@ export function PendingCard({ onOpenOverdue }: PendingCardProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="p-2 pt-0">
+        {categorizationCount > 0 && categorization && (
+          <Link to="/categorizar" className="flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-muted/50">
+            <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <Tags className="h-5 w-5" />
+            </span>
+            <span className="min-w-0 flex-1 text-sm font-medium">
+              {pendingCategorizationLabel(categorization.total_pending, categorization.group_count)}
+            </span>
+            <span className="hidden shrink-0 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground sm:inline">
+              Categorizar
+            </span>
+          </Link>
+        )}
         {count > 0 && (
           <Link to="/transferencias/sugestoes" className="flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-muted/50">
             <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">

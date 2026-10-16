@@ -32,6 +32,7 @@ export const router = createBrowserRouter([
             path: 'transacoes/:id',
             lazy: lazyPage(() => import('@/features/transactions/transaction-form-page'), 'TransactionFormPage'),
           },
+          { path: 'categorizar', lazy: lazyPage(() => import('@/features/categorization/categorize-page'), 'CategorizePage') },
           {
             path: 'transferencias/sugestoes',
             lazy: lazyPage(() => import('@/features/transfers/transfer-suggestions-page'), 'TransferSuggestionsPage'),

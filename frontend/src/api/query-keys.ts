@@ -26,6 +26,18 @@ export function compactFilters(filters: TransactionFilters): TransactionFilters 
   ) as TransactionFilters
 }
 
+export type PendingCategorizationFilters = {
+  direction?: Direction
+  search?: string
+}
+
+/** Mesma ideia de `compactFilters`, para os filtros (bem menores) da tela de categorização. */
+function compactPendingCategorizationFilters(filters: PendingCategorizationFilters): PendingCategorizationFilters {
+  return Object.fromEntries(
+    Object.entries(filters).filter(([, value]) => value !== undefined && value !== ''),
+  ) as PendingCategorizationFilters
+}
+
 export const queryKeys = {
   accounts: (includeArchived: boolean) => ['accounts', { includeArchived }] as const,
   categories: (includeArchived: boolean) => ['categories', { includeArchived }] as const,
@@ -64,6 +76,9 @@ export const queryKeys = {
   reportSpending: (from: string, to: string) => ['reports', 'spending', { from, to }] as const,
   notifications: () => ['notifications', 'list'] as const,
   notificationsUnreadCount: () => ['notifications', 'unread-count'] as const,
+  pendingCategorizationCount: () => ['categorization', 'pending-count'] as const,
+  pendingCategorization: (filters: PendingCategorizationFilters) =>
+    ['categorization', 'pending', compactPendingCategorizationFilters(filters)] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {
@@ -141,6 +156,11 @@ export function invalidateImportBatchesList(queryClient: QueryClient) {
 
 export function invalidateBankConnections(queryClient: QueryClient) {
   return invalidate(queryClient, ['bank-connections'])
+}
+
+/** Cobre `pendingCategorization` e `pendingCategorizationCount` (mesmo prefixo `'categorization'`). */
+export function invalidateCategorization(queryClient: QueryClient) {
+  return invalidate(queryClient, ['categorization'])
 }
 
 /**

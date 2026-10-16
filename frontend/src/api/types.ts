@@ -82,6 +82,12 @@ export type MonthlyEvolutionMonth = MonthlyEvolution['months'][number]
 export type CategoryComparison = Schemas['CategoryComparisonResource']
 export type CategoryComparisonItem = CategoryComparison['items'][number]
 
+export type PendingCategorizationCount = Schemas['PendingCategorizationCountResource']
+export type PendingCategorization = Schemas['PendingCategorizationResource']
+export type PendingCategorizationGroup = PendingCategorization['groups'][number]
+export type PendingCategorizationTransaction = PendingCategorizationGroup['transactions'][number]
+export type CategorizationApplyResult = Schemas['CategorizationApplyResource']
+
 export type BankConnection = Schemas['BankConnectionResource']
 
 export type Notification = Schemas['NotificationResource']
