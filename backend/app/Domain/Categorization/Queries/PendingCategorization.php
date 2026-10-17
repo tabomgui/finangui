@@ -38,21 +38,27 @@ final class PendingCategorization
 
     public function pending(?Direction $direction = null, ?string $search = null, int $limit = self::DEFAULT_LIMIT): PendingCategorizationResult
     {
-        $query = Transaction::query()
-            ->pendingCategorization()
-            ->select(self::COLUMNS)
-            ->with('account:id,name')
-            ->orderByDesc('date')
-            ->orderByDesc('id');
+        $base = Transaction::query()->pendingCategorization();
 
         if ($direction !== null) {
-            $query->where('direction', $direction->value);
+            $base->where('transactions.direction', $direction->value);
         }
 
         /** @var Collection<int, Transaction> $transactions */
-        $transactions = $query->limit($limit + 1)->get();
+        $transactions = (clone $base)
+            ->select(self::COLUMNS)
+            ->with('account:id,name')
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->limit($limit + 1)
+            ->get();
 
         $truncated = $transactions->count() > $limit;
+
+        // total_pending é sempre o total pendente do filtro de direção, antes
+        // da busca e do corte por $limit. Sem corte, a própria leitura já
+        // trouxe todos; com corte, um COUNT no banco (sem ler as linhas).
+        $totalPending = $truncated ? $base->count() : $transactions->count();
 
         if ($truncated) {
             $transactions = $transactions->take($limit);
@@ -64,13 +70,6 @@ final class PendingCategorization
             $groups = $groups->filter(fn (PendingGroup $group) => $this->matchesSearch($group, $search))->values();
         }
 
-        // Truncado: a lista já é só um recorte, então total_pending soma dos
-        // grupos devolvidos mentiria para baixo — usa a mesma contagem leve
-        // de count() (o total pendente de verdade, sem o corte de $limit).
-        $totalPending = $truncated
-            ? $this->count()->totalPending
-            : (int) $groups->sum(fn (PendingGroup $group) => count($group->transactions));
-
         return new PendingCategorizationResult(
             totalPending: $totalPending,
             groupCount: $groups->count(),
@@ -81,16 +80,18 @@ final class PendingCategorization
 
     /**
      * Só os totais (para o aviso de pendentes na Início): lê só
-     * description_key e description dos pendentes, sem carregar os
-     * lançamentos inteiros nem o histórico — o agrupamento por contraparte
-     * é o mesmo de pending(), calculado em PHP sobre essas duas colunas.
+     * description_key e description dos pendentes, como linhas cruas (sem
+     * montar models nem carregar o histórico) — o agrupamento por
+     * contraparte é o mesmo de pending(), calculado em PHP sobre essas duas
+     * colunas.
      */
     public function count(): PendingCategorizationCount
     {
-        /** @var Collection<int, Transaction> $rows */
-        $rows = Transaction::query()->pendingCategorization()->get(['description_key', 'description']);
+        $rows = Transaction::query()->pendingCategorization()->toBase()->get(['description_key', 'description']);
 
-        $groupKeys = $rows->map($this->groupingKey(...))->unique();
+        $groupKeys = $rows
+            ->map(fn (object $row) => $this->groupingKey((string) $row->description_key, (string) $row->description))
+            ->unique();
 
         return new PendingCategorizationCount(
             totalPending: $rows->count(),
@@ -107,13 +108,11 @@ final class PendingCategorization
      * letra na descrição cairia na mesma chave vazia e juntaria
      * contrapartes sem nenhuma relação entre si.
      */
-    private function groupingKey(Transaction $transaction): string
+    private function groupingKey(string $descriptionKey, string $description): string
     {
-        $descriptionKey = $transaction->description_key !== ''
-            ? $transaction->description_key
-            : TextNormalizer::normalize($transaction->description);
-
-        return CounterpartyKey::fromDescriptionKey($descriptionKey);
+        return CounterpartyKey::fromDescriptionKey(
+            $descriptionKey !== '' ? $descriptionKey : TextNormalizer::normalize($description),
+        );
     }
 
     /**
@@ -123,7 +122,7 @@ final class PendingCategorization
     private function buildGroups(Collection $transactions): Collection
     {
         /** @var Collection<string, Collection<int, Transaction>> $byKey */
-        $byKey = $transactions->groupBy($this->groupingKey(...));
+        $byKey = $transactions->groupBy(fn (Transaction $t) => $this->groupingKey($t->description_key, $t->description));
 
         $historyMemo = $this->historyMemo($transactions);
         $suggestable = $this->suggestableCategories($historyMemo);

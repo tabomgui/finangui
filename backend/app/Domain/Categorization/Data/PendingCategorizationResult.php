@@ -7,7 +7,9 @@ namespace App\Domain\Categorization\Data;
  * os lançamentos pendentes do usuário agrupados por contraparte, ordenados
  * por quantidade de lançamentos (decrescente). truncated só é true quando o
  * total pendente passa do limite e a lista trazida é só a parte mais
- * recente — ver a classe da query.
+ * recente — ver a classe da query. totalPending conta os pendentes do
+ * filtro de direção, antes da busca e do corte (com ou sem truncated);
+ * groupCount conta os grupos devolvidos.
  */
 final readonly class PendingCategorizationResult
 {

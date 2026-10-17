@@ -332,6 +332,38 @@ describe('autenticado', function () {
             ->and(collect($result->groups)->flatMap(fn ($g) => $g->transactions)->pluck('id'))->toContain($mostRecent->id);
     });
 
+    it('total_pending segue o filtro de direção, truncado ou não', function () {
+        Transaction::factory()->for($this->account)->create(['description' => 'Lançamento 1', 'direction' => 'out', 'date' => '2026-01-01']);
+        Transaction::factory()->for($this->account)->create(['description' => 'Lançamento 2', 'direction' => 'out', 'date' => '2026-01-02']);
+        Transaction::factory()->for($this->account)->create(['description' => 'Lançamento 3', 'direction' => 'out', 'date' => '2026-01-03']);
+        Transaction::factory()->for($this->account)->create(['description' => 'Lançamento 4', 'direction' => 'in', 'date' => '2026-01-04']);
+
+        $query = app(PendingCategorization::class);
+
+        $truncated = $query->pending(direction: Direction::Out, limit: 2);
+        $whole = $query->pending(direction: Direction::Out);
+
+        expect($truncated->truncated)->toBeTrue()
+            ->and($truncated->totalPending)->toBe(3)
+            ->and($whole->truncated)->toBeFalse()
+            ->and($whole->totalPending)->toBe(3)
+            ->and($query->pending(direction: Direction::In, limit: 2)->totalPending)->toBe(1);
+    });
+
+    it('total_pending não muda com a busca, só os grupos devolvidos', function () {
+        Transaction::factory()->for($this->account)->create(['description' => 'Pix enviado - Fulano De Tal']);
+        Transaction::factory()->for($this->account)->create(['description' => 'Compra no débito - Mercado Teste']);
+
+        $query = app(PendingCategorization::class);
+
+        $whole = $query->pending(search: 'fulano');
+        $truncated = $query->pending(search: 'fulano', limit: 1);
+
+        expect($whole->totalPending)->toBe(2)
+            ->and($whole->groupCount)->toBe(1)
+            ->and($truncated->totalPending)->toBe(2);
+    });
+
     it('não trunca quando o total está dentro do limite', function () {
         Transaction::factory()->for($this->account)->create(['description' => 'Lançamento único']);
 
