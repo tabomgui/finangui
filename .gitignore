@@ -5,3 +5,7 @@
 
 # Specs, planos e roadmap ficam só locais
 /docs/
+
+# Acesso local à VM de produção e ajustes locais do Claude Code
+/.claude/release.env
+/.claude/settings.local.json
