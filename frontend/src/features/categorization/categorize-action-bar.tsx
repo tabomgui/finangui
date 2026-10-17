@@ -13,6 +13,7 @@ import type {
 import { CategoryPicker } from '@/components/shared/category-picker'
 import { MoneyText } from '@/components/shared/money-text'
 import { Button } from '@/components/ui/button'
+import { pluralize } from '@/features/rules/rule-labels'
 import { notifyError } from '@/lib/form-errors'
 import { categoryPath } from './category-path'
 import {
@@ -50,10 +51,6 @@ function ruleErrorsFrom(error: unknown): RuleErrors {
     if ((path === 'rule.match' || path.startsWith('rule.conditions')) && messages[0]) errors[path.slice('rule.'.length)] = messages[0]
   }
   return errors
-}
-
-function countLabel(count: number, singular: string, plural: string): string {
-  return `${count} ${count === 1 ? singular : plural}`
 }
 
 type CategorizeActionBarProps = {
@@ -208,7 +205,7 @@ export function CategorizeActionBar({
       if (total === 0) {
         toast(result.rule ? 'Regra criada; esses lançamentos já tinham categoria.' : 'Esses lançamentos já tinham categoria.')
       } else {
-        toast.success(`${countLabel(total, 'lançamento', 'lançamentos')} → ${label}${result.rule ? ' · regra criada' : ''}`)
+        toast.success(`${total} ${pluralize(total, 'lançamento', 'lançamentos')} → ${label}${result.rule ? ' · regra criada' : ''}`)
       }
       onApplied()
     } catch (error) {
@@ -232,12 +229,12 @@ export function CategorizeActionBar({
       <div className="mx-auto max-h-[calc(100dvh-8rem)] max-w-3xl overflow-y-auto rounded-2xl border border-border bg-card p-3 shadow-lg">
         <div className="flex flex-wrap items-center gap-2">
           <span className="min-w-0 flex-1 text-sm font-medium">
-            <span>{countLabel(selected.length, 'selecionado', 'selecionados')}</span>
+            <span>{selected.length} {pluralize(selected.length, 'selecionado', 'selecionados')}</span>
             <span className="text-muted-foreground">
               {' · '}
               <MoneyText cents={Math.abs(net)} direction={net >= 0 ? 'in' : 'out'} colored={false} />
               {' · '}
-              {countLabel(selectedGroups.length, 'grupo', 'grupos')}
+              {selectedGroups.length} {pluralize(selectedGroups.length, 'grupo', 'grupos')}
             </span>
           </span>
           <div className="order-last w-full sm:order-none sm:w-64">
@@ -286,7 +283,7 @@ export function CategorizeActionBar({
                 type="button"
                 disabled={categoryId === null || applyPending}
                 onClick={apply}
-                aria-label={`Aplicar a categoria a ${countLabel(applyCount, 'lançamento', 'lançamentos')}`}
+                aria-label={`Aplicar a categoria a ${applyCount} ${pluralize(applyCount, 'lançamento', 'lançamentos')}`}
               >
                 {applyPending ? <LoaderCircle aria-hidden className="h-4 w-4 animate-spin" /> : <Check aria-hidden className="h-4 w-4" />}
                 Aplicar a {applyCount}

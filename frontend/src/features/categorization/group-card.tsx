@@ -5,6 +5,7 @@ import { CategoryIcon } from '@/components/shared/category-icon'
 import { MoneyText } from '@/components/shared/money-text'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { pluralize } from '@/features/rules/rule-labels'
 import { formatDate } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type { GroupCheckState } from './selection'
@@ -88,14 +89,13 @@ export const GroupCard = memo(function GroupCard({
   const [showAll, setShowAll] = useState(false)
   const contentId = useId()
 
-  const outs = group.transactions.filter((transaction) => transaction.direction === 'out')
-  const ins = group.transactions.filter((transaction) => transaction.direction === 'in')
   const visible = showAll ? group.transactions : group.transactions.slice(0, VISIBLE_LIMIT)
   const hiddenCount = group.transactions.length - visible.length
 
-  const countParts = [`${group.transactions.length} lançamento${group.transactions.length === 1 ? '' : 's'}`]
-  if (outs.length > 0) countParts.push(`${outs.length} saída${outs.length === 1 ? '' : 's'}`)
-  if (ins.length > 0) countParts.push(`${ins.length} entrada${ins.length === 1 ? '' : 's'}`)
+  const total = group.transactions.length
+  const countParts = [`${total} ${pluralize(total, 'lançamento', 'lançamentos')}`]
+  if (group.out_count > 0) countParts.push(`${group.out_count} ${pluralize(group.out_count, 'saída', 'saídas')}`)
+  if (group.in_count > 0) countParts.push(`${group.in_count} ${pluralize(group.in_count, 'entrada', 'entradas')}`)
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
@@ -117,7 +117,7 @@ export const GroupCard = memo(function GroupCard({
                 <>
                   {' · '}
                   <span className="text-primary">
-                    {selectedCount} marcado{selectedCount === 1 ? '' : 's'}
+                    {selectedCount} {pluralize(selectedCount, 'marcado', 'marcados')}
                   </span>
                 </>
               )}
@@ -149,14 +149,14 @@ export const GroupCard = memo(function GroupCard({
             className="ml-auto h-6 shrink-0 gap-1 rounded-full px-2.5 text-xs"
           >
             {applying && <LoaderCircle aria-hidden className="h-3 w-3 animate-spin" />}
-            Aplicar a {group.transactions.length}
+            Aplicar a {total}
           </Button>
         </div>
       )}
 
       {expanded && (
         <div id={contentId}>
-          {outs.length > 0 && ins.length > 0 && (
+          {group.out_count > 0 && group.in_count > 0 && (
             <div className="flex flex-wrap items-center gap-2 px-3 pt-2 text-xs text-muted-foreground">
               <span>Marcar:</span>
               <button
@@ -164,14 +164,14 @@ export const GroupCard = memo(function GroupCard({
                 onClick={() => onSelectDirection(group, 'out')}
                 className={cn('rounded-full border border-border px-2 py-0.5 hover:bg-muted', FOCUS_RING)}
               >
-                só saídas ({outs.length})
+                só saídas ({group.out_count})
               </button>
               <button
                 type="button"
                 onClick={() => onSelectDirection(group, 'in')}
                 className={cn('rounded-full border border-border px-2 py-0.5 hover:bg-muted', FOCUS_RING)}
               >
-                só entradas ({ins.length})
+                só entradas ({group.in_count})
               </button>
             </div>
           )}
@@ -206,7 +206,7 @@ export const GroupCard = memo(function GroupCard({
                 onClick={() => setShowAll(true)}
                 className={cn('rounded-md px-1 text-xs font-medium text-primary hover:underline', FOCUS_RING)}
               >
-                + {hiddenCount} {hiddenCount === 1 ? 'lançamento' : 'lançamentos'}
+                + {hiddenCount} {pluralize(hiddenCount, 'lançamento', 'lançamentos')}
               </button>
             </div>
           )}

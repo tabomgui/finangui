@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { pluralize } from '@/features/rules/rule-labels'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { notifyError } from '@/lib/form-errors'
 import { cn } from '@/lib/utils'
@@ -129,7 +130,7 @@ export function CategorizePage() {
           toast('Esses lançamentos já tinham categoria.')
         } else {
           const label = category ? categoryPath(category, categoriesById) : 'categoria'
-          toast.success(`${count} ${count === 1 ? 'lançamento' : 'lançamentos'} → ${label}`)
+          toast.success(`${count} ${pluralize(count, 'lançamento', 'lançamentos')} → ${label}`)
         }
       } catch (error) {
         notifyError(error)
