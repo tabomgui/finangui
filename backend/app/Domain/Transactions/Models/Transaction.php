@@ -248,4 +248,22 @@ class Transaction extends Model
         $query->where(fn (Builder $q) => $q->whereNull('recurrence_id')
             ->orWhere('status', '!=', TransactionStatus::Projected->value));
     }
+
+    /**
+     * Lançamento pendente de categorização (ver
+     * App\Domain\Categorization\Queries\PendingCategorization): do usuário,
+     * sem categoria, lançado (posted), não ignorado, fora de transferência,
+     * não é pagamento de fatura reconhecido e a conta não está arquivada.
+     *
+     * @param  Builder<Transaction>  $query
+     */
+    public function scopePendingCategorization(Builder $query): void
+    {
+        $query->whereNull('transactions.category_id')
+            ->where('transactions.status', TransactionStatus::Posted->value)
+            ->where('transactions.is_ignored', false)
+            ->whereNull('transactions.transfer_id')
+            ->whereNull('transactions.card_payment_statement_id')
+            ->whereHas('account', fn (Builder $q) => $q->where('is_archived', false));
+    }
 }

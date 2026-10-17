@@ -77,7 +77,8 @@ export type ConditionOrGroupValues = ConditionValues | GroupValues
 export type ActionValues = z.infer<typeof actionValuesSchema> & { uid?: string }
 
 let uidCounter = 0
-function nextUid(): string {
+/** Chave de React estável para um item de lista do formulário (nunca vai no corpo enviado). */
+export function nextUid(): string {
   uidCounter += 1
   return `rule-item-${uidCounter}`
 }
@@ -210,7 +211,7 @@ export function ruleDefaultsFromTransaction(transaction: Transaction): RuleFormV
   }
 }
 
-function toConditionInput(condition: ConditionValues): RuleConditionInput {
+export function toConditionInput(condition: ConditionValues): RuleConditionInput {
   const value = condition.field === 'amount' || condition.field === 'account_id' ? Number(condition.value) : condition.value
   return { field: condition.field, op: condition.op, value }
 }

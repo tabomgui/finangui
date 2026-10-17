@@ -324,6 +324,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/categorization/pending-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["categorization.pendingCount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/categorization/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["categorization.pending"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/categorization/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["categorization.apply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/categories": {
         parameters: {
             query?: never;
@@ -1105,6 +1153,34 @@ export interface components {
          * @enum {string}
          */
         AccountType: "checking" | "savings" | "cash" | "credit_card";
+        /** ApplyCategorizationRequest */
+        ApplyCategorizationRequest: {
+            /** @description Lançamentos a categorizar, todos da mesma direção (entrada ou saída). */
+            transaction_ids: number[];
+            category_id: number;
+            rule?: {
+                name?: string;
+                /** @enum {string} */
+                match?: "all" | "any";
+                conditions?: {
+                    /** @enum {string} */
+                    field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                    /** @enum {string} */
+                    op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
+                    value?: string;
+                    /** @enum {string} */
+                    match?: "all" | "any";
+                    conditions?: {
+                        /** @enum {string} */
+                        field?: "description" | "original_description" | "payee" | "notes" | "amount" | "direction" | "account_id" | "date";
+                        /** @enum {string} */
+                        op?: "contains" | "not_contains" | "starts_with" | "ends_with" | "equals" | "not_equals" | "regex" | "gt" | "gte" | "lt" | "lte";
+                        value?: string;
+                    }[];
+                }[];
+                apply_to_pending?: boolean;
+            };
+        };
         /** ApplyRuleRequest */
         ApplyRuleRequest: {
             overwrite?: boolean;
@@ -1251,6 +1327,16 @@ export interface components {
             has_divergence: boolean;
             history_incomplete?: boolean;
             history_incomplete_since?: string;
+        };
+        /** CategorizationApplyResource */
+        CategorizationApplyResource: {
+            categorized: number;
+            rule_applied?: number;
+            skipped: number;
+            rule?: {
+                id: number;
+                name: string;
+            };
         };
         /** CategoryComparisonResource */
         CategoryComparisonResource: {
@@ -1627,6 +1713,37 @@ export interface components {
             /** Format: date */
             date: string;
             description?: string | null;
+        };
+        /** PendingCategorizationCountResource */
+        PendingCategorizationCountResource: {
+            total_pending: number;
+            group_count: number;
+        };
+        /** PendingCategorizationResource */
+        PendingCategorizationResource: {
+            total_pending: number;
+            group_count: number;
+            truncated?: boolean;
+            groups: {
+                key: string;
+                name: string;
+                out_count: number;
+                in_count: number;
+                net: number;
+                suggestion?: {
+                    category_id: number;
+                };
+                transactions: {
+                    id: number;
+                    date: string;
+                    description: string;
+                    original_description: string;
+                    amount: number;
+                    direction: components["schemas"]["Direction"];
+                    account_id: number;
+                    account_name: string;
+                }[];
+            }[];
         };
         /** PreviewRuleRequest */
         PreviewRuleRequest: {
@@ -3226,6 +3343,84 @@ export interface operations {
                     };
                 };
             };
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "categorization.pendingCount": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `PendingCategorizationCountResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["PendingCategorizationCountResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
+    "categorization.pending": {
+        parameters: {
+            query?: {
+                direction?: components["schemas"]["Direction"];
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `PendingCategorizationResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["PendingCategorizationResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "categorization.apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyCategorizationRequest"];
+            };
+        };
+        responses: {
+            /** @description `CategorizationApplyResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["CategorizationApplyResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
             422: components["responses"]["ValidationException"];
         };
     };

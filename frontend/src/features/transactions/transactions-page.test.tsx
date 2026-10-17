@@ -23,6 +23,12 @@ vi.mock('@/api/queries/transfer-suggestions', () => ({
   useTransferSuggestions: () => useTransferSuggestions(),
 }))
 
+const usePendingCategorizationCount = vi.fn(() => ({ data: { total_pending: 0, group_count: 0 } }))
+
+vi.mock('@/api/queries/categorization', () => ({
+  usePendingCategorizationCount: () => usePendingCategorizationCount(),
+}))
+
 function renderPage(initialEntry = '/transacoes') {
   const client = new QueryClient()
   client.setQueryData(queryKeys.tags(), [])
@@ -184,5 +190,41 @@ describe('TransactionsPage', () => {
     renderPage()
 
     expect(screen.queryByText(/sugest(ão|ões) de transferência/)).not.toBeInTheDocument()
+  })
+
+  it('com pendentes de categorização, mostra o link para a tela de categorizar', () => {
+    useTransactions.mockReturnValue({
+      data: { pages: [{ data: [] }] },
+      isPending: false,
+      isError: false,
+      isPlaceholderData: false,
+      isFetchingNextPage: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch,
+    })
+    usePendingCategorizationCount.mockReturnValueOnce({ data: { total_pending: 3, group_count: 2 } })
+
+    renderPage()
+
+    const link = screen.getByRole('link', { name: 'Categorizar pendentes' })
+    expect(link).toHaveAttribute('href', '/categorizar')
+  })
+
+  it('sem pendentes de categorização, não mostra o link', () => {
+    useTransactions.mockReturnValue({
+      data: { pages: [{ data: [] }] },
+      isPending: false,
+      isError: false,
+      isPlaceholderData: false,
+      isFetchingNextPage: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch,
+    })
+
+    renderPage()
+
+    expect(screen.queryByText('Categorizar pendentes')).not.toBeInTheDocument()
   })
 })

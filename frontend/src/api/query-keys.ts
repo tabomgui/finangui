@@ -26,6 +26,18 @@ export function compactFilters(filters: TransactionFilters): TransactionFilters 
   ) as TransactionFilters
 }
 
+export type PendingCategorizationFilters = {
+  direction?: Direction
+  search?: string
+}
+
+/** Mesma ideia de `compactFilters`, para os filtros (bem menores) da tela de categorização. */
+function compactPendingCategorizationFilters(filters: PendingCategorizationFilters): PendingCategorizationFilters {
+  return Object.fromEntries(
+    Object.entries(filters).filter(([, value]) => value !== undefined && value !== ''),
+  ) as PendingCategorizationFilters
+}
+
 export const queryKeys = {
   accounts: (includeArchived: boolean) => ['accounts', { includeArchived }] as const,
   categories: (includeArchived: boolean) => ['categories', { includeArchived }] as const,
@@ -64,6 +76,9 @@ export const queryKeys = {
   reportSpending: (from: string, to: string) => ['reports', 'spending', { from, to }] as const,
   notifications: () => ['notifications', 'list'] as const,
   notificationsUnreadCount: () => ['notifications', 'unread-count'] as const,
+  pendingCategorizationCount: () => ['categorization', 'pending-count'] as const,
+  pendingCategorization: (filters: PendingCategorizationFilters) =>
+    ['categorization', 'pending', compactPendingCategorizationFilters(filters)] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {
@@ -84,6 +99,8 @@ function invalidate(queryClient: QueryClient, roots: string[]) {
  * mudam as previstas, que aparecem nas transações, no saldo previsto e nas pendências do Início.
  * `budgets`, `goals` e `reports` entram porque gasto, progresso de meta e os relatórios dependem
  * de lançamentos: qualquer mutação que já chame isto mantém essas telas em dia também.
+ * `categorization` entra porque categorizar um lançamento (manual, em lote ou por regra) muda
+ * quem ainda está pendente: cobre `pendingCategorization` e `pendingCategorizationCount` de uma vez.
  */
 export function invalidateLedger(queryClient: QueryClient) {
   return invalidate(queryClient, [
@@ -101,6 +118,7 @@ export function invalidateLedger(queryClient: QueryClient) {
     'budgets',
     'goals',
     'reports',
+    'categorization',
   ])
 }
 

@@ -23,7 +23,7 @@ export type PreviewRuleBody = RuleBody & { overwrite?: boolean }
  * de regras de fato monta. Um único cast na borda, aqui: o corpo precisamente tipado é compatível
  * em runtime (é o mesmo JSON), só não "bate" estruturalmente com o tipo gerado da requisição.
  */
-function asRequestBody<T>(body: unknown): T {
+export function asRequestBody<T>(body: unknown): T {
   return body as T
 }
 

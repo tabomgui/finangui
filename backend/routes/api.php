@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\BankSyncRunController;
 use App\Http\Controllers\Api\V1\BudgetController;
 use App\Http\Controllers\Api\V1\CardController;
 use App\Http\Controllers\Api\V1\CardStatementController;
+use App\Http\Controllers\Api\V1\CategorizationController;
 use App\Http\Controllers\Api\V1\CategoryController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\GoalContributionController;
@@ -64,6 +65,14 @@ Route::prefix('v1')->group(function () {
         Route::get('reports/categories', [ReportController::class, 'categories']);
         Route::get('reports/spending', [ReportController::class, 'spending']);
 
+        // pending-count antes de pending, por clareza (mesma convenção de
+        // rules/order e import-batches/{batch}/revert): os dois são
+        // literais, sem parâmetro de rota, então não colidem de fato.
+        Route::get('categorization/pending-count', [CategorizationController::class, 'pendingCount']);
+        Route::get('categorization/pending', [CategorizationController::class, 'pending']);
+        // Prefixo próprio no throttle: mesmo motivo do rules/preview, mais abaixo neste arquivo.
+        Route::post('categorization/apply', [CategorizationController::class, 'apply'])->middleware('throttle:30,1,categorization-apply');
+
         // Updates são parciais (PATCH): apiResource()->except('update') tira o
         // PUT/PATCH padrão (que registraria os dois verbos) e o Route::patch
         // abaixo registra só o verbo correto, pra bater com a doc OpenAPI.
@@ -87,7 +96,7 @@ Route::prefix('v1')->group(function () {
         Route::post('transfers/{transfer}/unlink', [TransferController::class, 'unlink'])->whereUuid('transfer');
 
         Route::get('transfer-suggestions', [TransferSuggestionController::class, 'index']);
-        // Prefixo próprio no throttle: mesmo motivo do rules/preview acima.
+        // Prefixo próprio no throttle: mesmo motivo do rules/preview, mais abaixo neste arquivo.
         Route::post('transfer-suggestions/detect', [TransferSuggestionController::class, 'detect'])->middleware('throttle:6,1,transfer-detect');
         Route::post('transfer-suggestions/{suggestion}/accept', [TransferSuggestionController::class, 'accept'])->whereNumber('suggestion');
         Route::post('transfer-suggestions/{suggestion}/dismiss', [TransferSuggestionController::class, 'dismiss'])->whereNumber('suggestion');
