@@ -48,8 +48,8 @@ final class CounterpartyKey
 
     /**
      * Países/UF reconhecidos como último elemento do sufixo de localização
-     * (ver matchSuffixWordCount()). Lista mínima de propósito: só o que o
-     * exemplo real (Brasil) e o do design doc (EUA) precisam.
+     * (ver matchSuffixWordCount()). Lista mínima de propósito: só os códigos
+     * de Brasil e EUA; um país novo entra aqui quando aparecer nas descrições.
      *
      * @var list<string>
      */
