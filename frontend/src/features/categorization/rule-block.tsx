@@ -1,12 +1,11 @@
-import { ScanSearch } from 'lucide-react'
+import { Info, ScanSearch } from 'lucide-react'
 import { Fragment, useId } from 'react'
 import { useAccounts } from '@/api/queries/accounts'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { describeSimpleCondition, pluralize, type RuleLookups } from '@/features/rules/rule-labels'
-import { toConditionInput } from '@/features/rules/rule-form-values'
 import { cn } from '@/lib/utils'
-import type { RuleAlternative } from './default-rule'
+import { MAX_DEFAULT_RULE_GROUPS, type RuleConditionsBody } from './default-rule'
 import type { RuleMatchState } from './use-rule-match-count'
 
 const LINK_BUTTON = 'rounded-sm outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50'
@@ -16,7 +15,10 @@ type RuleBlockProps = {
   onEnabledChange: (enabled: boolean) => void
   /** Caminho "Pai › Sub" da categoria escolhida, ou `null` ainda sem categoria. */
   categoryLabel: string | null
-  alternatives: RuleAlternative[]
+  /** Corpo que vai ser enviado (já compactado), resumido em texto. */
+  body: RuleConditionsBody
+  /** A regra padrão passa do limite de condições do backend: interruptor travado desligado. */
+  tooLarge: boolean
   customized: boolean
   count: RuleMatchState
   applyToPending: boolean
@@ -30,7 +32,8 @@ export function RuleBlock({
   enabled,
   onEnabledChange,
   categoryLabel,
-  alternatives,
+  body,
+  tooLarge,
   customized,
   count,
   applyToPending,
@@ -50,7 +53,7 @@ export function RuleBlock({
   return (
     <div className="rounded-xl border border-border p-3">
       <div className="flex items-start gap-3">
-        <Switch id={`${id}-enabled`} checked={enabled} onCheckedChange={onEnabledChange} className="mt-0.5" />
+        <Switch id={`${id}-enabled`} checked={enabled} onCheckedChange={onEnabledChange} disabled={tooLarge} className="mt-0.5" />
         <div className="min-w-0 flex-1 text-sm">
           <label htmlFor={`${id}-enabled`} className="font-medium">
             Criar regra para os próximos
@@ -59,6 +62,12 @@ export function RuleBlock({
             Lançamentos novos que casarem vão direto pra{' '}
             {categoryLabel ? <span className="font-medium text-foreground">{categoryLabel}</span> : 'a categoria escolhida'}.
           </p>
+          {tooLarge && (
+            <p className="mt-1 flex items-start gap-1 text-xs text-muted-foreground">
+              <Info aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              Regra só para até {MAX_DEFAULT_RULE_GROUPS} grupos por vez. Marque menos grupos para criar uma.
+            </p>
+          )}
         </div>
       </div>
 
@@ -66,16 +75,20 @@ export function RuleBlock({
         <div className="mt-3 space-y-2 text-xs sm:pl-11">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-muted-foreground">Se</span>
-            {alternatives.map((alternative, i) => (
-              <Fragment key={alternative.uid}>
-                {i > 0 && <span className="font-semibold text-muted-foreground">ou</span>}
+            {body.conditions.map((node, i) => (
+              <Fragment key={i}>
+                {i > 0 && <span className="font-semibold text-muted-foreground">{connector(body.match)}</span>}
                 <span className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-muted px-2 py-1">
-                  {alternative.conditions.map((condition, j) => (
-                    <Fragment key={condition.uid ?? j}>
-                      {j > 0 && <span className="text-muted-foreground">e</span>}
-                      <span>{describeSimpleCondition(toConditionInput(condition), lookups)}</span>
-                    </Fragment>
-                  ))}
+                  {'conditions' in node ? (
+                    node.conditions.map((child, j) => (
+                      <Fragment key={j}>
+                        {j > 0 && <span className="text-muted-foreground">{connector(node.match)}</span>}
+                        <span>{describeSimpleCondition(child, lookups)}</span>
+                      </Fragment>
+                    ))
+                  ) : (
+                    <span>{describeSimpleCondition(node, lookups)}</span>
+                  )}
                 </span>
               </Fragment>
             ))}
@@ -107,6 +120,10 @@ export function RuleBlock({
       )}
     </div>
   )
+}
+
+function connector(match: RuleConditionsBody['match']): string {
+  return match === 'any' ? 'ou' : 'e'
 }
 
 function MatchCountText({ count }: { count: RuleMatchState }) {

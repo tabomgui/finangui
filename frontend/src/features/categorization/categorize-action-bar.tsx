@@ -3,13 +3,27 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { ApiError } from '@/api/errors'
 import type { ApplyCategorizationVariables } from '@/api/queries/categorization'
-import type { CategorizationApplyResult, Category, PendingCategorizationGroup, PendingCategorizationTransaction } from '@/api/types'
+import type {
+  CategorizationApplyResult,
+  Category,
+  CategoryKind,
+  PendingCategorizationGroup,
+  PendingCategorizationTransaction,
+} from '@/api/types'
 import { CategoryPicker } from '@/components/shared/category-picker'
 import { MoneyText } from '@/components/shared/money-text'
 import { Button } from '@/components/ui/button'
 import { notifyError } from '@/lib/form-errors'
 import { categoryPath } from './category-path'
-import { defaultAlternatives, defaultRuleName, toRuleConditions, type RuleAlternative } from './default-rule'
+import {
+  compactRule,
+  defaultAlternatives,
+  defaultRuleName,
+  editorErrors,
+  MAX_RULE_CONDITIONS,
+  ruleConditionCount,
+  type RuleAlternative,
+} from './default-rule'
 import { RuleBlock } from './rule-block'
 import { RuleEditorDialog, type RuleErrors } from './rule-editor-dialog'
 import { hasPartialGroupSelection, selectionKind } from './selection'
@@ -42,9 +56,6 @@ function countLabel(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`
 }
 
-/** A regra personalizada vale só para a seleção em que foi feita: mudar a seleção volta ao padrão. */
-type CustomRule = { selectionKey: string; alternatives: RuleAlternative[] }
-
 type CategorizeActionBarProps = {
   /** Grupos carregados (a resposta atual de pendentes). */
   groups: PendingCategorizationGroup[]
@@ -52,6 +63,11 @@ type CategorizeActionBarProps = {
   transactions: PendingCategorizationTransaction[]
   selected: PendingCategorizationTransaction[]
   selectedIds: ReadonlySet<number>
+  /**
+   * A lista carregada é só um recorte dos pendentes (busca ativa ou resposta `truncated`): a
+   * contagem da regra vem da prévia do servidor em vez de contar só o que está na tela.
+   */
+  partialList: boolean
   categoriesById: ReadonlyMap<number, Category>
   applyCategorization: (variables: ApplyCategorizationVariables) => Promise<CategorizationApplyResult>
   applyPending: boolean
@@ -70,6 +86,7 @@ export function CategorizeActionBar({
   transactions,
   selected,
   selectedIds,
+  partialList,
   categoriesById,
   applyCategorization,
   applyPending,
@@ -77,29 +94,44 @@ export function CategorizeActionBar({
   onApplied,
 }: CategorizeActionBarProps) {
   const [categoryId, setCategoryId] = useState<number | null>(null)
+  // Tipo da seleção quando a categoria foi escolhida: se a seleção passa a ser do outro tipo, a
+  // categoria escolhida (de receita/despesa) não serve mais e é descartada.
+  const [categoryKind, setCategoryKind] = useState<CategoryKind | null>(null)
   const [createdCategory, setCreatedCategory] = useState<Category | null>(null)
   const [manualRuleEnabled, setManualRuleEnabled] = useState<boolean | null>(null)
   const [storedChoice] = useState(storedRuleEnabled)
   const [applyToPending, setApplyToPending] = useState(true)
-  const [customRule, setCustomRule] = useState<CustomRule | null>(null)
+  const [customRule, setCustomRule] = useState<RuleAlternative[] | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
   const [ruleErrors, setRuleErrors] = useState<RuleErrors>(NO_ERRORS)
 
   const kind = selectionKind(selected)
   const mixed = kind === 'mixed'
   const direction = kind === 'income' ? 'in' : 'out'
-  const selectedGroups = groups.filter((group) => group.transactions.some((transaction) => selectedIds.has(transaction.id)))
-  const partial = hasPartialGroupSelection(groups, selectedIds)
-  const net = selected.reduce((sum, transaction) => sum + (transaction.direction === 'in' ? transaction.amount : -transaction.amount), 0)
 
-  // Seleção parcial num grupo (ex.: 3 de 38) é provável exceção: começa sem regra, até o usuário
-  // ligar à mão. Sem seleção parcial, vale a última escolha manual guardada (ligada por padrão).
-  const ruleEnabled = manualRuleEnabled ?? (partial ? false : (storedChoice ?? true))
+  if (categoryId !== null && kind !== null && kind !== 'mixed' && categoryKind !== kind) {
+    setCategoryId(null)
+    setCategoryKind(null)
+    setCreatedCategory(null)
+  }
+
+  // A regra personalizada vale só para a seleção em que foi feita: qualquer mudança na seleção
+  // volta ao padrão (refazer a mesma seleção depois não traz a personalização antiga de volta).
+  const selectionKey = [...selectedIds].sort((a, b) => a - b).join(',')
+  const [customSelectionKey, setCustomSelectionKey] = useState(selectionKey)
+  if (customSelectionKey !== selectionKey) {
+    setCustomSelectionKey(selectionKey)
+    setCustomRule(null)
+  }
+
+  const selectedGroups = groups.filter((group) => group.transactions.some((transaction) => selectedIds.has(transaction.id)))
+  const partial = !mixed && hasPartialGroupSelection(groups, selectedIds, direction)
+  // Soma de uma seleção temporária, que só existe na tela: o backend não tem como devolvê-la pronta.
+  const net = selected.reduce((sum, transaction) => sum + (transaction.direction === 'in' ? transaction.amount : -transaction.amount), 0)
 
   const category = categoryId === null ? undefined : (categoriesById.get(categoryId) ?? (createdCategory?.id === categoryId ? createdCategory : undefined))
   const categoryLabel = category ? categoryPath(category, categoriesById) : null
 
-  const selectionKey = [...selectedIds].sort((a, b) => a - b).join(',')
   const groupNames = selectedGroups.map((group) => group.name)
   // Regra padrão estável enquanto os grupos marcados e a direção não mudam (a contagem local e
   // as chaves das condições dependem da mesma referência); refeita durante o render quando mudam.
@@ -107,11 +139,28 @@ export function CategorizeActionBar({
   const [defaultRule, setDefaultRule] = useState(() => ({ key: defaultsKey, alternatives: defaultAlternatives(groupNames, direction) }))
   if (defaultRule.key !== defaultsKey) setDefaultRule({ key: defaultsKey, alternatives: defaultAlternatives(groupNames, direction) })
   const defaults = defaultRule.alternatives
-  const customized = customRule !== null && customRule.selectionKey === selectionKey
-  const alternatives = customized ? customRule.alternatives : defaults
+  const customized = customRule !== null
+  const alternatives = customRule ?? defaults
+  const compact = compactRule(alternatives)
 
-  const count = useRuleMatchCount({ alternatives, transactions, selectedIds, direction, categoryId, enabled: ruleEnabled && !mixed })
+  // Muitos grupos marcados: nem a regra padrão compacta cabe no limite de condições do backend.
+  const tooLarge = !customized && ruleConditionCount(compactRule(defaults).body.conditions) > MAX_RULE_CONDITIONS
+
+  // Seleção parcial num grupo (ex.: 3 de 38) é provável exceção: começa sem regra, até o usuário
+  // ligar à mão. Sem seleção parcial, vale a última escolha manual guardada (ligada por padrão).
+  const ruleEnabled = !tooLarge && (manualRuleEnabled ?? (partial ? false : (storedChoice ?? true)))
+
+  const count = useRuleMatchCount({
+    alternatives,
+    transactions,
+    selectedIds,
+    direction,
+    categoryId,
+    enabled: ruleEnabled && !mixed,
+    partialList,
+  })
   const extra = ruleEnabled && applyToPending && count.status === 'local' ? count.extra : 0
+  const applyCount = selected.length + extra
 
   const changeRuleEnabled = (value: boolean) => {
     setManualRuleEnabled(value)
@@ -120,6 +169,7 @@ export function CategorizeActionBar({
 
   const changeCategory = (id: number | null) => {
     setCategoryId(id)
+    setCategoryKind(id === null || kind === 'mixed' ? null : kind)
     if (id !== createdCategory?.id) setCreatedCategory(null)
   }
 
@@ -129,7 +179,7 @@ export function CategorizeActionBar({
   }
 
   const saveRule = (next: RuleAlternative[]) => {
-    setCustomRule({ selectionKey, alternatives: next })
+    setCustomRule(next)
     setRuleErrors(NO_ERRORS)
     setEditorOpen(false)
   }
@@ -143,8 +193,7 @@ export function CategorizeActionBar({
       ...(ruleEnabled && {
         rule: {
           name: defaultRuleName(groupNames, label),
-          match: 'any',
-          conditions: toRuleConditions(alternatives),
+          ...compact.body,
           apply_to_pending: applyToPending,
         },
       }),
@@ -163,9 +212,10 @@ export function CategorizeActionBar({
     } catch (error) {
       const errors = ruleErrorsFrom(error)
       if (ruleEnabled && Object.keys(errors).length > 0) {
-        // O erro é numa condição: abre o editor com a regra enviada e o erro em cada campo.
-        setCustomRule({ selectionKey, alternatives })
-        setRuleErrors(errors)
+        // O erro é numa condição: abre o editor com a regra enviada e o erro na linha certa (os
+        // caminhos do 422 são os do corpo compactado, traduzidos para as alternativas do editor).
+        setCustomRule(alternatives)
+        setRuleErrors(editorErrors(errors, compact.origins))
         setEditorOpen(true)
       } else {
         notifyError(error)
@@ -218,7 +268,8 @@ export function CategorizeActionBar({
                 enabled={ruleEnabled}
                 onEnabledChange={changeRuleEnabled}
                 categoryLabel={categoryLabel}
-                alternatives={alternatives}
+                body={compact.body}
+                tooLarge={tooLarge}
                 customized={customized}
                 count={count}
                 applyToPending={applyToPending}
@@ -228,9 +279,14 @@ export function CategorizeActionBar({
               />
             </div>
             <div className="mt-3 flex justify-end">
-              <Button type="button" disabled={categoryId === null || applyPending} onClick={apply}>
+              <Button
+                type="button"
+                disabled={categoryId === null || applyPending}
+                onClick={apply}
+                aria-label={`Aplicar a categoria a ${countLabel(applyCount, 'lançamento', 'lançamentos')}`}
+              >
                 {applyPending ? <LoaderCircle aria-hidden className="h-4 w-4 animate-spin" /> : <Check aria-hidden className="h-4 w-4" />}
-                Aplicar a {selected.length + extra}
+                Aplicar a {applyCount}
               </Button>
             </div>
           </>
@@ -246,6 +302,7 @@ export function CategorizeActionBar({
         selectedIds={selectedIds}
         direction={direction}
         categoryId={categoryId}
+        partialList={partialList}
         onSave={saveRule}
       />
     </div>

@@ -121,6 +121,18 @@ describe('hasPartialGroupSelection', () => {
     expect(hasPartialGroupSelection(groups, new Set([1, 3]))).toBe(true)
   })
 
+  it('com direção, só os lançamentos dessa direção contam ("só saídas" num grupo misto não é parcial)', () => {
+    const mixed = group('a', [
+      { id: 1, direction: 'out' },
+      { id: 2, direction: 'out' },
+      { id: 3, direction: 'in' },
+    ])
+
+    expect(hasPartialGroupSelection([mixed], new Set([1, 2]))).toBe(true)
+    expect(hasPartialGroupSelection([mixed], new Set([1, 2]), 'out')).toBe(false)
+    expect(hasPartialGroupSelection([mixed], new Set([1]), 'out')).toBe(true)
+  })
+
   it('falso quando todo grupo está completo ou vazio', () => {
     const groups = [group('a', [{ id: 1, direction: 'out' }, { id: 2, direction: 'out' }]), group('b', [{ id: 3, direction: 'in' }])]
 

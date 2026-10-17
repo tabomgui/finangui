@@ -157,6 +157,54 @@ describe('autenticado', function () {
             ->and($unrelated->refresh()->category_id)->toBeNull();
     });
 
+    it('aceita a regra compacta (direção + grupo "qualquer" de 19 termos) e a aplica aos pendentes', function () {
+        $category = Category::factory()->create();
+        $marked = Transaction::factory()->create(['direction' => 'out', 'description' => 'Pix enviado - Termo 1', 'original_description' => 'Pix enviado - Termo 1']);
+        $otherPending = Transaction::factory()->create(['direction' => 'out', 'description' => 'Pix enviado - Termo 19', 'original_description' => 'Pix enviado - Termo 19']);
+        $otherDirection = Transaction::factory()->income()->create(['description' => 'Pix recebido - Termo 2', 'original_description' => 'Pix recebido - Termo 2']);
+
+        $terms = array_map(fn (int $i) => ['field' => 'original_description', 'op' => 'contains', 'value' => "Termo {$i}"], range(1, 19));
+
+        $response = $this->postJson('/api/v1/categorization/apply', [
+            'transaction_ids' => [$marked->id],
+            'category_id' => $category->id,
+            'rule' => [
+                'name' => 'Termos -> Categoria',
+                'match' => 'all',
+                'conditions' => [
+                    ['field' => 'direction', 'op' => 'equals', 'value' => 'out'],
+                    ['match' => 'any', 'conditions' => $terms],
+                ],
+                'apply_to_pending' => true,
+            ],
+        ])->assertOk();
+
+        $response->assertJson(['data' => ['categorized' => 1, 'rule_applied' => 1]]);
+
+        expect($otherPending->refresh()->category_id)->toBe($category->id)
+            ->and($otherDirection->refresh()->category_id)->toBeNull();
+    });
+
+    it('recusa a regra compacta acima do limite de condições (direção + 20 termos)', function () {
+        $category = Category::factory()->create();
+        $marked = Transaction::factory()->create(['description' => 'Termo 1', 'original_description' => 'Termo 1']);
+
+        $terms = array_map(fn (int $i) => ['field' => 'original_description', 'op' => 'contains', 'value' => "Termo {$i}"], range(1, 20));
+
+        $this->postJson('/api/v1/categorization/apply', [
+            'transaction_ids' => [$marked->id],
+            'category_id' => $category->id,
+            'rule' => [
+                'name' => 'Termos -> Categoria',
+                'match' => 'all',
+                'conditions' => [
+                    ['field' => 'direction', 'op' => 'equals', 'value' => 'out'],
+                    ['match' => 'any', 'conditions' => $terms],
+                ],
+            ],
+        ])->assertUnprocessable()->assertJsonValidationErrors(['rule.conditions']);
+    });
+
     it('apply_to_pending só categoriza pendentes da mesma direção da seleção, mesmo quando a regra não tem condição de direção', function () {
         $category = Category::factory()->create();
         $outSelected = Transaction::factory()->create(['direction' => 'out', 'description' => 'Fulano', 'original_description' => 'Fulano']);

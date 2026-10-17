@@ -118,7 +118,7 @@ function chooseCategory(name: string) {
 }
 
 function applyButton() {
-  return screen.getByRole('button', { name: /^Aplicar a \d+$/ })
+  return screen.getByRole('button', { name: /^Aplicar a categoria a \d+ lançamentos?$/ })
 }
 
 function ruleSwitch() {
@@ -130,14 +130,21 @@ function lastApplyBody() {
 }
 
 const SHPP_RULE_CONDITIONS = [
-  {
-    match: 'all',
-    conditions: [
-      { field: 'original_description', op: 'contains', value: 'Shpp Brasil' },
-      { field: 'direction', op: 'equals', value: 'out' },
-    ],
-  },
+  { field: 'original_description', op: 'contains', value: 'Shpp Brasil' },
+  { field: 'direction', op: 'equals', value: 'out' },
 ]
+
+function manyGroups(count: number): PendingCategorizationGroup[] {
+  return Array.from({ length: count }, (_, i) =>
+    group({
+      key: `g${i + 1}`,
+      name: `Grupo ${i + 1}`,
+      out_count: 1,
+      net: -1000,
+      transactions: [tx({ id: 100 + i, description: `Pix enviado - Grupo ${i + 1}` })],
+    }),
+  )
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -175,7 +182,7 @@ describe('CategorizeActionBar', () => {
       expect(applyMutateAsync).toHaveBeenCalledWith({
         transaction_ids: [1, 2],
         category_id: 50,
-        rule: { name: 'Shpp Brasil → Compras', match: 'any', conditions: SHPP_RULE_CONDITIONS, apply_to_pending: true },
+        rule: { name: 'Shpp Brasil → Compras', match: 'all', conditions: SHPP_RULE_CONDITIONS, apply_to_pending: true },
       }),
     )
   })
@@ -256,15 +263,13 @@ describe('CategorizeActionBar', () => {
 
     fireEvent.click(applyButton())
     await vi.waitFor(() =>
-      expect(lastApplyBody()?.rule?.conditions).toEqual([
-        {
-          match: 'all',
-          conditions: [
-            { field: 'original_description', op: 'contains', value: 'SHPP' },
-            { field: 'direction', op: 'equals', value: 'out' },
-          ],
-        },
-      ]),
+      expect(lastApplyBody()?.rule).toMatchObject({
+        match: 'all',
+        conditions: [
+          { field: 'original_description', op: 'contains', value: 'SHPP' },
+          { field: 'direction', op: 'equals', value: 'out' },
+        ],
+      }),
     )
   })
 
@@ -311,17 +316,12 @@ describe('CategorizeActionBar', () => {
     const [body, enabled] = useRulePreview.mock.calls.at(-1) ?? []
     expect(enabled).toBe(true)
     expect(body).toMatchObject({
-      match: 'any',
+      match: 'all',
       actions: [{ type: 'set_category', category_id: 50 }],
       overwrite: false,
       conditions: [
-        {
-          match: 'all',
-          conditions: [
-            { field: 'original_description', op: 'regex', value: '^PIX' },
-            { field: 'direction', op: 'equals', value: 'out' },
-          ],
-        },
+        { field: 'original_description', op: 'regex', value: '^PIX' },
+        { field: 'direction', op: 'equals', value: 'out' },
       ],
     })
   })
@@ -376,7 +376,7 @@ describe('CategorizeActionBar', () => {
     expect(screen.getByRole('combobox', { name: 'Definir categoria' })).toBeDisabled()
     expect(screen.getByText(/Selecione só entradas ou só saídas/)).toBeInTheDocument()
     expect(screen.queryByRole('switch')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^Aplicar a \d+$/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Aplicar a categoria/ })).not.toBeInTheDocument()
   })
 
   it('o toast mostra os números da resposta e a barra some', async () => {
@@ -403,7 +403,7 @@ describe('CategorizeActionBar', () => {
 
   it('422 numa condição abre o editor com o erro no campo', async () => {
     applyMutateAsync.mockRejectedValue(
-      new ApiError(422, 'Dados inválidos.', null, { 'rule.conditions.0.conditions.0.value': ['Use no máximo 200 caracteres.'] }),
+      new ApiError(422, 'Dados inválidos.', null, { 'rule.conditions.0.value': ['Use no máximo 200 caracteres.'] }),
     )
     renderPage()
     selectGroup('Shpp Brasil')
@@ -412,8 +412,138 @@ describe('CategorizeActionBar', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Regra de categorização' })
     expect(within(dialog).getByText('Use no máximo 200 caracteres.')).toBeInTheDocument()
-    expect(within(dialog).getByLabelText('Valor (condição 1 da alternativa 1)')).toHaveAttribute('aria-invalid', 'true')
+    const value = within(dialog).getByLabelText('Valor (condição 1 da alternativa 1)')
+    expect(value).toHaveAttribute('aria-invalid', 'true')
     expect(toast.error).not.toHaveBeenCalled()
+
+    // Editar a linha tira o erro dela.
+    fireEvent.change(value, { target: { value: 'Shpp' } })
+    expect(within(dialog).queryByText('Use no máximo 200 caracteres.')).not.toBeInTheDocument()
+  })
+
+  it('422 num termo da regra compacta aponta para a alternativa certa no editor', async () => {
+    mockPending(manyGroups(3))
+    applyMutateAsync.mockRejectedValue(
+      new ApiError(422, 'Dados inválidos.', null, { 'rule.conditions.1.conditions.2.value': ['Texto inválido.'] }),
+    )
+    renderPage()
+    for (const name of ['Grupo 1', 'Grupo 2', 'Grupo 3']) selectGroup(name)
+    chooseCategory('Compras')
+    fireEvent.click(applyButton())
+
+    const dialog = await screen.findByRole('dialog', { name: 'Regra de categorização' })
+    expect(within(dialog).getByLabelText('Valor (condição 1 da alternativa 3)')).toHaveAttribute('aria-invalid', 'true')
+    expect(within(dialog).getByLabelText('Valor (condição 1 da alternativa 1)')).not.toHaveAttribute('aria-invalid')
+  })
+
+  it('com 11 grupos ou mais, a regra padrão sai compacta: a direção uma vez e um termo por grupo', async () => {
+    mockPending(manyGroups(12))
+    renderPage()
+    for (let i = 1; i <= 12; i++) selectGroup(`Grupo ${i}`)
+    chooseCategory('Compras')
+    expect(ruleSwitch()).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(applyButton())
+
+    await vi.waitFor(() => expect(applyMutateAsync).toHaveBeenCalled())
+    expect(lastApplyBody()?.rule).toMatchObject({
+      match: 'all',
+      conditions: [
+        { field: 'direction', op: 'equals', value: 'out' },
+        {
+          match: 'any',
+          conditions: Array.from({ length: 12 }, (_, i) => ({ field: 'original_description', op: 'contains', value: `Grupo ${i + 1}` })),
+        },
+      ],
+    })
+  })
+
+  it('acima do limite de grupos, a regra fica desligada e o aviso aparece', async () => {
+    mockPending(manyGroups(20))
+    renderPage()
+    for (let i = 1; i <= 20; i++) selectGroup(`Grupo ${i}`)
+    chooseCategory('Compras')
+
+    expect(ruleSwitch()).toHaveAttribute('aria-checked', 'false')
+    expect(ruleSwitch()).toBeDisabled()
+    expect(screen.getByText(/Regra só para até 19 grupos por vez/)).toBeInTheDocument()
+
+    fireEvent.click(applyButton())
+    await vi.waitFor(() => expect(applyMutateAsync).toHaveBeenCalled())
+    expect(lastApplyBody()).not.toHaveProperty('rule')
+  })
+
+  it('"só saídas" num grupo misto não desliga a regra', () => {
+    mockPending([
+      group({
+        in_count: 1,
+        out_count: 2,
+        net: -1000,
+        transactions: [tx({ id: 1, description: 'Saída 1' }), tx({ id: 2, description: 'Saída 2' }), tx({ id: 3, direction: 'in', description: 'Entrada' })],
+      }),
+    ])
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: /Shpp Brasil/ }))
+    fireEvent.click(screen.getByText('só saídas (2)'))
+
+    expect(ruleSwitch()).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('trocar o tipo da seleção descarta a categoria escolhida', () => {
+    useCategories.mockReturnValue({ data: [category(), category({ id: 60, name: 'Salário', kind: 'income' })] })
+    mockPending([
+      group(),
+      group({ key: 'acme', name: 'ACME', out_count: 0, in_count: 1, net: 5000, transactions: [tx({ id: 9, direction: 'in', description: 'ACME' })] }),
+    ])
+    renderPage()
+    selectGroup('Shpp Brasil')
+    chooseCategory('Compras')
+    expect(applyButton()).toBeEnabled()
+
+    selectGroup('Shpp Brasil')
+    selectGroup('ACME')
+
+    expect(screen.getByRole('combobox', { name: 'Definir categoria' })).toHaveTextContent('Definir categoria')
+    expect(applyButton()).toBeDisabled()
+  })
+
+  it('com busca ativa, a contagem vem da prévia do servidor', async () => {
+    useRulePreview.mockReturnValue({ data: { matched: 9, changed: 7 }, isPending: false, isPlaceholderData: false, isError: false })
+    renderPage()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Buscar grupo ou descrição' }), { target: { value: 'shpp' } })
+    selectGroup('Shpp Brasil')
+    chooseCategory('Compras')
+
+    const block = screen.getByText('Criar regra para os próximos').closest('div.rounded-xl') as HTMLElement
+    await vi.waitFor(() => expect(block).toHaveTextContent('casa 7 lançamentos sem categoria'), { timeout: 2500 })
+    expect(useRulePreview.mock.calls.at(-1)?.[1]).toBe(true)
+    expect(applyButton()).toHaveTextContent('Aplicar a 2')
+  })
+
+  it('mudar a seleção descarta a regra personalizada, mesmo voltando à seleção anterior', () => {
+    renderPage()
+    selectGroup('Shpp Brasil')
+    fireEvent.click(screen.getByRole('button', { name: 'Personalizar' }))
+    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText('Valor (condição 1 da alternativa 1)'), { target: { value: 'SHPP' } })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Usar esta regra' }))
+    expect(screen.getByRole('button', { name: 'Editar regra' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Shpp Brasil/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar Pix enviado - Shpp Brasil 2' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar Pix enviado - Shpp Brasil 2' }))
+
+    expect(screen.getByRole('button', { name: 'Personalizar' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Editar regra' })).not.toBeInTheDocument()
+  })
+
+  it('o editor avisa quando a condição de tipo sai da regra', () => {
+    renderPage()
+    selectGroup('Shpp Brasil')
+    fireEvent.click(screen.getByRole('button', { name: 'Personalizar' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).queryByText(/também vai casar entradas/)).not.toBeInTheDocument()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remover condição 2 da alternativa 1' }))
+    expect(within(dialog).getByText(/também vai casar entradas/)).toBeInTheDocument()
   })
 
   it('outro erro avisa por toast e mantém a seleção', async () => {

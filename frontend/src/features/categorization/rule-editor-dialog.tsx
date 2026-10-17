@@ -1,4 +1,4 @@
-import { Plus, ScanSearch } from 'lucide-react'
+import { Plus, ScanSearch, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import type { Direction } from '@/api/types'
 import { Button } from '@/components/ui/button'
@@ -6,7 +6,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ConditionRow, type ConditionErrors } from '@/features/rules/condition-row'
 import { pluralize } from '@/features/rules/rule-labels'
 import { emptyCondition, type ConditionValues } from '@/features/rules/rule-form-values'
-import { emptyAlternative, type MatchableTransaction, type RuleAlternative } from './default-rule'
+import {
+  emptyAlternative,
+  MAX_RULE_CONDITIONS,
+  ruleConditionCount,
+  toRuleBody,
+  type MatchableTransaction,
+  type RuleAlternative,
+} from './default-rule'
 import { useRuleMatchCount, type RuleMatchState } from './use-rule-match-count'
 
 /**
@@ -27,6 +34,8 @@ type RuleEditorDialogProps = {
   selectedIds: ReadonlySet<number>
   direction: Direction
   categoryId: number | null
+  /** A lista carregada é só um recorte (busca/truncada): a contagem vem da prévia do servidor. */
+  partialList: boolean
   onSave: (alternatives: RuleAlternative[]) => void
 }
 
@@ -56,6 +65,10 @@ function copyAlternatives(alternatives: RuleAlternative[]): RuleAlternative[] {
 function validate(alternatives: RuleAlternative[]): RuleErrors {
   const errors: RuleErrors = {}
   if (alternatives.length === 0) errors.conditions = 'Adicione pelo menos uma alternativa.'
+  // Mesma conta do backend, sobre o corpo que de fato vai ser enviado (já compactado).
+  if (ruleConditionCount(toRuleBody(alternatives).conditions) > MAX_RULE_CONDITIONS) {
+    errors.conditions = `No máximo ${MAX_RULE_CONDITIONS} condições, contando as de dentro dos grupos.`
+  }
   alternatives.forEach((alternative, i) => {
     alternative.conditions.forEach((condition, j) => {
       if (condition.value.trim() === '') errors[`conditions.${i}.conditions.${j}.value`] = 'Informe um valor.'
@@ -84,10 +97,27 @@ function looseErrors(errors: RuleErrors, prefix: string): string[] {
     .map(([, message]) => message)
 }
 
-function RuleEditorBody({ initial, errors: serverErrors, transactions, selectedIds, direction, categoryId, onSave, onCancel }: RuleEditorBodyProps) {
+/** Sem `tipo é igual a <direção>` em alguma alternativa, a regra salva casa a outra direção também. */
+function missesDirection(alternatives: RuleAlternative[], direction: Direction): boolean {
+  return alternatives.some(
+    (alternative) => !alternative.conditions.some((each) => each.field === 'direction' && each.op === 'equals' && each.value === direction),
+  )
+}
+
+function RuleEditorBody({
+  initial,
+  errors: serverErrors,
+  transactions,
+  selectedIds,
+  direction,
+  categoryId,
+  partialList,
+  onSave,
+  onCancel,
+}: RuleEditorBodyProps) {
   const [alternatives, setAlternatives] = useState(() => copyAlternatives(initial))
   const [errors, setErrors] = useState<RuleErrors>(serverErrors)
-  const count = useRuleMatchCount({ alternatives, transactions, selectedIds, direction, categoryId, enabled: true })
+  const count = useRuleMatchCount({ alternatives, transactions, selectedIds, direction, categoryId, enabled: true, partialList })
 
   // Mudar a estrutura (adicionar/remover) desloca os índices dos caminhos de erro: descarta todos.
   const restructure = (next: RuleAlternative[]) => {
@@ -95,12 +125,16 @@ function RuleEditorBody({ initial, errors: serverErrors, transactions, selectedI
     setErrors({})
   }
 
-  const updateCondition = (i: number, j: number, next: ConditionValues) =>
+  const updateCondition = (i: number, j: number, next: ConditionValues) => {
+    // Editar a linha resolve (ou muda) o erro que o servidor apontou nela: some só o dela.
+    const rowPrefix = `conditions.${i}.conditions.${j}.`
+    setErrors((current) => Object.fromEntries(Object.entries(current).filter(([path]) => !path.startsWith(rowPrefix))))
     setAlternatives((current) =>
       current.map((alternative, index) =>
         index === i ? { ...alternative, conditions: alternative.conditions.map((condition, k) => (k === j ? next : condition)) } : alternative,
       ),
     )
+  }
 
   // Remover a última condição de uma alternativa remove a alternativa inteira.
   const removeCondition = (i: number, j: number) =>
@@ -159,6 +193,15 @@ function RuleEditorBody({ initial, errors: serverErrors, transactions, selectedI
           alternativa (“ou”)
         </Button>
       </div>
+
+      {missesDirection(alternatives, direction) && (
+        <p className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-500">
+          <TriangleAlert aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {direction === 'out'
+            ? 'Sem “Tipo é igual a Saída” em toda alternativa, a regra salva também vai casar entradas daqui pra frente.'
+            : 'Sem “Tipo é igual a Entrada” em toda alternativa, a regra salva também vai casar saídas daqui pra frente.'}
+        </p>
+      )}
 
       <p className="flex items-center gap-2 rounded-xl bg-muted/50 p-3 text-sm" aria-live="polite">
         <ScanSearch aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />

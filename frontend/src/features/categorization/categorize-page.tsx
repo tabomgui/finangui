@@ -24,6 +24,7 @@ import { groupCheckState, selectGroupDirection, toggleGroupSelection } from './s
 type FilterValue = 'all' | 'out' | 'in'
 
 const NO_CATEGORIES: Category[] = []
+const NO_GROUPS: PendingCategorizationGroup[] = []
 /** Seleção passada aos cards fechados: eles não mostram linhas, então não precisam da real. */
 const NO_SELECTION: ReadonlySet<number> = new Set()
 
@@ -59,8 +60,11 @@ export function CategorizePage() {
   const done = initialTotal === null ? 0 : Math.max(initialTotal - totalPending, 0)
   const progressPercent = initialTotal !== null && initialTotal > 0 ? Math.round((done / initialTotal) * 100) : 100
 
-  const groups = pendingQuery.data?.groups ?? []
-  const loaded = groups.flatMap((group) => group.transactions)
+  const groups = pendingQuery.data?.groups ?? NO_GROUPS
+  // Memoizado: a contagem local da regra (barra de ação) depende desta referência.
+  const loaded = useMemo(() => groups.flatMap((group) => group.transactions), [groups])
+  // A lista é só um recorte dos pendentes: a contagem da regra não pode contar só o que aparece.
+  const partialList = debouncedSearch.trim() !== '' || pendingQuery.data?.truncated === true
   const filtered = search.trim() !== '' || filterValue !== 'all'
 
   // Poda a seleção para os ids da resposta atual: um lançamento que saiu da lista (filtro, busca
@@ -249,6 +253,7 @@ export function CategorizePage() {
           transactions={loaded}
           selected={selected}
           selectedIds={selectedIds}
+          partialList={partialList}
           categoriesById={categoriesById}
           applyCategorization={applyCategorization}
           applyPending={applyPending}

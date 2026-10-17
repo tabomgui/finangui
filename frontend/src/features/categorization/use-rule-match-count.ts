@@ -2,8 +2,7 @@ import { useMemo } from 'react'
 import { useRulePreview, type PreviewRuleBody } from '@/api/queries/rules'
 import type { Direction } from '@/api/types'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
-import { toConditionInput } from '@/features/rules/rule-form-values'
-import { countRuleMatches, type MatchableTransaction, type RuleAlternative } from './default-rule'
+import { condition, countRuleMatches, toRuleBody, type MatchableTransaction, type RuleAlternative } from './default-rule'
 
 const DEBOUNCE_MS = 800
 const EMPTY_BODY: PreviewRuleBody = { match: 'any', conditions: [], actions: [] }
@@ -27,13 +26,18 @@ type UseRuleMatchCountArgs = {
   direction: Direction
   categoryId: number | null
   enabled: boolean
+  /**
+   * A lista carregada é só um recorte dos pendentes (busca ativa, ou resposta `truncated`): a
+   * contagem local mentiria para baixo, então vai direto para a prévia do servidor.
+   */
+  partialList: boolean
 }
 
 function isComplete(alternatives: RuleAlternative[]): boolean {
   return (
     alternatives.length > 0 &&
     alternatives.every(
-      (alternative) => alternative.conditions.length > 0 && alternative.conditions.every((condition) => condition.value.trim() !== ''),
+      (alternative) => alternative.conditions.length > 0 && alternative.conditions.every((each) => each.value.trim() !== ''),
     )
   )
 }
@@ -41,34 +45,44 @@ function isComplete(alternatives: RuleAlternative[]): boolean {
 /**
  * Corpo da prévia: cada alternativa ganha `direction é igual a <direção>` quando ainda não tem,
  * porque o apply só aplica a regra aos pendentes dessa direção — a prévia sozinha contaria as
- * duas. `overwrite: false` faz `changed` contar só quem ainda não tem categoria.
+ * duas. Sai compactado por `toRuleBody` (a prévia tem o mesmo limite de condições do apply).
+ *
+ * A prévia não tem escopo de "pendente": percorre todo lançamento do usuário que não é perna de
+ * transferência nem previsto de recorrência. Com `overwrite: false`, `changed` conta os que ainda
+ * não têm categoria — inclui ignorados, pagamento de fatura e lançamentos de conta arquivada, que
+ * o `apply_to_pending` não toca. Por isso a tela diz "sem categoria", não "pendentes".
  */
 function previewBody(alternatives: RuleAlternative[], direction: Direction, categoryId: number): PreviewRuleBody {
-  return {
-    match: 'any',
-    conditions: alternatives.map((alternative) => {
-      const conditions = alternative.conditions.map(toConditionInput)
-      const hasDirection = conditions.some((condition) => condition.field === 'direction' && condition.op === 'equals' && condition.value === direction)
-      return { match: 'all', conditions: hasDirection ? conditions : [...conditions, { field: 'direction', op: 'equals', value: direction }] }
-    }),
-    actions: [{ type: 'set_category', category_id: categoryId }],
-    overwrite: false,
-  }
+  const withDirection = alternatives.map((alternative) => {
+    const hasDirection = alternative.conditions.some((each) => each.field === 'direction' && each.op === 'equals' && each.value === direction)
+    return hasDirection ? alternative : { ...alternative, conditions: [...alternative.conditions, condition('direction', 'equals', direction)] }
+  })
+  return { ...toRuleBody(withDirection), actions: [{ type: 'set_category', category_id: categoryId }], overwrite: false }
 }
 
 /**
- * "Casa N pendentes": local quando todas as condições são avaliáveis aqui (`countRuleMatches`),
- * senão pela `POST /rules/preview`, com debounce, só depois de haver categoria escolhida.
+ * "Casa N pendentes": local quando todas as condições são avaliáveis aqui e a lista carregada é
+ * completa (`countRuleMatches`), senão pela `POST /rules/preview`, com debounce, só depois de
+ * haver categoria escolhida.
  */
-export function useRuleMatchCount({ alternatives, transactions, selectedIds, direction, categoryId, enabled }: UseRuleMatchCountArgs): RuleMatchState {
+export function useRuleMatchCount({
+  alternatives,
+  transactions,
+  selectedIds,
+  direction,
+  categoryId,
+  enabled,
+  partialList,
+}: UseRuleMatchCountArgs): RuleMatchState {
   const local = useMemo(
-    () => countRuleMatches(alternatives, transactions, selectedIds, direction),
-    [alternatives, transactions, selectedIds, direction],
+    () => (partialList ? ({ kind: 'server' } as const) : countRuleMatches(alternatives, transactions, selectedIds, direction)),
+    [partialList, alternatives, transactions, selectedIds, direction],
   )
   const complete = isComplete(alternatives)
   const wantsServer = enabled && local.kind === 'server' && complete && categoryId !== null
 
-  // Debounce sobre o JSON (estável entre renders), não sobre o objeto, que muda a cada render.
+  // Debounce sobre o JSON (estável entre renders), não sobre o objeto, que muda a cada render. Os
+  // `uid` das condições acrescentadas não entram: `toRuleBody` só leva campo, operador e valor.
   const serialized = wantsServer && categoryId !== null ? JSON.stringify(previewBody(alternatives, direction, categoryId)) : ''
   const debounced = useDebouncedValue(serialized, DEBOUNCE_MS)
   const settled = debounced === serialized

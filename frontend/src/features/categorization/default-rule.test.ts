@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import {
+  compactRule,
   condition,
   countRuleMatches,
   defaultAlternatives,
   defaultRuleName,
+  editorErrors,
+  MAX_DEFAULT_RULE_GROUPS,
+  MAX_RULE_CONDITIONS,
   needsServerPreview,
   normalizeRuleText,
-  toRuleConditions,
+  ruleConditionCount,
+  toRuleBody,
   type MatchableTransaction,
   type RuleAlternative,
 } from './default-rule'
@@ -23,21 +28,15 @@ describe('defaultAlternatives', () => {
   it('gera uma alternativa por grupo, com o termo na descrição original e a direção da seleção', () => {
     const alternatives = defaultAlternatives(['Shpp Brasil', 'Uber'], 'out')
 
-    expect(toRuleConditions(alternatives)).toEqual([
-      {
-        match: 'all',
-        conditions: [
-          { field: 'original_description', op: 'contains', value: 'Shpp Brasil' },
-          { field: 'direction', op: 'equals', value: 'out' },
-        ],
-      },
-      {
-        match: 'all',
-        conditions: [
-          { field: 'original_description', op: 'contains', value: 'Uber' },
-          { field: 'direction', op: 'equals', value: 'out' },
-        ],
-      },
+    expect(alternatives.map((alternative) => alternative.conditions.map(({ field, op, value }) => ({ field, op, value })))).toEqual([
+      [
+        { field: 'original_description', op: 'contains', value: 'Shpp Brasil' },
+        { field: 'direction', op: 'equals', value: 'out' },
+      ],
+      [
+        { field: 'original_description', op: 'contains', value: 'Uber' },
+        { field: 'direction', op: 'equals', value: 'out' },
+      ],
     ])
   })
 
@@ -46,9 +45,102 @@ describe('defaultAlternatives', () => {
     expect(only.conditions[1]).toMatchObject({ field: 'direction', op: 'equals', value: 'in' })
   })
 
+  it('nomes repetidos entram uma vez só', () => {
+    expect(defaultAlternatives(['Uber', 'Uber'], 'out')).toHaveLength(1)
+  })
+
   it('corta o termo no limite de texto de condição', () => {
     const [only] = defaultAlternatives(['x'.repeat(250)], 'out')
     expect(only.conditions[0].value).toHaveLength(200)
+  })
+})
+
+describe('toRuleBody', () => {
+  it('um grupo: as duas condições, "todas"', () => {
+    expect(toRuleBody(defaultAlternatives(['Shpp Brasil'], 'out'))).toEqual({
+      match: 'all',
+      conditions: [
+        { field: 'original_description', op: 'contains', value: 'Shpp Brasil' },
+        { field: 'direction', op: 'equals', value: 'out' },
+      ],
+    })
+  })
+
+  it('vários grupos: a direção uma vez e os termos num grupo "qualquer"', () => {
+    expect(toRuleBody(defaultAlternatives(['Shpp Brasil', 'Uber'], 'out'))).toEqual({
+      match: 'all',
+      conditions: [
+        { field: 'direction', op: 'equals', value: 'out' },
+        {
+          match: 'any',
+          conditions: [
+            { field: 'original_description', op: 'contains', value: 'Shpp Brasil' },
+            { field: 'original_description', op: 'contains', value: 'Uber' },
+          ],
+        },
+      ],
+    })
+  })
+
+  it(`até ${MAX_DEFAULT_RULE_GROUPS} grupos cabem no limite de ${MAX_RULE_CONDITIONS} condições; um a mais, não`, () => {
+    const names = (count: number) => Array.from({ length: count }, (_, i) => `Grupo ${i + 1}`)
+
+    const atLimit = toRuleBody(defaultAlternatives(names(MAX_DEFAULT_RULE_GROUPS), 'out'))
+    expect(atLimit.match).toBe('all')
+    expect(ruleConditionCount(atLimit.conditions)).toBe(MAX_RULE_CONDITIONS)
+
+    // 11 grupos já passariam do limite na forma "uma alternativa de duas condições por grupo".
+    expect(ruleConditionCount(toRuleBody(defaultAlternatives(names(11), 'out')).conditions)).toBe(12)
+
+    expect(ruleConditionCount(toRuleBody(defaultAlternatives(names(MAX_DEFAULT_RULE_GROUPS + 1), 'out')).conditions)).toBe(
+      MAX_RULE_CONDITIONS + 1,
+    )
+  })
+
+  it('uma condição por alternativa, sem nada em comum: "qualquer" direto', () => {
+    const rule = [alternative(condition('description', 'contains', 'A')), alternative(condition('description', 'contains', 'B'))]
+    expect(toRuleBody(rule)).toEqual({
+      match: 'any',
+      conditions: [
+        { field: 'description', op: 'contains', value: 'A' },
+        { field: 'description', op: 'contains', value: 'B' },
+      ],
+    })
+  })
+
+  it('alternativas que não se compactam viram grupos "todas" dentro de "qualquer"', () => {
+    const rule = [
+      alternative(condition('description', 'contains', 'A'), condition('direction', 'equals', 'out')),
+      alternative(condition('description', 'contains', 'B'), condition('amount', 'gt', '100')),
+    ]
+    expect(toRuleBody(rule)).toEqual({
+      match: 'any',
+      conditions: [
+        { match: 'all', conditions: [{ field: 'description', op: 'contains', value: 'A' }, { field: 'direction', op: 'equals', value: 'out' }] },
+        { match: 'all', conditions: [{ field: 'description', op: 'contains', value: 'B' }, { field: 'amount', op: 'gt', value: 100 }] },
+      ],
+    })
+  })
+})
+
+describe('editorErrors', () => {
+  it('traduz o caminho do corpo compacto para a alternativa e a linha do editor', () => {
+    const { origins } = compactRule(defaultAlternatives(['A', 'B', 'C'], 'out'))
+
+    expect(
+      editorErrors(
+        {
+          'conditions.1.conditions.2.value': 'Texto grande demais.',
+          'conditions.0.value': 'Tipo inválido.',
+          'conditions.1.conditions': 'Grupo vazio.',
+        },
+        origins,
+      ),
+    ).toEqual({
+      'conditions.2.conditions.0.value': 'Texto grande demais.',
+      'conditions.0.conditions.1.value': 'Tipo inválido.',
+      conditions: 'Grupo vazio.',
+    })
   })
 })
 
@@ -72,6 +164,10 @@ describe('defaultRuleName', () => {
 describe('normalizeRuleText', () => {
   it('ignora caixa, acento e espaços repetidos', () => {
     expect(normalizeRuleText('  Pão  de   Açúcar ')).toBe('PAO DE ACUCAR')
+  })
+
+  it('translitera como o Str::ascii do backend: ordinais, letras sem decomposição, travessões e aspas', () => {
+    expect(normalizeRuleText('Nº 1ª Øre Æsir Łódź Đ ß – “x” ‘y’')).toBe('NO 1A ORE AESIR LODZ D SS - "X" \'Y\'')
   })
 })
 

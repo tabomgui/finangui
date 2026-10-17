@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '@/api/client'
 import { invalidateCategories, invalidateLedger, invalidateRules, queryKeys, type PendingCategorizationFilters } from '@/api/query-keys'
+import { asRequestBody } from '@/api/queries/rules'
 import type { components } from '@/api/schema'
 import type { RuleConditionNodeInput } from '@/api/types'
 
@@ -37,8 +38,9 @@ export function usePendingCategorization(filters: PendingCategorizationFilters =
 /**
  * Regra opcional do apply, na forma precisa que a tela monta. O tipo gerado para
  * `ApplyCategorizationRequest.rule` vem das regras de validação, achatadas como as de `/rules`
- * (sem discriminar condição de grupo, `value` só string) — ver `asRequestBody` em `rules.ts`: o
- * JSON é o mesmo, só não "bate" estruturalmente com o tipo gerado, daí o único cast abaixo.
+ * (sem discriminar condição de grupo, `value` só string): o JSON é o mesmo, só não "bate"
+ * estruturalmente com o tipo gerado — o cast fica no `asRequestBody` de `rules.ts`, como no
+ * editor de regras.
  */
 export type ApplyCategorizationRule = {
   name: string
@@ -60,9 +62,10 @@ export type ApplyCategorizationVariables = Omit<ApplyCategorizationRequest, 'rul
 export function useApplyCategorization() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ transaction_ids, category_id, rule }: ApplyCategorizationVariables) =>
-      (await unwrap(api.POST('/categorization/apply', { body: { transaction_ids, category_id, rule: rule as ApplyCategorizationRequest['rule'] } })))
-        .data,
+    mutationFn: async ({ transaction_ids, category_id, rule }: ApplyCategorizationVariables) => {
+      const body = { transaction_ids, category_id, rule: asRequestBody<ApplyCategorizationRequest['rule']>(rule) }
+      return (await unwrap(api.POST('/categorization/apply', { body }))).data
+    },
     // `invalidateLedger` já cobre `categorization` (pendentes e contagem) — ver query-keys.ts.
     onSuccess: (_result, variables) => {
       void invalidateLedger(queryClient)

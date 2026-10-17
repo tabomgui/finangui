@@ -77,7 +77,8 @@ export type ConditionOrGroupValues = ConditionValues | GroupValues
 export type ActionValues = z.infer<typeof actionValuesSchema> & { uid?: string }
 
 let uidCounter = 0
-function nextUid(): string {
+/** Chave de React estável para um item de lista do formulário (nunca vai no corpo enviado). */
+export function nextUid(): string {
   uidCounter += 1
   return `rule-item-${uidCounter}`
 }

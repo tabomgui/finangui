@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -351,9 +351,7 @@ describe('CategorizePage', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar grupo Shpp Brasil' }))
     expect(screen.getByText('2 selecionados')).toBeInTheDocument()
 
-    // A barra de ação também tem um "Aplicar a 2": o da sugestão fica na faixa do grupo.
-    const suggestion = screen.getByText('Sugestão pelo histórico:').parentElement as HTMLElement
-    fireEvent.click(within(suggestion).getByRole('button', { name: 'Aplicar a 2' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar a 2' }))
 
     await vi.waitFor(() => expect(toast.error).toHaveBeenCalled())
     expect(toast.success).not.toHaveBeenCalled()

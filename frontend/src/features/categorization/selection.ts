@@ -50,7 +50,14 @@ export function selectionKind(transactions: SelectableTransaction[]): CategoryKi
   return directions.has('out') ? 'expense' : 'income'
 }
 
-/** Verdadeiro se algum grupo tem seleção parcial (só parte dos seus lançamentos marcados). */
-export function hasPartialGroupSelection(groups: SelectableGroup[], selectedIds: ReadonlySet<number>): boolean {
-  return groups.some((group) => groupCheckState(group, selectedIds) === 'partial')
+/**
+ * Verdadeiro se algum grupo tem seleção parcial (só parte dos seus lançamentos marcados). Com
+ * `direction`, só os lançamentos dessa direção contam: "só saídas" num grupo misto marca todas as
+ * saídas dele, e isso não é uma seleção parcial para uma regra que só olha saídas.
+ */
+export function hasPartialGroupSelection(groups: SelectableGroup[], selectedIds: ReadonlySet<number>, direction?: Direction): boolean {
+  return groups.some((group) => {
+    const scoped = direction ? { ...group, transactions: group.transactions.filter((transaction) => transaction.direction === direction) } : group
+    return groupCheckState(scoped, selectedIds) === 'partial'
+  })
 }
