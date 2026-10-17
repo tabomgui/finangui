@@ -76,7 +76,7 @@ export function TransactionsPage() {
             className="flex items-center justify-between gap-2 rounded-xl bg-muted px-4 py-2 text-sm font-medium hover:bg-accent"
           >
             <span>Categorizar pendentes</span>
-            <ArrowRight className="h-4 w-4" />
+            <ArrowRight aria-hidden className="h-4 w-4" />
           </Link>
         )}
         {pendingSuggestions.count > 0 && (
@@ -88,7 +88,7 @@ export function TransactionsPage() {
             className="flex items-center justify-between gap-2 rounded-xl bg-muted px-4 py-2 text-sm font-medium hover:bg-accent"
           >
             <span>{suggestionsCountLabel(pendingSuggestions)}</span>
-            <ArrowRight className="h-4 w-4" />
+            <ArrowRight aria-hidden className="h-4 w-4" />
           </Link>
         )}
         <TransactionFilters filters={filters} />
