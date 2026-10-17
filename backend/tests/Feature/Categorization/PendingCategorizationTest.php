@@ -68,6 +68,27 @@ describe('autenticado', function () {
             ->and($group->transactions)->toHaveCount(2);
     });
 
+    it('agrupa transferência pelo pix enviada e recebida, com o nome sem o prefixo', function () {
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Transferência recebida pelo Pix - EMPRESA EXEMPLO',
+            'direction' => 'in', 'amount' => 8000, 'date' => '2026-01-01',
+        ]);
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Transferência enviada pelo Pix - EMPRESA EXEMPLO',
+            'direction' => 'out', 'amount' => 2000, 'date' => '2026-02-01',
+        ]);
+
+        $result = app(PendingCategorization::class)->pending();
+
+        expect($result->groupCount)->toBe(1);
+
+        $group = $result->groups[0];
+        expect($group->key)->toBe('EMPRESA EXEMPLO')
+            ->and($group->name)->toBe('Empresa Exemplo')
+            ->and($group->inCount)->toBe(1)
+            ->and($group->outCount)->toBe(1);
+    });
+
     it('ordena os grupos pela quantidade de lançamentos, decrescente', function () {
         Transaction::factory()->for($this->account)->count(3)->create(['description' => 'Pix enviado - Maior Grupo']);
         Transaction::factory()->for($this->account)->count(1)->create(['description' => 'Pix enviado - Menor Grupo']);

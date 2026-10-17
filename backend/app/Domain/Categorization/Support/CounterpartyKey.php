@@ -20,9 +20,11 @@ use App\Domain\Rules\Support\TextNormalizer;
 final class CounterpartyKey
 {
     /**
-     * Ordem não importa: o match sempre tenta o prefixo com mais palavras
-     * primeiro (ver prefixesByWordCountDesc()), então "PIX ENVIADO
-     * DEVOLVIDO" vence "PIX ENVIADO" quando os dois bateriam.
+     * O match sempre tenta o prefixo com mais palavras primeiro (ver
+     * prefixesByWordCountDesc()), então "PIX ENVIADO DEVOLVIDO" vence "PIX
+     * ENVIADO" e "TRANSFERENCIA RECEBIDA PELO PIX" vence "TRANSFERENCIA
+     * RECEBIDA" quando os dois bateriam. A lista segue a mesma ordem só
+     * para facilitar a leitura.
      *
      * @var list<string>
      */
@@ -36,6 +38,8 @@ final class CounterpartyKey
         'BOLETO RECEBIDO HORAS',
         'RESGATE',
         'APLICACAO',
+        'TRANSFERENCIA ENVIADA PELO PIX',
+        'TRANSFERENCIA RECEBIDA PELO PIX',
         'TRANSFERENCIA ENVIADA',
         'TRANSFERENCIA RECEBIDA',
         'TED ENVIADA',
@@ -193,7 +197,14 @@ final class CounterpartyKey
         // bytes, e um limite de token sempre cai numa borda de caractere
         // válida (o \S+ nunca partiu um caractere multibyte no meio) —
         // substr() por byte reproduz o trecho certo sem reconverter nada.
-        return self::prettyCase(substr($original, $start, $end - $start));
+        $extracted = substr($original, $start, $end - $start);
+
+        // Um separador colado no primeiro token mantido (ex.: "Pix -EMPRESA")
+        // não faz parte do nome. Tirar só do começo mantém o resultado um
+        // recorte de verdade do texto original.
+        $extracted = (string) preg_replace('/^[-–—:|\/]+/u', '', $extracted);
+
+        return $extracted === '' ? null : self::prettyCase($extracted);
     }
 
     /**

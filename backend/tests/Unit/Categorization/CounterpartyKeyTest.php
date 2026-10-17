@@ -145,3 +145,34 @@ it('reconhece sufixo de cidade e UF/país estrangeiro, ex.: San Francisco CA', f
 
     expect($key)->toBe('LOJA EXEMPLO');
 });
+
+it('tira o prefixo de transferência pelo pix, enviada e recebida, caindo na mesma chave', function () {
+    $received = CounterpartyKey::fromDescriptionKey(TextNormalizer::key('Transferência recebida pelo Pix - EMPRESA EXEMPLO'));
+    $sent = CounterpartyKey::fromDescriptionKey(TextNormalizer::key('Transferência enviada pelo Pix - EMPRESA EXEMPLO'));
+
+    expect($received)->toBe('EMPRESA EXEMPLO')
+        ->and($sent)->toBe('EMPRESA EXEMPLO');
+});
+
+it('prefere o prefixo de transferência pelo pix ao de transferência simples', function () {
+    expect(CounterpartyKey::fromDescriptionKey('TRANSFERENCIA RECEBIDA PELO PIX FULANO'))->toBe('FULANO')
+        ->and(CounterpartyKey::fromDescriptionKey('TRANSFERENCIA RECEBIDA FULANO'))->toBe('FULANO');
+});
+
+it('monta o nome da transferência pelo pix sem o prefixo nem o separador', function () {
+    $original = 'Transferência recebida pelo Pix - EMPRESA EXEMPLO';
+    $key = CounterpartyKey::fromDescriptionKey(TextNormalizer::key($original));
+
+    expect(CounterpartyKey::displayName($key, $original))->toBe('Empresa Exemplo')
+        ->and(CounterpartyKey::displayName($key, 'Transferência enviada pelo Pix - Fulano De Tal'))->toBe('Fulano De Tal');
+});
+
+it('tira um separador colado no começo do nome extraído', function () {
+    $original = 'Transferência enviada pelo Pix -EMPRESA EXEMPLO';
+    $key = CounterpartyKey::fromDescriptionKey(TextNormalizer::key($original));
+
+    $name = CounterpartyKey::displayName($key, $original);
+
+    expect($name)->toBe('Empresa Exemplo')
+        ->and(mb_stripos($original, $name))->not->toBeFalse();
+});
