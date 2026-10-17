@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Hourglass, Tags } from 'lucide-react'
+import { ArrowLeftRight, ChevronRight, Hourglass, Tags } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { usePendingCategorizationCount } from '@/api/queries/categorization'
 import { useOverdueOccurrences } from '@/api/queries/recurrences'
@@ -55,6 +55,7 @@ export function PendingCard({ onOpenOverdue }: PendingCardProps) {
             <span className="hidden shrink-0 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground sm:inline">
               Categorizar
             </span>
+            <ChevronRight aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
           </Link>
         )}
         {count > 0 && (

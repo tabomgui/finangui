@@ -123,9 +123,11 @@ export const GroupCard = memo(function GroupCard({
               )}
             </span>
           </span>
-          <span className="hidden shrink-0 text-right text-sm font-semibold sm:block">
-            <MoneyText cents={Math.abs(group.net)} direction={group.net >= 0 ? 'in' : 'out'} />
-          </span>
+          <MoneyText
+            cents={Math.abs(group.net)}
+            direction={group.net >= 0 ? 'in' : 'out'}
+            className="shrink-0 whitespace-nowrap text-right text-sm font-semibold"
+          />
           <ChevronDown
             aria-hidden
             className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-180')}
