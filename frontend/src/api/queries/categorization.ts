@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '@/api/client'
-import { invalidateCategories, invalidateLedger, invalidateRules, queryKeys, type PendingCategorizationFilters } from '@/api/query-keys'
+import { invalidateLedger, invalidateRules, queryKeys, type PendingCategorizationFilters } from '@/api/query-keys'
 import { asRequestBody } from '@/api/queries/rules'
 import type { components } from '@/api/schema'
 import type { RuleConditionNodeInput } from '@/api/types'
@@ -49,14 +49,8 @@ export type ApplyCategorizationRule = {
   apply_to_pending: boolean
 }
 
-/**
- * `categoryCreated` é informado por quem chama quando a categoria aplicada acabou de ser criada
- * na hora (pelo `CategoryPicker`, com a opção "Criar…"): só nesse caso `invalidateCategories`
- * entra, para não invalidar a lista de categorias à toa a cada aplicação.
- */
 export type ApplyCategorizationVariables = Omit<ApplyCategorizationRequest, 'rule'> & {
   rule?: ApplyCategorizationRule
-  categoryCreated?: boolean
 }
 
 export function useApplyCategorization() {
@@ -66,11 +60,11 @@ export function useApplyCategorization() {
       const body = { transaction_ids, category_id, rule: asRequestBody<ApplyCategorizationRequest['rule']>(rule) }
       return (await unwrap(api.POST('/categorization/apply', { body }))).data
     },
-    // `invalidateLedger` já cobre `categorization` (pendentes e contagem) — ver query-keys.ts.
-    onSuccess: (_result, variables) => {
+    // `invalidateLedger` já cobre `categorization` (pendentes e contagem) — ver query-keys.ts. Uma
+    // categoria criada na hora já invalidou as categorias em `useCreateCategory`.
+    onSuccess: () => {
       void invalidateLedger(queryClient)
       void invalidateRules(queryClient)
-      if (variables.categoryCreated) void invalidateCategories(queryClient)
     },
   })
 }

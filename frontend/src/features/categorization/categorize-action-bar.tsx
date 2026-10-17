@@ -200,7 +200,6 @@ export function CategorizeActionBar({
           apply_to_pending: applyToPending,
         },
       }),
-      ...(createdCategory?.id === categoryId && { categoryCreated: true }),
     }
 
     try {

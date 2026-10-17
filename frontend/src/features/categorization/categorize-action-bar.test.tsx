@@ -354,7 +354,6 @@ describe('CategorizeActionBar', () => {
       expect(applyMutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({
           category_id: 77,
-          categoryCreated: true,
           rule: expect.objectContaining({ name: 'Shpp Brasil → Compras › Shopee' }),
         }),
       ),
