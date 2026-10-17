@@ -2,10 +2,12 @@
 
 namespace App\Domain\Categorization\Queries;
 
+use App\Domain\Categories\Models\Category;
 use App\Domain\Categorization\Data\PendingCategorizationCount;
 use App\Domain\Categorization\Data\PendingCategorizationResult;
 use App\Domain\Categorization\Data\PendingGroup;
 use App\Domain\Categorization\Data\PendingTransactionItem;
+use App\Domain\Categorization\Support\CategoryDirection;
 use App\Domain\Categorization\Support\CounterpartyKey;
 use App\Domain\Rules\Actions\CategorizeTransaction;
 use App\Domain\Rules\Support\HistoryCategorizer;
@@ -124,9 +126,10 @@ final class PendingCategorization
         $byKey = $transactions->groupBy($this->groupingKey(...));
 
         $historyMemo = $this->historyMemo($transactions);
+        $suggestable = $this->suggestableCategories($historyMemo);
 
         return $byKey
-            ->map(fn (Collection $group, string $key) => $this->buildGroup($key, $group, $historyMemo))
+            ->map(fn (Collection $group, string $key) => $this->buildGroup($key, $group, $historyMemo, $suggestable))
             ->values()
             ->sortByDesc(fn (PendingGroup $group) => count($group->transactions))
             ->values();
@@ -147,10 +150,31 @@ final class PendingCategorization
     }
 
     /**
+     * Categorias apontadas pelo histórico, numa única consulta (com o pai,
+     * para CategoryDirection saber se a filha herda transferência).
+     *
+     * @param  array<string, int>  $historyMemo
+     * @return Collection<int, Category>
+     */
+    private function suggestableCategories(array $historyMemo): Collection
+    {
+        if ($historyMemo === []) {
+            return new Collection;
+        }
+
+        return Category::query()
+            ->with('parent:id,is_transfer')
+            ->whereKey(array_values(array_unique($historyMemo)))
+            ->get(['id', 'parent_id', 'kind', 'is_transfer'])
+            ->keyBy('id');
+    }
+
+    /**
      * @param  Collection<int, Transaction>  $transactions
      * @param  array<string, int>  $historyMemo
+     * @param  Collection<int, Category>  $suggestable
      */
-    private function buildGroup(string $key, Collection $transactions, array $historyMemo): PendingGroup
+    private function buildGroup(string $key, Collection $transactions, array $historyMemo, Collection $suggestable): PendingGroup
     {
         $outCount = $transactions->filter(fn (Transaction $t) => $t->direction === Direction::Out)->count();
         $inCount = $transactions->count() - $outCount;
@@ -172,7 +196,7 @@ final class PendingCategorization
             outCount: $outCount,
             inCount: $inCount,
             net: (int) $net,
-            suggestionCategoryId: $this->suggestion($transactions, $historyMemo),
+            suggestionCategoryId: $this->suggestion($transactions, $historyMemo, $suggestable),
             transactions: $transactions
                 ->sortByDesc(fn (Transaction $t) => [$t->date->toDateString(), $t->id])
                 ->map($this->toItem(...))
@@ -191,12 +215,16 @@ final class PendingCategorization
      * filtrado por direção (ver pending()), um filtro ?direction= pode
      * fazer aparecer uma sugestão que não apareceria na listagem sem
      * filtro, porque o grupo inteiro (as duas direções juntas) é misto —
-     * comportamento esperado, não um bug.
+     * comportamento esperado, não um bug. A categoria em comum ainda precisa
+     * ser aceita pelo apply para essa direção (CategoryDirection, a mesma
+     * checagem de ApplyCategorizationRequest), senão aceitar a sugestão
+     * sempre daria erro de validação.
      *
      * @param  Collection<int, Transaction>  $transactions
      * @param  array<string, int>  $historyMemo
+     * @param  Collection<int, Category>  $suggestable
      */
-    private function suggestion(Collection $transactions, array $historyMemo): ?int
+    private function suggestion(Collection $transactions, array $historyMemo, Collection $suggestable): ?int
     {
         $directions = $transactions->map(fn (Transaction $t) => $t->direction)->unique();
 
@@ -214,7 +242,13 @@ final class PendingCategorization
             ->filter()
             ->unique();
 
-        return $categoryIds->count() === 1 ? $categoryIds->first() : null;
+        if ($categoryIds->count() !== 1) {
+            return null;
+        }
+
+        $category = $suggestable->get($categoryIds->first());
+
+        return $category !== null && CategoryDirection::accepts($category, $direction) ? $category->id : null;
     }
 
     private function matchesSearch(PendingGroup $group, string $search): bool

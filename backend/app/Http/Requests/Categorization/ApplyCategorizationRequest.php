@@ -2,8 +2,8 @@
 
 namespace App\Http\Requests\Categorization;
 
-use App\Domain\Categories\Enums\CategoryKind;
 use App\Domain\Categories\Models\Category;
+use App\Domain\Categorization\Support\CategoryDirection;
 use App\Domain\Rules\Support\RuleConditionOwnershipValidator;
 use App\Domain\Rules\Support\RuleDefinitionValidator;
 use App\Domain\Transactions\Enums\Direction;
@@ -139,13 +139,7 @@ final class ApplyCategorizationRequest extends ApiRequest
             return;
         }
 
-        if ($category->isTransferEffective()) {
-            return;
-        }
-
-        $expectedKind = $direction === Direction::In ? CategoryKind::Income : CategoryKind::Expense;
-
-        if ($category->kind !== $expectedKind) {
+        if (! CategoryDirection::accepts($category, $direction)) {
             $validator->errors()->add('category_id', 'Categoria incompatível com a direção dos lançamentos selecionados.');
         }
     }

@@ -179,6 +179,69 @@ describe('autenticado', function () {
             ->and($filtered->suggestionCategoryId)->toBe($category->id);
     });
 
+    it('não sugere categoria de despesa para um grupo de entrada (o apply recusaria)', function () {
+        $expense = Category::factory()->create();
+
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Pix recebido - Ciclano Exemplo', 'direction' => 'in',
+            'category_id' => $expense->id, 'date' => '2026-01-01',
+        ]);
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Pix recebido - Ciclano Exemplo', 'direction' => 'in', 'date' => '2026-02-01',
+        ]);
+
+        $group = $this->getJson('/api/v1/categorization/pending')->assertOk()->json('data.groups.0');
+
+        expect($group['key'])->toBe('CICLANO EXEMPLO')
+            ->and($group)->not->toHaveKey('suggestion');
+    });
+
+    it('sugere categoria de transferência, ou filha de uma, para as duas direções', function () {
+        $transferParent = Category::factory()->transfer()->create();
+        $transferChild = Category::factory()->create(['parent_id' => $transferParent->id]);
+
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Pix recebido - Ciclano Exemplo', 'direction' => 'in',
+            'category_id' => $transferChild->id, 'date' => '2026-01-01',
+        ]);
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Pix recebido - Ciclano Exemplo', 'direction' => 'in', 'date' => '2026-02-01',
+        ]);
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Pix enviado - Beltrano Exemplo', 'direction' => 'out',
+            'category_id' => $transferParent->id, 'date' => '2026-01-01',
+        ]);
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Pix enviado - Beltrano Exemplo', 'direction' => 'out', 'date' => '2026-02-01',
+        ]);
+
+        $groups = collect($this->getJson('/api/v1/categorization/pending')->assertOk()->json('data.groups'))->keyBy('key');
+
+        expect($groups['CICLANO EXEMPLO']['suggestion']['category_id'])->toBe($transferChild->id)
+            ->and($groups['BELTRANO EXEMPLO']['suggestion']['category_id'])->toBe($transferParent->id);
+    });
+
+    it('a sugestão aceita no apply não dá erro de validação', function () {
+        $income = Category::factory()->income()->create();
+
+        Transaction::factory()->for($this->account)->create([
+            'description' => 'Pix recebido - Ciclano Exemplo', 'direction' => 'in',
+            'category_id' => $income->id, 'date' => '2026-01-01',
+        ]);
+        $pending = Transaction::factory()->for($this->account)->create([
+            'description' => 'Pix recebido - Ciclano Exemplo', 'direction' => 'in', 'date' => '2026-02-01',
+        ]);
+
+        $group = $this->getJson('/api/v1/categorization/pending')->assertOk()->json('data.groups.0');
+
+        expect($group['suggestion']['category_id'])->toBe($income->id);
+
+        $this->postJson('/api/v1/categorization/apply', [
+            'transaction_ids' => [$pending->id],
+            'category_id' => $group['suggestion']['category_id'],
+        ])->assertOk();
+    });
+
     it('não sugere nada quando não há histórico para a chave', function () {
         Transaction::factory()->for($this->account)->create(['description' => 'Pix enviado - Fulano De Tal', 'direction' => 'out']);
 
