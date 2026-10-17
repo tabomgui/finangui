@@ -32,9 +32,7 @@ final class ApplyCategorizationRequest extends ApiRequest
     public function rules(): array
     {
         return [
-            // Dono de cada id é conferido em checkDirection() (um único
-            // SELECT, ver ali) — mandar um "exists" por item em até 5000
-            // ids seria uma query a mais por lançamento selecionado.
+            // Lançamentos a categorizar, todos da mesma direção (entrada ou saída).
             'transaction_ids' => ['required', 'array', 'min:1', 'max:5000'],
             'transaction_ids.*' => ['required', 'integer', 'distinct'],
             'category_id' => ['required', 'integer', Rule::exists('categories', 'id')->where('user_id', $this->userId())],
@@ -89,7 +87,9 @@ final class ApplyCategorizationRequest extends ApiRequest
      * de ids — nunca um "exists" por item nem o model inteiro (sem "raw"):
      * id ausente do mapa (não existe ou é de outro usuário — a consulta já
      * escopa por dono, ver App\Models\Concerns\BelongsToUser) rende um erro
-     * em "transaction_ids.{i}"; a direção vem do mesmo mapa.
+     * em "transaction_ids.{i}"; a direção vem do mesmo mapa. Por isso
+     * rules() não manda um "exists" em "transaction_ids.*": seriam até 5000
+     * consultas, uma por lançamento selecionado.
      */
     private function checkDirection(Validator $validator): ?Direction
     {

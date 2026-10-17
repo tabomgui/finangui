@@ -1155,11 +1155,7 @@ export interface components {
         AccountType: "checking" | "savings" | "cash" | "credit_card";
         /** ApplyCategorizationRequest */
         ApplyCategorizationRequest: {
-            /**
-             * @description Dono de cada id é conferido em checkDirection() (um único
-             *     SELECT, ver ali) — mandar um "exists" por item em até 5000
-             *     ids seria uma query a mais por lançamento selecionado.
-             */
+            /** @description Lançamentos a categorizar, todos da mesma direção (entrada ou saída). */
             transaction_ids: number[];
             category_id: number;
             rule?: {
