@@ -127,7 +127,7 @@ final class ApplyCategorizationRequest extends ApiRequest
 
     private function checkCategory(Validator $validator, Direction $direction): void
     {
-        $category = Category::query()->whereKey((int) $this->input('category_id'))->first();
+        $category = Category::query()->with('parent:id,is_transfer')->whereKey((int) $this->input('category_id'))->first();
 
         if ($category === null) {
             return;
@@ -139,7 +139,7 @@ final class ApplyCategorizationRequest extends ApiRequest
             return;
         }
 
-        if ($category->is_transfer) {
+        if ($category->isTransferEffective()) {
             return;
         }
 

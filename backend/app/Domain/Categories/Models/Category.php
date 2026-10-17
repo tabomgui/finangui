@@ -65,6 +65,19 @@ class Category extends Model
     }
 
     /**
+     * Transferência de fato: a própria categoria é de transferência ou é
+     * filha de uma categoria de transferência (a subcategoria herda do pai).
+     * É o valor de `is_transfer_effective` na API (CategoryResource,
+     * TransactionResource). Carrega `parent` sob demanda quando não veio
+     * com eager loading.
+     */
+    public function isTransferEffective(): bool
+    {
+        // @phpstan-ignore nullsafe.neverNull (falso positivo: Larastan não enxerga que parent_id/parent são nullable; em runtime uma categoria raiz não tem parent)
+        return $this->is_transfer || ($this->parent?->is_transfer ?? false);
+    }
+
+    /**
      * Categoria que uma regra/histórico ainda pode atribuir: não arquivada.
      * Compartilhado por CategorizeTransaction e ApplyRuleOutcome — as duas
      * conferem se a categoria apontada por uma regra ainda é usável antes

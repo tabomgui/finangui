@@ -400,6 +400,25 @@ describe('autenticado', function () {
         ])->assertOk();
     });
 
+    it('subcategoria de uma categoria de transferência também serve para as duas direções', function () {
+        $transferParent = Category::factory()->transfer()->create();
+        $child = Category::factory()->create(['parent_id' => $transferParent->id]);
+        $out = Transaction::factory()->create(['direction' => 'out']);
+        $in = Transaction::factory()->income()->create();
+
+        $this->postJson('/api/v1/categorization/apply', [
+            'transaction_ids' => [$out->id],
+            'category_id' => $child->id,
+        ])->assertOk();
+
+        $this->postJson('/api/v1/categorization/apply', [
+            'transaction_ids' => [$in->id],
+            'category_id' => $child->id,
+        ])->assertOk();
+
+        expect($in->refresh()->category_id)->toBe($child->id);
+    });
+
     it('422 em rule.conditions.* reaproveitando a validação de /rules', function () {
         $category = Category::factory()->create();
         $transaction = Transaction::factory()->create();
