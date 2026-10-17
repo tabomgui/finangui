@@ -63,8 +63,9 @@ export function CategorizePage() {
   const groups = pendingQuery.data?.groups ?? NO_GROUPS
   // Memoizado: a contagem local da regra (barra de ação) depende desta referência.
   const loaded = useMemo(() => groups.flatMap((group) => group.transactions), [groups])
-  // A lista é só um recorte dos pendentes: a contagem da regra não pode contar só o que aparece.
-  const partialList = debouncedSearch.trim() !== '' || pendingQuery.data?.truncated === true
+  // A lista é só um recorte dos pendentes (busca, resposta truncada ou a resposta anterior ainda
+  // na tela enquanto a nova carrega): a contagem da regra não pode contar só o que aparece.
+  const partialList = debouncedSearch.trim() !== '' || pendingQuery.data?.truncated === true || pendingQuery.isPlaceholderData
   const filtered = search.trim() !== '' || filterValue !== 'all'
 
   // Poda a seleção para os ids da resposta atual: um lançamento que saiu da lista (filtro, busca

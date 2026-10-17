@@ -53,7 +53,14 @@ export function RuleBlock({
   return (
     <div className="rounded-xl border border-border p-3">
       <div className="flex items-start gap-3">
-        <Switch id={`${id}-enabled`} checked={enabled} onCheckedChange={onEnabledChange} disabled={tooLarge} className="mt-0.5" />
+        <Switch
+          id={`${id}-enabled`}
+          checked={enabled}
+          onCheckedChange={onEnabledChange}
+          disabled={tooLarge}
+          aria-describedby={tooLarge ? `${id}-too-large` : undefined}
+          className="mt-0.5"
+        />
         <div className="min-w-0 flex-1 text-sm">
           <label htmlFor={`${id}-enabled`} className="font-medium">
             Criar regra para os próximos
@@ -63,7 +70,7 @@ export function RuleBlock({
             {categoryLabel ? <span className="font-medium text-foreground">{categoryLabel}</span> : 'a categoria escolhida'}.
           </p>
           {tooLarge && (
-            <p className="mt-1 flex items-start gap-1 text-xs text-muted-foreground">
+            <p id={`${id}-too-large`} className="mt-1 flex items-start gap-1 text-xs text-muted-foreground">
               <Info aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               Regra só para até {MAX_DEFAULT_RULE_GROUPS} grupos por vez. Marque menos grupos para criar uma.
             </p>

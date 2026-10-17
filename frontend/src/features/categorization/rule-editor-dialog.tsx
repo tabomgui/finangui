@@ -8,6 +8,7 @@ import { pluralize } from '@/features/rules/rule-labels'
 import { emptyCondition, type ConditionValues } from '@/features/rules/rule-form-values'
 import {
   emptyAlternative,
+  MAX_DEFAULT_RULE_GROUPS,
   MAX_RULE_CONDITIONS,
   ruleConditionCount,
   toRuleBody,
@@ -67,7 +68,7 @@ function validate(alternatives: RuleAlternative[]): RuleErrors {
   if (alternatives.length === 0) errors.conditions = 'Adicione pelo menos uma alternativa.'
   // Mesma conta do backend, sobre o corpo que de fato vai ser enviado (já compactado).
   if (ruleConditionCount(toRuleBody(alternatives).conditions) > MAX_RULE_CONDITIONS) {
-    errors.conditions = `No máximo ${MAX_RULE_CONDITIONS} condições, contando as de dentro dos grupos.`
+    errors.conditions = `No máximo ${MAX_RULE_CONDITIONS} condições na regra enviada, que junta o que as alternativas têm em comum (até ${MAX_DEFAULT_RULE_GROUPS} grupos na regra padrão).`
   }
   alternatives.forEach((alternative, i) => {
     alternative.conditions.forEach((condition, j) => {

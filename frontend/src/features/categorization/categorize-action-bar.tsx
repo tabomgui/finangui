@@ -161,6 +161,9 @@ export function CategorizeActionBar({
   })
   const extra = ruleEnabled && applyToPending && count.status === 'local' ? count.extra : 0
   const applyCount = selected.length + extra
+  // Contagem vinda do servidor (sem saber quais já estão marcados): o número do botão fica só nos
+  // marcados, e uma dica avisa que a regra ainda categoriza os outros pendentes que casarem.
+  const ruleAddsUnknown = ruleEnabled && applyToPending && count.status !== 'local'
 
   const changeRuleEnabled = (value: boolean) => {
     setManualRuleEnabled(value)
@@ -278,7 +281,8 @@ export function CategorizeActionBar({
                 onReset={() => setCustomRule(null)}
               />
             </div>
-            <div className="mt-3 flex justify-end">
+            <div className="mt-3 flex items-center justify-end gap-3">
+              {ruleAddsUnknown && <span className="text-xs text-muted-foreground">+ os que a regra casar</span>}
               <Button
                 type="button"
                 disabled={categoryId === null || applyPending}

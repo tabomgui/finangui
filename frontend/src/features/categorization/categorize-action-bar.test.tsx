@@ -465,7 +465,7 @@ describe('CategorizeActionBar', () => {
 
     expect(ruleSwitch()).toHaveAttribute('aria-checked', 'false')
     expect(ruleSwitch()).toBeDisabled()
-    expect(screen.getByText(/Regra só para até 19 grupos por vez/)).toBeInTheDocument()
+    expect(ruleSwitch()).toHaveAccessibleDescription(/Regra só para até 19 grupos por vez/)
 
     fireEvent.click(applyButton())
     await vi.waitFor(() => expect(applyMutateAsync).toHaveBeenCalled())
@@ -517,6 +517,31 @@ describe('CategorizeActionBar', () => {
     await vi.waitFor(() => expect(block).toHaveTextContent('casa 7 lançamentos sem categoria'), { timeout: 2500 })
     expect(useRulePreview.mock.calls.at(-1)?.[1]).toBe(true)
     expect(applyButton()).toHaveTextContent('Aplicar a 2')
+    expect(screen.getByText('+ os que a regra casar')).toBeInTheDocument()
+
+    // Sem aplicar aos pendentes, a regra não categoriza mais ninguém agora: some a dica.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'aplicar também a esses' }))
+    expect(screen.queryByText('+ os que a regra casar')).not.toBeInTheDocument()
+  })
+
+  it('com a resposta truncada, a contagem vem da prévia do servidor', async () => {
+    useRulePreview.mockReturnValue({ data: { matched: 40, changed: 30 }, isPending: false, isPlaceholderData: false, isError: false })
+    const groups = [group()]
+    usePendingCategorization.mockReturnValue({
+      data: { total_pending: 6000, group_count: 1, truncated: true, groups },
+      isPending: false,
+      isError: false,
+      isPlaceholderData: false,
+      refetch: vi.fn(),
+    })
+    renderPage()
+    selectGroup('Shpp Brasil')
+    chooseCategory('Compras')
+
+    const block = screen.getByText('Criar regra para os próximos').closest('div.rounded-xl') as HTMLElement
+    await vi.waitFor(() => expect(block).toHaveTextContent('casa 30 lançamentos sem categoria'), { timeout: 2500 })
+    expect(useRulePreview.mock.calls.at(-1)?.[1]).toBe(true)
+    expect(screen.getByText('+ os que a regra casar')).toBeInTheDocument()
   })
 
   it('mudar a seleção descarta a regra personalizada, mesmo voltando à seleção anterior', () => {
