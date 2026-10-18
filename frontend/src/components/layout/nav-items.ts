@@ -19,6 +19,13 @@ import {
 
 export type NavItem = { to: string; label: string; icon: LucideIcon; end?: boolean }
 
+/** Mesma regra de match do `NavLink` do react-router, calculada à mão (ver sidebar.tsx: `asChild`
+ * com `Slot` exige um elemento só, incompatível com a `className` em função do `NavLink`). */
+export function isNavItemActive(pathname: string, item: NavItem): boolean {
+  if (item.end) return pathname === item.to
+  return pathname === item.to || pathname.startsWith(`${item.to}/`)
+}
+
 export const primaryNav: NavItem[] = [
   { to: '/', label: 'Início', icon: House, end: true },
   { to: '/transacoes', label: 'Transações', icon: List, end: true },

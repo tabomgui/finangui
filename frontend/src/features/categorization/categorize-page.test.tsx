@@ -3,7 +3,23 @@ import { MemoryRouter } from 'react-router-dom'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Category, PendingCategorizationGroup } from '@/api/types'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { CategorizePage } from './categorize-page'
+
+// jsdom não implementa `matchMedia`; `useIsMobile` (shadcn, usado por `SidebarProvider`) chama
+// sem guarda.
+window.matchMedia ??=
+  ((query: string) =>
+    ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }) as unknown as MediaQueryList) as typeof window.matchMedia
 
 vi.mock('sonner', () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
@@ -102,7 +118,9 @@ function mockCount(totalPending: number, groupCount: number) {
 function page() {
   return (
     <MemoryRouter initialEntries={['/categorizar']}>
-      <CategorizePage />
+      <SidebarProvider>
+        <CategorizePage />
+      </SidebarProvider>
     </MemoryRouter>
   )
 }

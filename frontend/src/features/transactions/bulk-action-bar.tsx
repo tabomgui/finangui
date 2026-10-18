@@ -8,7 +8,9 @@ import type { Transaction } from '@/api/types'
 import { CategoryPicker } from '@/components/shared/category-picker'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { useSidebar } from '@/components/ui/sidebar'
 import { notifyError } from '@/lib/form-errors'
+import { cn } from '@/lib/utils'
 import { canLinkAsTransfer, mergeTagIds, orderForLink, selectionKind, transacaoCount } from './bulk'
 
 type UpdateTransactionRequest = components['schemas']['UpdateTransactionRequest']
@@ -19,6 +21,7 @@ type BulkActionBarProps = {
 }
 
 export function BulkActionBar({ selected, onDone }: BulkActionBarProps) {
+  const { state: sidebarState } = useSidebar()
   const { data: tags = [] } = useTags()
   const bulkUpdate = useBulkUpdateTransactions()
   const linkTransfer = useLinkTransfer()
@@ -58,8 +61,13 @@ export function BulkActionBar({ selected, onDone }: BulkActionBarProps) {
 
   return (
     // Acima da bottom nav (h-16 + safe-area) e do botão flutuante de nova transação, que sobe
-    // mais 1.75rem além dela; no desktop, deslocada pela sidebar fixa (w-60).
-    <div className="fixed inset-x-0 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-40 px-4 md:bottom-6 md:pl-60">
+    // mais 1.75rem além dela; no desktop, deslocada pela largura atual da sidebar colapsável.
+    <div
+      className={cn(
+        'fixed inset-x-0 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-40 px-4 md:bottom-6',
+        sidebarState === 'collapsed' ? 'md:pl-[var(--sidebar-width-icon)]' : 'md:pl-[var(--sidebar-width)]',
+      )}
+    >
       <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-3 shadow-lg">
         <span className="flex-1 text-sm font-medium">
           {selected.length} selecionada{selected.length === 1 ? '' : 's'}

@@ -14,8 +14,10 @@ import { FullPageSpinner } from '@/components/shared/full-page-spinner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { useSidebar } from '@/components/ui/sidebar'
 import { formatDayLabel } from '@/lib/date'
 import { notifyError } from '@/lib/form-errors'
+import { cn } from '@/lib/utils'
 import { ImportPreviewRow } from './import-preview-row'
 import { BATCH_STATUS_LABELS, BATCH_STATUS_VARIANT, summaryText } from './import-labels'
 
@@ -45,6 +47,7 @@ export function ImportPreviewPage() {
 }
 
 function ImportPreviewContent({ id }: { id: number }) {
+  const { state: sidebarState } = useSidebar()
   const navigate = useNavigate()
   const { data: preview, isError, error, isPending, refetch } = useImportBatch(id)
   const { data: categories } = useCategories(true)
@@ -236,8 +239,13 @@ function ImportPreviewContent({ id }: { id: number }) {
       </PageBody>
 
       {/* Opaca e fixa acima da bottom nav do mobile (h-16 + safe-area, como bulk-action-bar.tsx);
-          no desktop, sem bottom nav, só desloca pela sidebar fixa (w-60). */}
-      <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 px-4 md:bottom-6 md:pl-60">
+          no desktop, sem bottom nav, só desloca pela largura atual da sidebar colapsável. */}
+      <div
+        className={cn(
+          'fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 px-4 md:bottom-6',
+          sidebarState === 'collapsed' ? 'md:pl-[var(--sidebar-width-icon)]' : 'md:pl-[var(--sidebar-width)]',
+        )}
+      >
         <div className="mx-auto flex max-w-3xl flex-wrap gap-2 rounded-2xl border border-border bg-card p-3 shadow-lg">
           <Button onClick={handleConfirm} disabled={anyPending || selectedCount === 0}>
             Importar {selectedCount} lançamento{selectedCount === 1 ? '' : 's'}

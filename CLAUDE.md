@@ -90,3 +90,4 @@ Gerenciador financeiro pessoal. Backend Laravel 13 API + Postgres em `backend/`;
 - Specs e planos ficam em `docs/` (ignorado pelo git, local).
 - O Securo (AGPL) serve de inspiração de ideias; não copie código dele.
 - Repositório público: nunca commite dados bancários reais.
+- Agentes do projeto em `.claude/agents/`: `backend-dev`, `frontend-dev`, `test-engineer` (implementação e testes), `finance-guardian` (regras de dinheiro), `pluggy-specialist` (Banking), `ux-reviewer` (Playwright 390/1280, claro/escuro), `convention-reviewer` (portão antes do push), `release` (push + link de compare; depois do merge, deploy na VM), `prod-support` (investigação em produção, só leitura) e `product-manager` (pesquisa ideias e inspiração de produto em outros softwares financeiros; nunca decide nem edita código). Acesso à VM fica em `.claude/release.env`, fora do git (modelo em `.claude/release.env.example`).
