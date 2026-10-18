@@ -4,8 +4,26 @@ import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/errors'
 import type { Category, PendingCategorizationGroup, PendingCategorizationTransaction } from '@/api/types'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { DEFAULT_COLOR } from '@/lib/palette'
 import { CategorizePage } from './categorize-page'
+
+// jsdom não implementa `matchMedia`; `useIsMobile` (shadcn, usado por `SidebarProvider`) chama
+// sem guarda.
+function stubMatchMedia() {
+  window.matchMedia ??=
+    ((query: string) =>
+      ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      }) as unknown as MediaQueryList) as typeof window.matchMedia
+}
 
 vi.mock('sonner', () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
@@ -101,9 +119,12 @@ function mockPending(groups: PendingCategorizationGroup[]) {
 }
 
 function renderPage() {
+  stubMatchMedia()
   return render(
     <MemoryRouter initialEntries={['/categorizar']}>
-      <CategorizePage />
+      <SidebarProvider>
+        <CategorizePage />
+      </SidebarProvider>
     </MemoryRouter>,
   )
 }

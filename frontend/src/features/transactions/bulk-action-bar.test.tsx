@@ -4,7 +4,25 @@ import { toast } from 'sonner'
 import { describe, expect, it, vi } from 'vitest'
 import { queryKeys } from '@/api/query-keys'
 import type { Transaction } from '@/api/types'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { BulkActionBar } from './bulk-action-bar'
+
+// jsdom não implementa `matchMedia`; `useIsMobile` (shadcn, usado por `SidebarProvider`) chama
+// sem guarda.
+function stubMatchMedia() {
+  window.matchMedia ??=
+    ((query: string) =>
+      ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      }) as unknown as MediaQueryList) as typeof window.matchMedia
+}
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
@@ -43,12 +61,15 @@ const transaction = (overrides: Partial<Transaction>): Transaction => ({
 })
 
 function renderBar(selected: Transaction[], onDone: () => void) {
+  stubMatchMedia()
   const client = new QueryClient()
   client.setQueryData(queryKeys.tags(), [{ id: 7, name: 'casa', color: null }])
 
   return render(
     <QueryClientProvider client={client}>
-      <BulkActionBar selected={selected} onDone={onDone} />
+      <SidebarProvider>
+        <BulkActionBar selected={selected} onDone={onDone} />
+      </SidebarProvider>
     </QueryClientProvider>,
   )
 }

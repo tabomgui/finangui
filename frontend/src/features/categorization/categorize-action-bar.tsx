@@ -13,8 +13,10 @@ import type {
 import { CategoryPicker } from '@/components/shared/category-picker'
 import { MoneyText } from '@/components/shared/money-text'
 import { Button } from '@/components/ui/button'
+import { useSidebar } from '@/components/ui/sidebar'
 import { pluralize } from '@/features/rules/rule-labels'
 import { notifyError } from '@/lib/form-errors'
+import { cn } from '@/lib/utils'
 import { categoryPath } from './category-path'
 import {
   compactRule,
@@ -90,6 +92,7 @@ export function CategorizeActionBar({
   onClear,
   onApplied,
 }: CategorizeActionBarProps) {
+  const { state: sidebarState } = useSidebar()
   const [categoryId, setCategoryId] = useState<number | null>(null)
   // Tipo da seleção quando a categoria foi escolhida: se a seleção passa a ser do outro tipo, a
   // categoria escolhida (de receita/despesa) não serve mais e é descartada.
@@ -224,8 +227,13 @@ export function CategorizeActionBar({
 
   return (
     // Acima da bottom nav (h-16 + safe-area) e do botão flutuante de nova transação, como a
-    // `BulkActionBar`; no desktop, deslocada pela sidebar fixa (w-60).
-    <div className="fixed inset-x-0 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-40 px-4 md:bottom-6 md:pl-60">
+    // `BulkActionBar`; no desktop, deslocada pela largura atual da sidebar colapsável.
+    <div
+      className={cn(
+        'fixed inset-x-0 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-40 px-4 md:bottom-6',
+        sidebarState === 'collapsed' ? 'md:pl-[var(--sidebar-width-icon)]' : 'md:pl-[var(--sidebar-width)]',
+      )}
+    >
       <div className="mx-auto max-h-[calc(100dvh-8rem)] max-w-3xl overflow-y-auto rounded-2xl border border-border bg-card p-3 shadow-lg">
         <div className="flex flex-wrap items-center gap-2">
           <span className="min-w-0 flex-1 text-sm font-medium">

@@ -5,7 +5,25 @@ import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/errors'
 import type { ImportPreview } from '@/api/types'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { ImportPreviewPage } from './import-preview-page'
+
+// jsdom não implementa `matchMedia`; `useIsMobile` (shadcn, usado por `SidebarProvider`) chama
+// sem guarda.
+function stubMatchMedia() {
+  window.matchMedia ??=
+    ((query: string) =>
+      ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      }) as unknown as MediaQueryList) as typeof window.matchMedia
+}
 
 type PreviewRow = ImportPreview['rows'][number]
 
@@ -70,16 +88,19 @@ function preview(overrides: Partial<ImportPreview> = {}): ImportPreview {
 }
 
 function renderPage(id = 1) {
+  stubMatchMedia()
   const client = new QueryClient()
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[`/importar/${id}`]}>
-        <Routes>
-          <Route path="/importar" element={<div>Lista de importações</div>} />
-          <Route path="/importar/:id" element={<ImportPreviewPage />} />
-          <Route path="/transacoes" element={<div>Lista de transações</div>} />
-        </Routes>
-      </MemoryRouter>
+      <SidebarProvider>
+        <MemoryRouter initialEntries={[`/importar/${id}`]}>
+          <Routes>
+            <Route path="/importar" element={<div>Lista de importações</div>} />
+            <Route path="/importar/:id" element={<ImportPreviewPage />} />
+            <Route path="/transacoes" element={<div>Lista de transações</div>} />
+          </Routes>
+        </MemoryRouter>
+      </SidebarProvider>
     </QueryClientProvider>,
   )
 }
