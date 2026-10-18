@@ -9,3 +9,6 @@
 # Acesso local à VM de produção e ajustes locais do Claude Code
 /.claude/release.env
 /.claude/settings.local.json
+
+# Estado local de roles/floors do Maestri
+/.maestri/
