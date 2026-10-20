@@ -491,7 +491,8 @@ it('409 acima de 5000 alterações, sem gravar nada', function () {
 
     $this->postJson("/api/v1/rules/{$rule->id}/reconcile", ['groups' => ['fill']])
         ->assertStatus(409)
-        ->assertJsonPath('code', 'too_many_category_changes');
+        ->assertJsonPath('code', 'too_many_category_changes')
+        ->assertJsonPath('message', 'São 5001 lançamentos para alterar; o limite por vez é 5000. Para tantos lançamentos, use "Aplicar às existentes" na regra ou "Revisar regras".');
 
     expect(Transaction::query()->whereNotNull('category_id')->count())->toBe(0);
 });

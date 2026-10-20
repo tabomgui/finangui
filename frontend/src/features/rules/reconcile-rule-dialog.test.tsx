@@ -112,6 +112,7 @@ describe('ReconcileRuleDialog', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: new RegExp(NO_LONGER) }))
 
     expect(screen.getByRole('alert')).toHaveTextContent('São 70 lançamentos marcados; o máximo é 50 por vez.')
+    expect(screen.getByRole('alert')).toHaveTextContent('use “Aplicar às existentes” na regra ou “Revisar regras”.')
     expect(screen.getByRole('button', { name: 'Atualizar 70 lançamentos' })).toBeDisabled()
   })
 

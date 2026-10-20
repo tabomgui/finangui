@@ -164,7 +164,8 @@ export function ReconcileRuleDialog({ ruleId, categoryId, reconcile, onClose }: 
         {overLimit && (
           <p role="alert" className="flex items-start gap-2 text-xs text-destructive">
             <TriangleAlert aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            São {total} lançamentos marcados; o máximo é {reconcile.max_changes} por vez. Desmarque algum grupo.
+            São {total} lançamentos marcados; o máximo é {reconcile.max_changes} por vez. Para tantos lançamentos,
+            use “Aplicar às existentes” na regra ou “Revisar regras”.
           </p>
         )}
 

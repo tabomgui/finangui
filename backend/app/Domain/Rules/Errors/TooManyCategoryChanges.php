@@ -11,9 +11,11 @@ final class TooManyCategoryChanges extends DomainError
     {
         $limit = CategoryChangePlanner::MAX_CHANGES;
 
+        $hint = 'Para tantos lançamentos, use "Aplicar às existentes" na regra ou "Revisar regras".';
+
         parent::__construct($count > 0
-            ? "São {$count} lançamentos para alterar; o limite por vez é {$limit}. Desmarque algum grupo e aplique em partes."
-            : "O limite por vez é {$limit} lançamentos. Desmarque algum grupo e aplique em partes.");
+            ? "São {$count} lançamentos para alterar; o limite por vez é {$limit}. {$hint}"
+            : "O limite por vez é {$limit} lançamentos. {$hint}");
     }
 
     public function errorCode(): string
