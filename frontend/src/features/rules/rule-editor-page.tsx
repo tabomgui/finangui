@@ -41,11 +41,9 @@ export function RuleEditorPage() {
 
 type RuleFormBodyProps = {
   form: ReturnType<typeof useForm<RuleFormValues>>
-  overwrite: boolean
-  onOverwriteChange: (value: boolean) => void
 }
 
-function RuleFormBody({ form, overwrite, onOverwriteChange }: RuleFormBodyProps) {
+function RuleFormBody({ form }: RuleFormBodyProps) {
   const { errors } = form.formState
 
   return (
@@ -81,7 +79,7 @@ function RuleFormBody({ form, overwrite, onOverwriteChange }: RuleFormBodyProps)
           <ActionList form={form} />
         </div>
 
-        <RulePreviewCard form={form} overwrite={overwrite} onOverwriteChange={onOverwriteChange} />
+        <RulePreviewCard form={form} />
       </CardContent>
     </Card>
   )
@@ -118,7 +116,6 @@ function NewRulePage() {
 function NewRuleForm({ initialValues }: { initialValues: RuleFormValues }) {
   const create = useCreateRule()
   const navigate = useNavigate()
-  const [overwrite, setOverwrite] = useState(false)
 
   const form = useForm<RuleFormValues>({ resolver: zodResolver(ruleSchema), defaultValues: initialValues })
 
@@ -137,7 +134,7 @@ function NewRuleForm({ initialValues }: { initialValues: RuleFormValues }) {
       <PageHeader title="Nova regra" back="/regras" />
       <PageBody className="max-w-2xl space-y-4">
         <form className="space-y-4" onSubmit={submit} noValidate>
-          <RuleFormBody form={form} overwrite={overwrite} onOverwriteChange={setOverwrite} />
+          <RuleFormBody form={form} />
           <Button type="submit" className="w-full rounded-2xl py-6 text-base" disabled={form.formState.isSubmitting}>
             {form.formState.isSubmitting && <LoaderCircle className="h-4 w-4 animate-spin" />}
             Salvar regra
@@ -154,7 +151,6 @@ function EditRulePage({ id }: { id: number }) {
   const remove = useDeleteRule()
   const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [overwrite, setOverwrite] = useState(false)
 
   const notFound = isError && error instanceof ApiError && error.status === 404
 
@@ -231,14 +227,14 @@ function EditRulePage({ id }: { id: number }) {
       />
       <PageBody className="max-w-2xl space-y-4">
         <form className="space-y-4" onSubmit={submit} noValidate>
-          <RuleFormBody form={form} overwrite={overwrite} onOverwriteChange={setOverwrite} />
+          <RuleFormBody form={form} />
           <Button type="submit" className="w-full rounded-2xl py-6 text-base" disabled={form.formState.isSubmitting}>
             {form.formState.isSubmitting && <LoaderCircle className="h-4 w-4 animate-spin" />}
             Salvar regra
           </Button>
         </form>
 
-        <ApplyRuleDialog rule={rule} overwrite={overwrite} onOverwriteChange={setOverwrite} disabled={form.formState.isDirty} />
+        <ApplyRuleDialog rule={rule} disabled={form.formState.isDirty} />
       </PageBody>
 
       <ConfirmDialog

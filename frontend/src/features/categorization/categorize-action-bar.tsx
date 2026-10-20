@@ -17,7 +17,7 @@ import { useSidebar } from '@/components/ui/sidebar'
 import { pluralize } from '@/features/rules/rule-labels'
 import { notifyError } from '@/lib/form-errors'
 import { cn } from '@/lib/utils'
-import { categoryPath } from './category-path'
+import { categoryPath } from '@/lib/category-path'
 import {
   compactRule,
   defaultAlternatives,

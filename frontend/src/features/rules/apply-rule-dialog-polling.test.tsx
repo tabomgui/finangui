@@ -65,7 +65,7 @@ describe('ApplyRuleDialog — polling com GET real (C1)', () => {
     const client = new QueryClient()
     render(
       <QueryClientProvider client={client}>
-        <ApplyRuleDialog rule={unchanged} overwrite={false} onOverwriteChange={() => {}} disabled={false} />
+        <ApplyRuleDialog rule={unchanged} disabled={false} />
       </QueryClientProvider>,
     )
 
