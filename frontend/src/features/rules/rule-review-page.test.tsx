@@ -223,12 +223,17 @@ describe('RuleReviewPage', () => {
     expect(within(fill).getByRole('checkbox', { name: /Selecionar todos/ })).toHaveAttribute('aria-checked', 'false')
   })
 
-  it('grupo truncado avisa quantos mostra de quantos', () => {
+  it('grupo truncado avisa no cabeçalho, já fechado, quantos mostra de quantos', () => {
     renderPage()
+
+    const collapsed = group('Categorizados por regra que não se aplica mais')
+    expect(within(collapsed).getByRole('button', { expanded: false })).toHaveTextContent('900 lançamentos · mostrando os 1 mais recentes de 900')
+    expect(within(group('Sem categoria — as regras resolvem')).queryByText(/mais recentes de/)).not.toBeInTheDocument()
+
     expand('Categorizados por regra que não se aplica mais')
 
     const stale = group('Categorizados por regra que não se aplica mais')
-    expect(screen.getByText('mostrando os 1 mais recentes de 900')).toBeInTheDocument()
+    expect(within(stale).getAllByText(/mostrando os 1 mais recentes de 900/)).toHaveLength(1)
     expect(within(stale).getByText('sem categoria')).toBeInTheDocument()
     expect(within(stale).getByText('Hoje: Lazer (regra Cinema antigo)')).toBeInTheDocument()
     expect(within(stale).getByText('Regra: Cinema antigo (desativada)')).toBeInTheDocument()

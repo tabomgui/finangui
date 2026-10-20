@@ -70,6 +70,8 @@ export const ReviewGroupCard = memo(function ReviewGroupCard({
             <span className="block font-medium">{label}</span>
             <span className="block text-xs text-muted-foreground">
               {launchCount(group.count)}
+              {/* No cabeçalho (visível fechado também): "selecionar tudo" só marca os itens que vieram. */}
+              {group.truncated && ` · mostrando os ${group.items.length} mais recentes de ${group.count}`}
               {selectedCount > 0 && (
                 <>
                   {' · '}
@@ -87,11 +89,6 @@ export const ReviewGroupCard = memo(function ReviewGroupCard({
       {expanded && (
         <div id={contentId}>
           <p className="px-3 pt-2 text-xs text-muted-foreground">{REVIEW_GROUP_HINTS[group.key]}</p>
-          {group.truncated && (
-            <p className="px-3 pt-1 text-xs text-muted-foreground">
-              mostrando os {group.items.length} mais recentes de {group.count}
-            </p>
-          )}
           <ul className="mt-2 divide-y divide-border border-t border-border">
             {visible.map((item) => (
               <li key={item.transaction_id}>
