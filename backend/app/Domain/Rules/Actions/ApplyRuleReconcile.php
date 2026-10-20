@@ -2,7 +2,6 @@
 
 namespace App\Domain\Rules\Actions;
 
-use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Data\RuleReconcileApplyResult;
 use App\Domain\Rules\Enums\ReconcileGroup;
 use App\Domain\Rules\Errors\TooManyCategoryChanges;
@@ -19,8 +18,9 @@ use Illuminate\Support\Facades\DB;
  * (TooManyCategoryChanges).
  *
  * Trava a linha do usuário (como App\Domain\Categorization\Actions\ApplyCategorization,
- * serializando com ela e com a importação) e a da regra, relida dentro da
- * transação: vale a definição salva agora, não a da prévia. Os lançamentos
+ * serializando com ela e com a importação) e a da regra; as regras ativas
+ * são lidas dentro da transação: vale o que está salvo agora, não o da
+ * prévia. Os lançamentos
  * de cada grupo são recalculados na hora; os escolhidos são travados (FOR
  * UPDATE, por id) e recalculados de novo antes de gravar — quem saiu do
  * grupo entre uma coisa e outra só conta em "skipped".
@@ -42,13 +42,13 @@ final class ApplyRuleReconcile
             User::query()->whereKey($rule->user_id)->lockForUpdate()->first();
 
             $locked = Rule::query()->whereKey($rule->id)->lockForUpdate()->firstOrFail();
-            $definition = RuleDefinition::fromRule($locked);
+            $rules = $this->planner->activeRules();
 
             $ids = [];
             $this->planner->reconcileCandidates($locked->id)
                 ->lazyById(500)
-                ->each(function (Transaction $transaction) use ($definition, $locked, $groups, &$ids): void {
-                    $change = $this->planner->forRule($transaction, $definition, $locked->is_active);
+                ->each(function (Transaction $transaction) use ($locked, $rules, $groups, &$ids): void {
+                    $change = $this->planner->forRule($transaction, $locked->id, $rules);
 
                     if ($change !== null && in_array($change->group, $groups, true)) {
                         $ids[] = $transaction->id;
@@ -74,7 +74,7 @@ final class ApplyRuleReconcile
                 $skipped += count($chunk) - $transactions->count();
 
                 foreach ($transactions as $transaction) {
-                    $change = $this->planner->forRule($transaction, $definition, $locked->is_active);
+                    $change = $this->planner->forRule($transaction, $locked->id, $rules);
 
                     if ($change !== null && in_array($change->group, $groups, true) && $this->planner->apply($change)) {
                         $applied[$change->group->value]++;

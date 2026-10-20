@@ -14,10 +14,13 @@ use App\Domain\Transactions\Models\Transaction;
 
 /**
  * Prévia, depois de editar uma regra, do que mudaria só na categoria dos
- * lançamentos (ver CategoryChangePlanner::forRule()): contagem e amostra dos
- * 20 mais recentes (pela data do lançamento) por grupo. Regra desativada só tira a categoria do que ela
- * categorizou (motivo "inactive"). Nunca grava nada; a aplicação
- * (App\Domain\Rules\Actions\ApplyRuleReconcile) recalcula tudo.
+ * lançamentos (ver CategoryChangePlanner::forRule()): a regra editada é
+ * avaliada junto com as regras ativas, primeira que define categoria vence,
+ * como na revisão de regras. Contagem e amostra dos 20 mais recentes (pela
+ * data do lançamento) por grupo. Regra desativada só tira a categoria do
+ * que ela categorizou e nenhuma regra ativa categoriza (motivo "inactive").
+ * Nunca grava nada; a aplicação (App\Domain\Rules\Actions\ApplyRuleReconcile)
+ * recalcula tudo.
  */
 final class ReconcileRule
 {
@@ -30,6 +33,7 @@ final class ReconcileRule
     public function handle(Rule $rule): RuleReconcileResult
     {
         $definition = RuleDefinition::fromRule($rule);
+        $rules = $this->planner->activeRules();
 
         /** @var array<string, int> $counts */
         $counts = [];
@@ -43,8 +47,8 @@ final class ReconcileRule
 
         $this->planner->reconcileCandidates($rule->id)
             ->lazyById(500)
-            ->each(function (Transaction $transaction) use ($definition, $rule, &$counts, &$samples): void {
-                $change = $this->planner->forRule($transaction, $definition, $rule->is_active);
+            ->each(function (Transaction $transaction) use ($rule, $rules, &$counts, &$samples): void {
+                $change = $this->planner->forRule($transaction, $rule->id, $rules);
 
                 if ($change === null) {
                     return;

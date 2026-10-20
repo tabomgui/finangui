@@ -103,55 +103,54 @@ final class CategoryChangePlanner
     }
 
     /**
-     * Só esta regra, recém-editada:
-     * - sem categoria e a regra dá uma: fill;
-     * - categorizado por ela, ainda casa e a categoria dela mudou: recategorize;
-     * - categorizado por ela e ela não dá mais categoria (não casa ou perdeu
-     *   o set_category): clear.
-     * Desativada ($active falso), a regra não dá categoria a ninguém: fill e
-     * recategorize ficam vazios e todo lançamento categorizado por ela cai
-     * em clear — o mesmo que a revisão de regras diria (stale), nunca o
-     * contrário.
+     * A regra recém-editada ($ruleId), avaliada junto com todas as regras
+     * ativas ($rules, de activeRules()) na ordem do motor, como na revisão
+     * (forRules()) — primeira que define categoria vence:
+     * - sem categoria e a regra editada é a vencedora: fill;
+     * - categorizado por ela, ela ainda vence e a categoria mudou: recategorize;
+     * - categorizado por ela e nenhuma regra ativa dá categoria: clear.
+     * Se outra regra ativa vence agora, o lançamento fica fora da
+     * reconciliação (a revisão de regras cobre como conflict). Desativada,
+     * a regra editada nem entra em $rules: nunca vence, e só cai em clear o
+     * que nenhuma regra ativa categoriza — o mesmo que a revisão chama de
+     * stale. Assim, aplicar a reconciliação nunca deixa algo que a revisão
+     * proponha desfazer.
      *
      * "Sem categoria" inclui o que tem categorized_by = manual mas
      * category_id nulo (a categoria escolhida à mão foi excluída depois):
      * não há mais categoria à mão nenhuma a preservar.
+     *
+     * @param  list<RuleDefinition>  $rules
      */
-    public function forRule(Transaction $transaction, RuleDefinition $rule, bool $active = true): ?CategoryChange
+    public function forRule(Transaction $transaction, int $ruleId, array $rules): ?CategoryChange
     {
-        if (self::isManual($transaction) || $rule->id === null) {
+        if (self::isManual($transaction)) {
             return null;
         }
 
-        if (! $active) {
-            return $transaction->category_id !== null
-                && $transaction->categorized_by === "rule:{$rule->id}"
-                && $this->canClear($transaction)
-                ? new CategoryChange($transaction, ReconcileGroup::Clear, null, $rule->id, null)
-                : null;
-        }
-
-        $outcome = $this->evaluate($transaction, [$rule]);
+        $outcome = $this->evaluate($transaction, $rules);
         $target = $this->target($transaction, $outcome);
+        $wins = $outcome->categoryRuleId === $ruleId;
 
         if ($transaction->category_id === null) {
-            return $target !== null
-                ? new CategoryChange($transaction, ReconcileGroup::Fill, $target, $rule->id, $outcome)
+            return $wins && $target !== null
+                ? new CategoryChange($transaction, ReconcileGroup::Fill, $target, $ruleId, $outcome)
                 : null;
         }
 
-        if ($transaction->categorized_by !== "rule:{$rule->id}") {
+        if ($transaction->categorized_by !== "rule:{$ruleId}") {
             return null;
         }
 
-        if ($target !== null) {
-            return new CategoryChange($transaction, ReconcileGroup::Recategorize, $target, $rule->id, $outcome);
+        if ($wins && $target !== null) {
+            return new CategoryChange($transaction, ReconcileGroup::Recategorize, $target, $ruleId, $outcome);
         }
 
-        // Categoria da regra igual à atual, ou arquivada/excluída: nada a
-        // fazer — só tira quando a regra de fato não dá mais categoria.
+        // Categoria igual à atual, arquivada/excluída ou de outra regra que
+        // agora vence: nada a fazer aqui — só tira quando nenhuma regra
+        // ativa dá categoria.
         if ($outcome->categoryId === null && $this->canClear($transaction)) {
-            return new CategoryChange($transaction, ReconcileGroup::Clear, null, $rule->id, null);
+            return new CategoryChange($transaction, ReconcileGroup::Clear, null, $ruleId, null);
         }
 
         return null;

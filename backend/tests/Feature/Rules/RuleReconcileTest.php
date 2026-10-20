@@ -203,6 +203,106 @@ it('recategorize pode trocar uma categoria de transferência pela nova categoria
     expect($transaction->refresh()->category_id)->toBe($rent->id);
 });
 
+it('fill: só quando a regra editada é a vencedora entre as regras ativas', function () {
+    actingAsUser();
+    $mine = Category::factory()->create();
+    $winner = Category::factory()->create();
+    reconcileRule($winner, ['name' => 'Antes', 'priority' => 0, 'conditions' => [['field' => 'description', 'op' => 'contains', 'value' => 'uber eats']]]);
+    $rule = reconcileRule($mine, ['priority' => 1]);
+
+    Transaction::factory()->create(['description' => 'Uber eats', 'category_id' => null]);
+    $onlyMine = Transaction::factory()->create(['description' => 'Uber trip', 'category_id' => null]);
+
+    $groups = reconcileGroups($this->getJson("/api/v1/rules/{$rule->id}/reconcile")->assertOk()->json());
+
+    expect(reconcileSampleIds($groups['fill']))->toBe([$onlyMine->id]);
+});
+
+it('recategorize: fica de fora quando outra regra ativa, de prioridade maior, agora vence', function () {
+    actingAsUser();
+    $old = Category::factory()->create();
+    $mine = Category::factory()->create();
+    $winner = Category::factory()->create();
+    reconcileRule($winner, ['name' => 'Antes', 'priority' => 0, 'conditions' => [['field' => 'description', 'op' => 'contains', 'value' => 'uber eats']]]);
+    $rule = reconcileRule($mine, ['priority' => 1]);
+    $tag = "rule:{$rule->id}";
+
+    Transaction::factory()->create(['description' => 'Uber eats', 'category_id' => $old->id, 'categorized_by' => $tag]);
+    $stillMine = Transaction::factory()->create(['description' => 'Uber trip', 'category_id' => $old->id, 'categorized_by' => $tag]);
+
+    $groups = reconcileGroups($this->getJson("/api/v1/rules/{$rule->id}/reconcile")->assertOk()->json());
+
+    expect(reconcileSampleIds($groups['recategorize']))->toBe([$stillMine->id]);
+    expect($groups['clear']['count'])->toBe(0);
+});
+
+it('clear: só quando nenhuma regra ativa dá categoria', function () {
+    actingAsUser();
+    $old = Category::factory()->create();
+    reconcileRule(Category::factory()->create(), ['name' => 'Padaria', 'priority' => 0, 'conditions' => [['field' => 'description', 'op' => 'contains', 'value' => 'padaria']]]);
+    $rule = reconcileRule(Category::factory()->create(), ['priority' => 1]);
+    $tag = "rule:{$rule->id}";
+
+    Transaction::factory()->create(['description' => 'Padaria Central', 'category_id' => $old->id, 'categorized_by' => $tag]);
+    $orphan = Transaction::factory()->create(['description' => 'Academia', 'category_id' => $old->id, 'categorized_by' => $tag]);
+
+    $groups = reconcileGroups($this->getJson("/api/v1/rules/{$rule->id}/reconcile")->assertOk()->json());
+
+    expect(reconcileSampleIds($groups['clear']))->toBe([$orphan->id]);
+});
+
+it('regra editada desativada: clear só do que nenhuma regra ativa categoriza', function () {
+    actingAsUser();
+    $old = Category::factory()->create();
+    reconcileRule(Category::factory()->create(), ['name' => 'Outra', 'priority' => 0, 'conditions' => [['field' => 'description', 'op' => 'contains', 'value' => 'uber eats']]]);
+    $rule = reconcileRule(Category::factory()->create(), ['priority' => 1, 'is_active' => false]);
+    $tag = "rule:{$rule->id}";
+
+    Transaction::factory()->create(['description' => 'Uber eats', 'category_id' => $old->id, 'categorized_by' => $tag]);
+    $orphan = Transaction::factory()->create(['description' => 'Uber trip', 'category_id' => $old->id, 'categorized_by' => $tag]);
+
+    $groups = reconcileGroups($this->getJson("/api/v1/rules/{$rule->id}/reconcile")->assertOk()->json());
+
+    expect($groups['fill']['count'])->toBe(0);
+    expect($groups['recategorize']['count'])->toBe(0);
+    expect(reconcileSampleIds($groups['clear']))->toBe([$orphan->id]);
+    expect($groups['clear']['reason'])->toBe('inactive');
+});
+
+it('depois de aplicar a reconciliação, a revisão nunca propõe desfazer o que ela fez', function (bool $active) {
+    actingAsUser();
+    $old = Category::factory()->create();
+    $mine = Category::factory()->create();
+    reconcileRule(Category::factory()->create(), ['name' => 'Antes', 'priority' => 0, 'conditions' => [['field' => 'description', 'op' => 'contains', 'value' => 'uber eats']]]);
+    $rule = reconcileRule($mine, ['priority' => 1, 'is_active' => $active]);
+    $tag = "rule:{$rule->id}";
+
+    $rows = collect([
+        Transaction::factory()->create(['description' => 'Uber eats', 'category_id' => null]),
+        Transaction::factory()->create(['description' => 'Uber trip', 'category_id' => null]),
+        Transaction::factory()->create(['description' => 'Uber eats', 'category_id' => $old->id, 'categorized_by' => $tag]),
+        Transaction::factory()->create(['description' => 'Uber trip', 'category_id' => $old->id, 'categorized_by' => $tag]),
+        Transaction::factory()->create(['description' => 'Academia', 'category_id' => $old->id, 'categorized_by' => $tag]),
+    ]);
+    $before = $rows->mapWithKeys(fn (Transaction $t) => [$t->id => [$t->category_id, $t->categorized_by]]);
+
+    $this->postJson("/api/v1/rules/{$rule->id}/reconcile", ['groups' => ['recategorize', 'fill', 'clear']])->assertOk();
+
+    $changed = $rows->map->refresh()
+        ->filter(fn (Transaction $t) => [$t->category_id, $t->categorized_by] !== $before[$t->id])
+        ->pluck('id');
+    expect($changed)->not->toBeEmpty();
+
+    $reviewed = collect($this->getJson('/api/v1/rules/review')->assertOk()->json('data.groups'))
+        ->flatMap(fn (array $group) => collect($group['items'])->pluck('transaction_id'));
+
+    expect($reviewed->intersect($changed)->all())->toBe([]);
+
+    // E a reconciliação, rodada de novo, não acha mais nada a fazer.
+    $again = reconcileGroups($this->getJson("/api/v1/rules/{$rule->id}/reconcile")->assertOk()->json());
+    expect(collect($again)->sum('count'))->toBe(0);
+})->with(['ativa' => true, 'desativada' => false]);
+
 it('deixa de fora perna de transferência, prevista de recorrência e pagamento de fatura', function () {
     actingAsUser();
     $old = Category::factory()->create();
