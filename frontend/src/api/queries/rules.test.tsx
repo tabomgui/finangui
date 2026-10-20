@@ -15,7 +15,7 @@ vi.mock('@/api/client', async (importOriginal) => {
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
-const { useReorderRules, useCreateRule } = await import('./rules')
+const { useReorderRules, useCreateRule, useApplyRuleReconcile } = await import('./rules')
 
 function rule(id: number, name: string): Rule {
   return {
@@ -112,5 +112,27 @@ describe('useCreateRule', () => {
     })
 
     await waitFor(() => expect(client.getQueryData(queryKeys.rule(42))).toEqual(created))
+  })
+})
+
+describe('useApplyRuleReconcile', () => {
+  it('manda os grupos para a regra certa e invalida o razão e as regras', async () => {
+    POST.mockResolvedValue({ data: { data: { recategorize: 1, fill: 2, clear: 0, skipped: 0 } }, error: undefined, response: { ok: true, status: 200 } })
+    const client = new QueryClient()
+    client.setQueryData(queryKeys.transactions({}), 'x')
+    client.setQueryData(queryKeys.rules(), [])
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+
+    const { result } = renderHook(() => useApplyRuleReconcile(), { wrapper })
+
+    await act(async () => {
+      await result.current.mutateAsync({ id: 7, body: { groups: ['recategorize', 'fill'] } })
+    })
+
+    expect(POST).toHaveBeenCalledWith('/rules/{rule}/reconcile', { params: { path: { rule: 7 } }, body: { groups: ['recategorize', 'fill'] } })
+    await waitFor(() => {
+      expect(client.getQueryState(queryKeys.transactions({}))?.isInvalidated).toBe(true)
+      expect(client.getQueryState(queryKeys.rules())?.isInvalidated).toBe(true)
+    })
   })
 })

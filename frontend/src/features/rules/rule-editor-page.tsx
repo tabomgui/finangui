@@ -5,8 +5,9 @@ import { Controller, useForm } from 'react-hook-form'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ApiError } from '@/api/errors'
-import { useCreateRule, useDeleteRule, useRule, useUpdateRule } from '@/api/queries/rules'
+import { useCreateRule, useDeleteRule, useFetchRuleReconcile, useRule, useUpdateRule } from '@/api/queries/rules'
 import { useTransaction } from '@/api/queries/transactions'
+import type { RuleReconcile } from '@/api/types'
 import { PageBody } from '@/components/layout/page-body'
 import { headerIconButton } from '@/components/layout/theme-toggle'
 import { PageHeader } from '@/components/layout/page-header'
@@ -21,7 +22,9 @@ import { Switch } from '@/components/ui/switch'
 import { applyFieldErrors, notifyError } from '@/lib/form-errors'
 import { ActionList } from './action-list'
 import { ApplyRuleDialog } from './apply-rule-dialog'
+import { nonEmptyReconcileGroups } from './category-change-labels'
 import { ConditionList } from './condition-list'
+import { ReconcileRuleDialog } from './reconcile-rule-dialog'
 import { isCoverablePath } from './rule-labels'
 import { ruleDefaults, ruleDefaultsFromTransaction, ruleSchema, toRuleBody, type RuleFormValues } from './rule-form-values'
 import { RulePreviewCard } from './rule-preview-card'
@@ -151,6 +154,8 @@ function EditRulePage({ id }: { id: number }) {
   const remove = useDeleteRule()
   const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [reconcile, setReconcile] = useState<RuleReconcile | null>(null)
+  const fetchReconcile = useFetchRuleReconcile()
 
   const notFound = isError && error instanceof ApiError && error.status === 404
 
@@ -209,6 +214,14 @@ function EditRulePage({ id }: { id: number }) {
       // "isDirty" ficar true, "Aplicar às existentes" continuaria desabilitado mesmo recém-salvo.
       form.reset(ruleDefaults(updated))
       toast.success('Regra salva.')
+      // Sem esperar: o botão de salvar já volta ao normal; o diálogo só abre se a versão nova da
+      // regra mudaria a categoria de algum lançamento existente.
+      fetchReconcile(id).then(
+        (data) => {
+          if (nonEmptyReconcileGroups(data).length > 0) setReconcile(data)
+        },
+        () => toast.error('Não foi possível conferir os lançamentos desta regra.'),
+      )
     } catch (error) {
       if (!applyFieldErrors(error, form.setError, '*', isCoverablePath)) notifyError(error)
     }
@@ -236,6 +249,8 @@ function EditRulePage({ id }: { id: number }) {
 
         <ApplyRuleDialog rule={rule} disabled={form.formState.isDirty} />
       </PageBody>
+
+      {reconcile && <ReconcileRuleDialog ruleId={id} reconcile={reconcile} onClose={() => setReconcile(null)} />}
 
       <ConfirmDialog
         open={confirmDelete}

@@ -1,6 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCallback } from 'react'
 import { api, expectOk, unwrap } from '@/api/client'
-import { invalidateRules, queryKeys } from '@/api/query-keys'
+import { invalidateLedger, invalidateRules, queryKeys } from '@/api/query-keys'
 import type { components } from '@/api/schema'
 import type { Rule, RuleBody } from '@/api/types'
 import { notifyError } from '@/lib/form-errors'
@@ -9,9 +10,11 @@ type StoreRuleRequest = components['schemas']['StoreRuleRequest']
 type UpdateRuleRequest = components['schemas']['UpdateRuleRequest']
 type PreviewRuleRequest = components['schemas']['PreviewRuleRequest']
 type ApplyRuleRequest = components['schemas']['ApplyRuleRequest']
+type ApplyRuleReconcileRequest = components['schemas']['ApplyRuleReconcileRequest']
 
 export type CreateRuleBody = RuleBody & { name: string; is_active?: boolean }
 export type UpdateRuleBody = Partial<RuleBody> & { name?: string; is_active?: boolean }
+/** Sem `overwrite`, o backend usa `false` (só os sem categoria recebem a categoria da regra). */
 export type PreviewRuleBody = RuleBody & { overwrite?: boolean }
 
 /**
@@ -138,5 +141,35 @@ export function useApplyRule() {
   return useMutation({
     mutationFn: async ({ id, body }: { id: number; body: ApplyRuleRequest }) =>
       (await unwrap(api.POST('/rules/{rule}/apply', { params: { path: { rule: id } }, body }))).data,
+  })
+}
+
+/**
+ * Busca, sob demanda, o que a regra salva mudaria na categoria dos lançamentos (chamada logo depois
+ * de salvar uma edição). `staleTime: 0`: cada gravação pede uma conta nova, nunca a da anterior.
+ */
+export function useFetchRuleReconcile() {
+  const queryClient = useQueryClient()
+  return useCallback(
+    (id: number) =>
+      queryClient.fetchQuery({
+        queryKey: queryKeys.ruleReconcile(id),
+        queryFn: async () => (await unwrap(api.GET('/rules/{rule}/reconcile', { params: { path: { rule: id } } }))).data,
+        staleTime: 0,
+      }),
+    [queryClient],
+  )
+}
+
+/** Aplica os grupos escolhidos da reconciliação; o backend recalcula cada lançamento na hora. */
+export function useApplyRuleReconcile() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, body }: { id: number; body: ApplyRuleReconcileRequest }) =>
+      (await unwrap(api.POST('/rules/{rule}/reconcile', { params: { path: { rule: id } }, body }))).data,
+    onSuccess: () => {
+      void invalidateLedger(queryClient)
+      void invalidateRules(queryClient)
+    },
   })
 }

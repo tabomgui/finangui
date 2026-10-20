@@ -12,6 +12,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 const createMutateAsync = vi.fn()
 const updateMutateAsync = vi.fn()
 const deleteMutateAsync = vi.fn()
+const fetchReconcile = vi.fn()
 
 let mockRule: Rule | undefined
 let mockRuleError = false
@@ -31,6 +32,8 @@ vi.mock('@/api/queries/rules', () => ({
   // apply-rule-dialog.test.tsx); aqui só o suficiente para RuleEditorPage renderizar sem rede.
   useRulePreview: () => ({ data: undefined, isPending: false, isPlaceholderData: false, isError: false, error: null, refetch: vi.fn() }),
   useApplyRule: () => ({ mutateAsync: vi.fn() }),
+  useFetchRuleReconcile: () => fetchReconcile,
+  useApplyRuleReconcile: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
 let mockTransaction: Transaction | undefined
@@ -141,6 +144,8 @@ beforeEach(() => {
   createMutateAsync.mockReset()
   updateMutateAsync.mockReset()
   deleteMutateAsync.mockReset()
+  fetchReconcile.mockReset()
+  fetchReconcile.mockResolvedValue({ max_changes: 5000, groups: [] })
   vi.mocked(toast.error).mockReset()
   vi.mocked(toast.success).mockReset()
 })
@@ -247,6 +252,54 @@ describe('RuleEditorPage', () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Regra salva.'))
     expect(screen.getByRole('button', { name: 'Aplicar às existentes' })).not.toBeDisabled()
     expect(screen.queryByText('Salve a regra antes de aplicar.')).not.toBeInTheDocument()
+  })
+
+  it('editar: depois de salvar, confere a reconciliação e abre o diálogo quando algo mudaria', async () => {
+    mockRule = rule()
+    updateMutateAsync.mockImplementation(async () => rule())
+    fetchReconcile.mockResolvedValue({
+      max_changes: 5000,
+      groups: [
+        { key: 'recategorize', count: 0, sample: [] },
+        { key: 'fill', count: 4, sample: [] },
+        { key: 'clear', count: 0, reason: 'no_longer_matches', sample: [] },
+      ],
+    })
+
+    renderPage(['/regras/5'])
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
+
+    expect(await screen.findByText('Atualizar lançamentos desta regra?')).toBeInTheDocument()
+    expect(fetchReconcile).toHaveBeenCalledWith(5)
+    expect(screen.getByRole('button', { name: 'Atualizar 4 lançamentos' })).toBeInTheDocument()
+  })
+
+  it('editar: sem nada a mudar, não abre o diálogo de atualizar lançamentos', async () => {
+    mockRule = rule()
+    updateMutateAsync.mockImplementation(async () => rule())
+    fetchReconcile.mockResolvedValue({ max_changes: 5000, groups: [{ key: 'fill', count: 0, sample: [] }] })
+
+    renderPage(['/regras/5'])
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
+
+    await waitFor(() => expect(fetchReconcile).toHaveBeenCalledWith(5))
+    expect(screen.queryByText('Atualizar lançamentos desta regra?')).not.toBeInTheDocument()
+  })
+
+  it('criar uma regra não confere reconciliação', async () => {
+    createMutateAsync.mockImplementation(async () => {
+      mockRule = rule({ id: 42 })
+      return mockRule
+    })
+    renderPage(['/regras/nova'])
+
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Uber' } })
+    fireEvent.change(screen.getByLabelText('Valor', { exact: false }), { target: { value: 'uber' } })
+    chooseCategory('Transporte')
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
+
+    expect(await screen.findByText('Editar regra')).toBeInTheDocument()
+    expect(fetchReconcile).not.toHaveBeenCalled()
   })
 
   it('422 num caminho sem campo visível (tipo da ação) cai no toast genérico (I1)', async () => {
