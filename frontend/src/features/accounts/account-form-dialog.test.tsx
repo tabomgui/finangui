@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/errors'
 import type { Account } from '@/api/types'
@@ -79,10 +80,10 @@ describe('AccountFormDialog', () => {
     await waitFor(() => expect(screen.getByText('Informe o nome da conta.')).toBeInTheDocument())
   })
 
-  it('aceita saldo inicial negativo', () => {
+  it('aceita saldo inicial negativo', async () => {
     renderDialog()
 
-    fireEvent.change(screen.getByLabelText('Saldo inicial'), { target: { value: '-150,00' } })
+    await userEvent.type(screen.getByLabelText('Saldo inicial'), '-15000')
 
     expect(screen.getByLabelText('Saldo inicial')).toHaveValue('-150,00')
     expect(screen.queryByText('Informe um valor válido.')).not.toBeInTheDocument()
@@ -139,7 +140,7 @@ describe('AccountFormDialog', () => {
     fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Nubank' } })
     await selectAccountType('Cartão de crédito')
 
-    fireEvent.change(screen.getByLabelText('Limite'), { target: { value: '5.000,00' } })
+    await userEvent.type(screen.getByLabelText('Limite'), '500000')
     fireEvent.change(screen.getByLabelText('Dia de fechamento'), { target: { value: '3' } })
     fireEvent.change(screen.getByLabelText('Dia de vencimento'), { target: { value: '10' } })
     fireEvent.change(screen.getByLabelText('Final do cartão'), { target: { value: '1234' } })

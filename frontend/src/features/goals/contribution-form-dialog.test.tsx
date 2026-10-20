@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ContributionFormDialog } from './contribution-form-dialog'
 
@@ -34,7 +35,7 @@ describe('ContributionFormDialog', () => {
   it('registra um aporte com valor positivo', async () => {
     renderDialog()
 
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '200,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '20000')
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
 
     await waitFor(() =>
@@ -47,7 +48,7 @@ describe('ContributionFormDialog', () => {
     renderDialog()
 
     fireEvent.click(screen.getByRole('switch', { name: 'Retirada' }))
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '150,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '15000')
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
 
     await waitFor(() =>
@@ -59,7 +60,7 @@ describe('ContributionFormDialog', () => {
   it('inclui a nota quando preenchida', async () => {
     renderDialog()
 
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '100,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '10000')
     fireEvent.change(screen.getByLabelText('Nota (opcional)'), { target: { value: 'Décimo terceiro' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
 

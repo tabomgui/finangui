@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Goal } from '@/api/types'
 import { GoalFormDialog } from './goal-form-dialog'
@@ -79,7 +80,7 @@ describe('GoalFormDialog', () => {
     renderDialog()
 
     fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Viagem' } })
-    fireEvent.change(screen.getByLabelText('Valor da meta'), { target: { value: '5.000,00' } })
+    await userEvent.type(screen.getByLabelText('Valor da meta'), '500000')
     fireEvent.click(screen.getByRole('button', { name: 'Criar meta' }))
 
     await waitFor(() =>
@@ -94,7 +95,7 @@ describe('GoalFormDialog', () => {
     renderDialog()
 
     fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Viagem' } })
-    fireEvent.change(screen.getByLabelText('Valor da meta'), { target: { value: '5.000,00' } })
+    await userEvent.type(screen.getByLabelText('Valor da meta'), '500000')
     fireEvent.click(screen.getByRole('switch', { name: 'Definir uma data-limite' }))
     fireEvent.click(screen.getByRole('button', { name: 'Criar meta' }))
 
@@ -106,7 +107,7 @@ describe('GoalFormDialog', () => {
     renderDialog()
 
     fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Viagem' } })
-    fireEvent.change(screen.getByLabelText('Valor da meta'), { target: { value: '5.000,00' } })
+    await userEvent.type(screen.getByLabelText('Valor da meta'), '500000')
     fireEvent.click(screen.getByRole('switch', { name: 'Definir uma data-limite' }))
     fireEvent.change(screen.getByLabelText('Data'), { target: { value: '2026-12-01' } })
     fireEvent.click(screen.getByRole('button', { name: 'Criar meta' }))
@@ -120,7 +121,7 @@ describe('GoalFormDialog', () => {
     renderDialog()
 
     fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Viagem' } })
-    fireEvent.change(screen.getByLabelText('Valor da meta'), { target: { value: '5.000,00' } })
+    await userEvent.type(screen.getByLabelText('Valor da meta'), '500000')
     fireEvent.click(screen.getByRole('switch', { name: 'Acompanhar saldo de uma conta' }))
     fireEvent.click(screen.getByRole('button', { name: 'Criar meta' }))
 

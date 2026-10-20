@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { queryKeys } from '@/api/query-keys'
 import type { Account, CardStatement, Category, Transaction } from '@/api/types'
@@ -181,7 +182,7 @@ describe('EntryForm', () => {
       </QueryClientProvider>,
     )
 
-    fireEvent.change(screen.getByLabelText(/Valor/), { target: { value: '100,00' } })
+    await userEvent.type(screen.getByLabelText(/Valor/), '10000')
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Compra' } })
 
     await chooseOption('Parcelas', '3x')
@@ -264,7 +265,7 @@ describe('Repetir', () => {
 
     await chooseOption('Frequência', 'Toda semana')
 
-    fireEvent.change(screen.getByLabelText(/Valor/), { target: { value: '50,00' } })
+    await userEvent.type(screen.getByLabelText(/Valor/), '5000')
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Assinatura' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))
 
@@ -294,7 +295,7 @@ describe('Repetir', () => {
 
     expect(screen.queryByLabelText('Repetir')).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText(/Valor/), { target: { value: '100,00' } })
+    await userEvent.type(screen.getByLabelText(/Valor/), '10000')
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Compra' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
 

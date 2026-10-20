@@ -221,7 +221,7 @@ describe('RuleEditorPage', () => {
     fireEvent.click(await screen.findByRole('option', { name: 'Valor' }))
 
     expect(screen.getByLabelText('Operador', { exact: false })).toHaveTextContent('é igual a')
-    expect(screen.getByLabelText('Valor', { exact: false })).toHaveAttribute('inputmode', 'decimal')
+    expect(screen.getByLabelText('Valor', { exact: false })).toHaveAttribute('inputmode', 'numeric')
   })
 
   it('editar: carrega a regra existente', () => {

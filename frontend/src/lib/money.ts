@@ -105,3 +105,23 @@ export function parseMoneyInput(raw: string): number | null {
 
   return negative && cents !== 0 ? -cents : cents
 }
+
+/** Teto de dígitos do campo de dinheiro (até 99.999.999.999,99), longe do limite de inteiro seguro. */
+export const MONEY_INPUT_MAX_DIGITS = 13
+
+/**
+ * Só os dígitos do texto, sem zeros à esquerda ("0012" → "12"). Um texto só de zeros vira "0",
+ * para o campo ainda mostrar "0,00"; sem nenhum dígito, devolve "".
+ */
+export function moneyDigits(raw: string): string {
+  const digits = raw.replace(/\D/g, '')
+  if (digits === '') return ''
+  return digits.replace(/^0+/, '') || '0'
+}
+
+/** Dígitos lidos como centavos, sempre com duas casas ("123456" → "1.234,56"); "-" sozinho quando ainda não há dígito. */
+export function formatMoneyDigits(digits: string, negative = false): string {
+  const sign = negative ? '-' : ''
+  if (digits === '') return sign
+  return sign + centsToInputString(Number(digits))
+}

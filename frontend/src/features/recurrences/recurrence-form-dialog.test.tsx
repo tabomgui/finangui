@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/errors'
 import type { Recurrence } from '@/api/types'
@@ -96,7 +97,7 @@ describe('RecurrenceFormDialog', () => {
     renderDialog()
 
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Aluguel' } })
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '1.500,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '150000')
     await selectOption('Conta', 'Nubank')
     fireEvent.change(screen.getByLabelText('Dia do mês'), { target: { value: '10' } })
 
@@ -121,7 +122,7 @@ describe('RecurrenceFormDialog', () => {
     renderDialog()
 
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Assinatura' } })
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '30,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '3000')
     await selectOption('Conta', 'Nubank')
     await selectOption('Frequência', 'Toda semana')
 
@@ -157,7 +158,7 @@ describe('RecurrenceFormDialog', () => {
     renderDialog()
 
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Aluguel' } })
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '1.500,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '150000')
     await selectOption('Conta', 'Nubank')
     fireEvent.change(screen.getByLabelText('Dia do mês'), { target: { value: '10' } })
 
@@ -171,7 +172,7 @@ describe('RecurrenceFormDialog', () => {
     renderDialog()
 
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Aluguel' } })
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '1.500,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '150000')
     await selectOption('Conta', 'Nubank')
     fireEvent.change(screen.getByLabelText('Dia do mês'), { target: { value: '10' } })
     fireEvent.change(screen.getByLabelText('Texto que identifica no extrato'), { target: { value: '1234' } })
@@ -193,7 +194,7 @@ describe('RecurrenceFormDialog', () => {
     renderDialog()
 
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Aluguel' } })
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '1.500,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '150000')
     await selectOption('Conta', 'Nubank')
 
     fireEvent.click(screen.getByRole('button', { name: 'Criar recorrência' }))
@@ -218,7 +219,7 @@ describe('RecurrenceFormDialog', () => {
     renderDialog()
 
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Aluguel' } })
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '1.500,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '150000')
     await selectOption('Conta', 'Nubank')
     fireEvent.change(screen.getByLabelText('Intervalo'), { target: { value: '13' } })
 
@@ -232,7 +233,7 @@ describe('RecurrenceFormDialog', () => {
     renderDialog()
 
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Aluguel' } })
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '1.500,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '150000')
     await selectOption('Conta', 'Nubank')
     fireEvent.change(screen.getByLabelText('Início'), { target: { value: '2026-10-10' } })
     fireEvent.change(screen.getByLabelText('Fim'), { target: { value: '2026-10-01' } })
@@ -250,7 +251,7 @@ describe('RecurrenceFormDialog', () => {
     renderDialog()
 
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Aluguel' } })
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '1.500,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '150000')
     await selectOption('Conta', 'Nubank')
 
     fireEvent.click(screen.getByRole('button', { name: 'Criar recorrência' }))

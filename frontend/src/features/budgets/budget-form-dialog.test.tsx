@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BudgetItem } from '@/api/types'
 import { BudgetFormDialog } from './budget-form-dialog'
@@ -61,7 +62,7 @@ describe('BudgetFormDialog', () => {
 
     fireEvent.click(screen.getByLabelText('Categoria'))
     fireEvent.click(await screen.findByText('Moradia'))
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '500,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '50000')
 
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
 
@@ -74,7 +75,7 @@ describe('BudgetFormDialog', () => {
 
     fireEvent.click(screen.getByLabelText('Categoria'))
     fireEvent.click(await screen.findByText('Moradia'))
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '500,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '50000')
     fireEvent.click(screen.getByRole('radio', { name: /Só/ }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }))
