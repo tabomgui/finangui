@@ -294,6 +294,33 @@ it('à mão sem categoria (categoria excluída) entra em fill e recebe a categor
     expect($orphan->categorized_by)->toBe("rule:{$rule->id}");
 });
 
+it('categorias do banco limpas ao desligar a configuração entram em fill e recebem a da regra', function () {
+    $user = actingAsUser(['use_provider_categories' => true]);
+    $fromBank = Category::factory()->create();
+    $transport = Category::factory()->create();
+    $rule = reviewRule('uber', $transport);
+    $transaction = Transaction::factory()->create(['description' => 'Uber eats', 'category_id' => $fromBank->id, 'categorized_by' => 'pluggy']);
+
+    expect(collect(reviewGroups()['conflict']['items'])->pluck('transaction_id')->all())->toBe([$transaction->id]);
+
+    $this->patchJson('/api/v1/me', ['use_provider_categories' => false, 'clear_provider_categories' => true])
+        ->assertOk()
+        ->assertJsonPath('meta.cleared_provider_categories', 1);
+
+    $groups = reviewGroups();
+    expect($groups['conflict']['count'])->toBe(0);
+    expect($groups['fill']['items'][0])->toMatchArray(['transaction_id' => $transaction->id, 'new_category_id' => $transport->id]);
+
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [['transaction_id' => $transaction->id, 'category_id' => $transport->id]]])
+        ->assertOk()
+        ->assertJsonPath('data.applied', 1);
+
+    $transaction->refresh();
+    expect($transaction->category_id)->toBe($transport->id);
+    expect($transaction->categorized_by)->toBe("rule:{$rule->id}");
+    expect($user->refresh()->use_provider_categories)->toBeFalse();
+});
+
 it('itens limitados a 500 por grupo, com a contagem completa e truncated', function () {
     $user = actingAsUser();
     reviewRule('uber', Category::factory()->create());
