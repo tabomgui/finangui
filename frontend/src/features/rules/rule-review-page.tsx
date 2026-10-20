@@ -28,23 +28,39 @@ function visibleGroups(review: RuleReview | undefined): RuleReviewGroup[] {
   return REVIEW_GROUP_ORDER.map((key) => byKey.get(key)).filter((group): group is RuleReviewGroup => group !== undefined && group.count > 0)
 }
 
+/** "N para aplicar · M só para conferir" (o grupo à mão nunca é aplicado). */
 function summary(groups: RuleReviewGroup[]): string {
-  const total = groups.reduce((sum, group) => sum + group.count, 0)
-  if (total === 0) return 'Regras e lançamentos de acordo'
-  return `${total} ${pluralize(total, 'lançamento para revisar', 'lançamentos para revisar')}`
+  const applicable = groups.filter((group) => group.applicable).reduce((sum, group) => sum + group.count, 0)
+  const infoOnly = groups.filter((group) => !group.applicable).reduce((sum, group) => sum + group.count, 0)
+  const parts = [applicable === 0 ? 'Nada para aplicar' : `${applicable} para aplicar`]
+  if (infoOnly > 0) parts.push(`${infoOnly} só para conferir`)
+  return parts.join(' · ')
+}
+
+function changesLabel(count: number): string {
+  return `${count} ${pluralize(count, 'alteração', 'alterações')}`
 }
 
 function resultMessage(result: RuleReviewResult): string {
-  const applied = `${result.applied} ${pluralize(result.applied, 'aplicado', 'aplicados')}`
+  const applied = `${result.applied} ${pluralize(result.applied, 'lançamento atualizado', 'lançamentos atualizados')}`
   if (result.skipped === 0) return applied
-  return `${applied} · ${result.skipped} ${pluralize(result.skipped, 'ignorado porque mudou', 'ignorados porque mudaram')} desde a revisão`
+  return `${applied} · ${result.skipped} ${pluralize(result.skipped, 'pulado porque mudou', 'pulados porque mudaram')} desde a revisão`
 }
 
-type ActionBarProps = { count: number; pending: boolean; onApply: () => void; onClear: () => void }
+type ActionBarProps = {
+  count: number
+  maxChanges: number
+  pending: boolean
+  /** A revisão está recarregando: a seleção pode não bater com o que vai chegar. */
+  refreshing: boolean
+  onApply: () => void
+  onClear: () => void
+}
 
 /** Barra fixa da seleção, no lugar e no estilo da de Categorizar. */
-function ReviewActionBar({ count, pending, onApply, onClear }: ActionBarProps) {
+function ReviewActionBar({ count, maxChanges, pending, refreshing, onApply, onClear }: ActionBarProps) {
   const { state: sidebarState } = useSidebar()
+  const overLimit = count > maxChanges
   return (
     <div
       className={cn(
@@ -52,17 +68,25 @@ function ReviewActionBar({ count, pending, onApply, onClear }: ActionBarProps) {
         sidebarState === 'collapsed' ? 'md:pl-[var(--sidebar-width-icon)]' : 'md:pl-[var(--sidebar-width)]',
       )}
     >
-      <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-2xl border border-border bg-card p-3 shadow-lg">
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-          {count} {pluralize(count, 'selecionado', 'selecionados')}
-        </span>
-        <Button type="button" variant="ghost" size="icon" aria-label="Limpar seleção" disabled={pending} onClick={onClear}>
-          <X aria-hidden className="h-4 w-4" />
-        </Button>
-        <Button type="button" disabled={pending} onClick={onApply}>
-          {pending ? <LoaderCircle aria-hidden className="h-4 w-4 animate-spin" /> : <Check aria-hidden className="h-4 w-4" />}
-          Aplicar
-        </Button>
+      <div className="mx-auto max-w-3xl rounded-2xl border border-border bg-card p-3 shadow-lg">
+        <div className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+            {count} {pluralize(count, 'selecionado', 'selecionados')}
+          </span>
+          <Button type="button" variant="ghost" size="icon" aria-label="Limpar seleção" disabled={pending} onClick={onClear}>
+            <X aria-hidden className="h-4 w-4" />
+          </Button>
+          <Button type="button" disabled={pending || refreshing || overLimit} onClick={onApply}>
+            {pending ? <LoaderCircle aria-hidden className="h-4 w-4 animate-spin" /> : <Check aria-hidden className="h-4 w-4" />}
+            Aplicar {changesLabel(count)}
+          </Button>
+        </div>
+        {overLimit && (
+          <p role="alert" className="mt-2 flex items-start gap-2 text-xs text-destructive">
+            <TriangleAlert aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            O máximo é {maxChanges} por vez. Desmarque alguns lançamentos.
+          </p>
+        )}
       </div>
     </div>
   )
@@ -82,7 +106,9 @@ export function RuleReviewPage() {
   // `null` até a primeira resposta: aí entra a seleção padrão. Depois de aplicar fica vazia, sem
   // voltar ao padrão quando a revisão recarrega.
   const [selection, setSelection] = useState<Set<number> | null>(null)
-  const [confirming, setConfirming] = useState(false)
+  // Quantas alterações o diálogo de confirmação mostra, fixado ao abrir: limpar a seleção depois de
+  // aplicar não faz o título piscar "0" enquanto o diálogo fecha.
+  const [confirm, setConfirm] = useState({ open: false, count: 0 })
 
   const data = review.data
   const groups = useMemo(() => visibleGroups(data), [data])
@@ -131,9 +157,11 @@ export function RuleReviewPage() {
     setSelection(new Set())
   }
 
+  const subtitle = data ? summary(groups) : review.isError ? 'Revisão indisponível' : 'Comparando regras e lançamentos…'
+
   return (
     <>
-      <PageHeader title="Revisar regras" back="/regras" subtitle={data ? summary(groups) : undefined} />
+      <PageHeader title="Revisar regras" back="/regras" subtitle={subtitle} />
       <PageBody className={cn('space-y-3', selectedCount > 0 ? 'pb-40' : 'pb-28')}>
         {review.isError && !data ? (
           <Card className="rounded-2xl p-0 shadow-card">
@@ -187,14 +215,21 @@ export function RuleReviewPage() {
       </PageBody>
 
       {selectedCount > 0 && (
-        <ReviewActionBar count={selectedCount} pending={apply.isPending} onApply={() => setConfirming(true)} onClear={() => setSelection(new Set())} />
+        <ReviewActionBar
+          count={selectedCount}
+          maxChanges={data?.max_changes ?? Number.POSITIVE_INFINITY}
+          pending={apply.isPending}
+          refreshing={review.isFetching}
+          onApply={() => setConfirm({ open: true, count: selectedCount })}
+          onClear={() => setSelection(new Set())}
+        />
       )}
 
       <ConfirmDialog
-        open={confirming}
-        onOpenChange={setConfirming}
-        title={`Aplicar ${selectedCount} ${pluralize(selectedCount, 'alteração', 'alterações')}?`}
-        description="Só a categoria muda. Um lançamento que mudou desde a revisão é ignorado."
+        open={confirm.open}
+        onOpenChange={(open) => setConfirm((current) => ({ ...current, open }))}
+        title={`Aplicar ${changesLabel(confirm.count)}?`}
+        description="Só a categoria muda. Um lançamento que mudou desde a revisão é pulado."
         confirmLabel="Aplicar"
         onConfirm={confirmApply}
       />

@@ -93,25 +93,26 @@ export function RulesPage() {
         title="Regras"
         subtitle="Categorização automática"
         actions={
-          <>
-            {rules && rules.length > 0 && (
-              <Button asChild className={headerButton}>
-                <Link to="/regras/revisao" aria-label="Revisar regras">
-                  <ListChecks aria-hidden className="h-4 w-4" />
-                  <span className="hidden sm:inline">Revisar regras</span>
-                </Link>
-              </Button>
-            )}
-            <Button asChild className={headerButton}>
-              <Link to="/regras/nova">
-                <Plus aria-hidden className="h-4 w-4" />
-                Nova regra
-              </Link>
-            </Button>
-          </>
+          <Button asChild className={headerButton}>
+            <Link to="/regras/nova" aria-label="Nova regra">
+              <Plus aria-hidden className="h-4 w-4" />
+              <span className="sm:hidden">Nova</span>
+              <span className="hidden sm:inline">Nova regra</span>
+            </Link>
+          </Button>
         }
       />
       <PageBody>
+        {/* Fora do cabeçalho (onde não caberia com rótulo no celular) e mesmo sem regras: a revisão
+            também acha lançamentos de regras já excluídas. Opaco sobre a faixa esmeralda. */}
+        <div className="flex justify-end">
+          <Button asChild variant="outline" className="bg-card shadow-card">
+            <Link to="/regras/revisao">
+              <ListChecks aria-hidden className="h-4 w-4" />
+              Revisar regras
+            </Link>
+          </Button>
+        </div>
         {isError && !rules ? (
           <EmptyState
             icon={TriangleAlert}

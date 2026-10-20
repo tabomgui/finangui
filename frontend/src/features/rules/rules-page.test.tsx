@@ -142,12 +142,12 @@ describe('RulesPage', () => {
     expect(toast.success).toHaveBeenCalledWith('Regra excluída.')
   })
 
-  it('mostra o estado vazio quando não há regras, sem o botão de revisar', () => {
+  it('mostra o estado vazio quando não há regras, ainda com o botão de revisar', () => {
     rulesState = { data: [], isPending: false, isError: false }
     renderPage()
 
     expect(screen.getByText('Nenhuma regra ainda')).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Revisar regras' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Revisar regras' })).toHaveAttribute('href', '/regras/revisao')
   })
 
   it('com regras, o cabeçalho leva para a revisão', () => {

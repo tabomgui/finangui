@@ -37,14 +37,14 @@ export const REVIEW_GROUP_LABELS: Record<ReviewGroupKey, string> = {
   fill: 'Sem categoria — as regras resolvem',
   conflict: 'Categoria automática diferente da regra',
   stale: 'Categorizados por regra que não se aplica mais',
-  manual: 'Categorizados à mão com regra diferente',
+  manual: 'Você escolheu outra categoria (nunca muda)',
 }
 
 export const REVIEW_GROUP_HINTS: Record<ReviewGroupKey, string> = {
   fill: 'Recebem a categoria da primeira regra que casa.',
   conflict: 'Histórico, banco ou outra regra deram uma categoria diferente da que as regras dão hoje.',
   stale: 'A regra foi excluída, desativada ou não casa mais: voltam para Categorizar.',
-  manual: 'Só para conferir: o que você categorizou à mão nunca muda.',
+  manual: 'Só para conferir: as regras dariam outra categoria, mas o que você categorizou à mão nunca muda.',
 }
 
 /** Só a seleção de "Sem categoria" começa marcada; trocar ou tirar categoria é escolha explícita. */

@@ -29,10 +29,11 @@ type ReviewQuery = { data: RuleReview | undefined; isPending: boolean; isError: 
 let reviewQuery: ReviewQuery
 const refetch = vi.fn()
 const applyMutateAsync = vi.fn()
+let applyPending = false
 
 vi.mock('@/api/queries/rules', () => ({
   useRuleReview: () => reviewQuery,
-  useApplyRuleReview: () => ({ mutateAsync: applyMutateAsync, isPending: false }),
+  useApplyRuleReview: () => ({ mutateAsync: applyMutateAsync, isPending: applyPending }),
 }))
 
 vi.mock('@/api/queries/categories', () => ({
@@ -74,7 +75,17 @@ function review(): RuleReview {
         count: 1,
         applicable: false,
         truncated: false,
-        items: [item({ transaction_id: 40, description: 'Feira manual', current_category_id: 3, new_category_id: 2, rule_id: 9, rule_name: 'Feira' })],
+        items: [
+          item({
+            transaction_id: 40,
+            description: 'Feira manual',
+            current_category_id: 3,
+            new_category_id: 2,
+            rule_id: 9,
+            rule_name: 'Feira',
+            current_source: 'manual',
+          }),
+        ],
       },
       {
         key: 'fill',
@@ -91,14 +102,37 @@ function review(): RuleReview {
         count: 1,
         applicable: true,
         truncated: false,
-        items: [item({ transaction_id: 20, description: 'Cinema', current_category_id: 2, new_category_id: 3, rule_id: 7, rule_name: 'Lazer' })],
+        items: [
+          item({
+            transaction_id: 20,
+            description: 'Cinema',
+            current_category_id: 2,
+            new_category_id: 3,
+            rule_id: 7,
+            rule_name: 'Lazer',
+            rule_active: true,
+            current_source: 'rule',
+            current_rule_name: 'Delivery',
+          }),
+        ],
       },
       {
         key: 'stale',
         count: 900,
         applicable: true,
         truncated: true,
-        items: [item({ transaction_id: 30, description: 'Antiga', current_category_id: 3 })],
+        items: [
+          item({
+            transaction_id: 30,
+            description: 'Antiga',
+            current_category_id: 3,
+            rule_id: 8,
+            rule_name: 'Cinema antigo',
+            rule_active: false,
+            current_source: 'rule',
+            current_rule_name: 'Cinema antigo',
+          }),
+        ],
       },
     ],
   }
@@ -123,13 +157,15 @@ function group(label: string) {
 }
 
 function expand(label: string) {
-  fireEvent.click(within(group(label)).getByRole('button', { name: new RegExp(label) }))
+  const escaped = label.replace(/[()]/g, '\\$&')
+  fireEvent.click(within(group(label)).getByRole('button', { name: new RegExp(escaped) }))
 }
 
 beforeEach(() => {
   setReview(review())
   refetch.mockReset()
   applyMutateAsync.mockReset()
+  applyPending = false
   vi.mocked(toast).mockClear()
   vi.mocked(toast.success).mockClear()
 })
@@ -143,9 +179,9 @@ describe('RuleReviewPage', () => {
       'Sem categoria — as regras resolvem',
       'Categoria automática diferente da regra',
       'Categorizados por regra que não se aplica mais',
-      'Categorizados à mão com regra diferente',
+      'Você escolheu outra categoria (nunca muda)',
     ])
-    expect(screen.getByText('904 lançamentos para revisar')).toBeInTheDocument()
+    expect(screen.getByText('903 para aplicar · 1 só para conferir')).toBeInTheDocument()
   })
 
   it('seleção padrão: só "Sem categoria" marcado; manual não tem como marcar', () => {
@@ -160,14 +196,14 @@ describe('RuleReviewPage', () => {
       'aria-checked',
       'false',
     )
-    expect(within(group('Categorizados à mão com regra diferente')).queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(within(group('Você escolheu outra categoria (nunca muda)')).queryByRole('checkbox')).not.toBeInTheDocument()
     expect(screen.getByText('2 selecionados')).toBeInTheDocument()
 
-    expand('Categorizados à mão com regra diferente')
-    const manual = group('Categorizados à mão com regra diferente')
+    expand('Você escolheu outra categoria (nunca muda)')
+    const manual = group('Você escolheu outra categoria (nunca muda)')
     expect(within(manual).getByText('Feira manual')).toBeInTheDocument()
     expect(within(manual).queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(within(manual).getByText(/Hoje: Lazer/)).toBeInTheDocument()
+    expect(within(manual).getByText('Hoje: Lazer (à mão)')).toBeInTheDocument()
     expect(within(manual).getByText('Alimentação › Mercado')).toBeInTheDocument()
     expect(within(manual).getByText('Regra: Feira')).toBeInTheDocument()
   })
@@ -191,8 +227,11 @@ describe('RuleReviewPage', () => {
     renderPage()
     expand('Categorizados por regra que não se aplica mais')
 
+    const stale = group('Categorizados por regra que não se aplica mais')
     expect(screen.getByText('mostrando os 1 mais recentes de 900')).toBeInTheDocument()
-    expect(within(group('Categorizados por regra que não se aplica mais')).getByText('sem categoria')).toBeInTheDocument()
+    expect(within(stale).getByText('sem categoria')).toBeInTheDocument()
+    expect(within(stale).getByText('Hoje: Lazer (regra Cinema antigo)')).toBeInTheDocument()
+    expect(within(stale).getByText('Regra: Cinema antigo (desativada)')).toBeInTheDocument()
   })
 
   it('aplica com category_id da categoria nova, sem ele para tirar a categoria, e mostra o resultado', async () => {
@@ -202,7 +241,7 @@ describe('RuleReviewPage', () => {
     fireEvent.click(within(group('Categorizados por regra que não se aplica mais')).getByRole('checkbox', { name: /Selecionar todos/ }))
     expect(screen.getByText('3 selecionados')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Aplicar 3 alterações' }))
     expect(screen.getByText('Aplicar 3 alterações?')).toBeInTheDocument()
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Aplicar' }))
 
@@ -215,8 +254,10 @@ describe('RuleReviewPage', () => {
         ],
       }),
     )
-    expect(toast.success).toHaveBeenCalledWith('3 aplicados · 1 ignorado porque mudou desde a revisão')
+    expect(toast.success).toHaveBeenCalledWith('3 lançamentos atualizados · 1 pulado porque mudou desde a revisão')
     await waitFor(() => expect(screen.queryByText(/selecionados?$/)).not.toBeInTheDocument())
+    // O título do diálogo, fechando, continua com a contagem que foi confirmada.
+    expect(screen.queryByText('Aplicar 0 alterações?')).not.toBeInTheDocument()
   })
 
   it('sem diferenças mostra o estado vazio', () => {
@@ -230,12 +271,64 @@ describe('RuleReviewPage', () => {
     renderPage()
 
     expect(screen.getByText('Tudo certo: as regras concordam com os lançamentos')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Aplicar' })).not.toBeInTheDocument()
+    expect(screen.getByText('Nada para aplicar')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Aplicar/ })).not.toBeInTheDocument()
+  })
+
+  it('conflito mostra de onde vem a categoria atual', () => {
+    renderPage()
+    expand('Categoria automática diferente da regra')
+
+    const conflict = group('Categoria automática diferente da regra')
+    expect(within(conflict).getByText('Hoje: Alimentação › Mercado (regra Delivery)')).toBeInTheDocument()
+    expect(within(conflict).getByText('Regra: Lazer')).toBeInTheDocument()
+  })
+
+  it('o grupo à mão fica alinhado com os outros, sem caixa de seleção', () => {
+    renderPage()
+    const manual = group('Você escolheu outra categoria (nunca muda)')
+    expect(manual.querySelector('span[aria-hidden].h-5.w-5')).not.toBeNull()
+  })
+
+  it('Aplicar fica desabilitado enquanto a revisão recarrega', () => {
+    setReview(review(), { isFetching: true })
+    renderPage()
+
+    expect(screen.getByRole('button', { name: 'Aplicar 2 alterações' })).toBeDisabled()
+  })
+
+  it('acima de max_changes avisa e desabilita o Aplicar', () => {
+    const data = review()
+    data.max_changes = 2
+    setReview(data)
+    renderPage()
+
+    fireEvent.click(within(group('Categoria automática diferente da regra')).getByRole('checkbox', { name: /Selecionar todos/ }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('O máximo é 2 por vez.')
+    expect(screen.getByRole('button', { name: 'Aplicar 3 alterações' })).toBeDisabled()
+  })
+
+  it('com a aplicação em andamento, as caixas das linhas ficam desabilitadas', () => {
+    applyPending = true
+    renderPage()
+    expand('Sem categoria — as regras resolvem')
+
+    expect(screen.getByRole('checkbox', { name: 'Selecionar Mercado A' })).toBeDisabled()
+  })
+
+  it('enquanto carrega, o cabeçalho já tem um subtítulo', () => {
+    setReview(undefined)
+    renderPage()
+
+    expect(screen.getByText('Comparando regras e lançamentos…')).toBeInTheDocument()
   })
 
   it('erro mostra "Tentar de novo"', () => {
     setReview(undefined, { isPending: false, isError: true })
     renderPage()
+
+    expect(screen.getByText('Revisão indisponível')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }))
 

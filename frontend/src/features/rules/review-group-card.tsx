@@ -53,8 +53,11 @@ export const ReviewGroupCard = memo(function ReviewGroupCard({
   return (
     <section aria-label={label} className="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
       <div className={cn('flex items-center gap-3 px-3 py-3', expanded && 'border-b border-border')}>
-        {group.applicable && (
+        {group.applicable ? (
           <GroupCheckbox state={checkState} label={`Selecionar todos em ${label}`} disabled={disabled} onClick={() => onToggleGroup(group)} />
+        ) : (
+          // Mesmo recuo dos grupos com "selecionar tudo", para os títulos ficarem alinhados.
+          <span aria-hidden className="h-5 w-5 shrink-0" />
         )}
         <button
           type="button"
@@ -97,7 +100,9 @@ export const ReviewGroupCard = memo(function ReviewGroupCard({
                   categoriesById={categoriesById}
                   categoriesLoading={categoriesLoading}
                   showOrigin
-                  selection={group.applicable ? { checked: selectedIds.has(item.transaction_id), onToggle: onToggleItem } : undefined}
+                  selection={
+                    group.applicable ? { checked: selectedIds.has(item.transaction_id), disabled, onToggle: onToggleItem } : undefined
+                  }
                 />
               </li>
             ))}
