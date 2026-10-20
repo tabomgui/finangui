@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * Uma linha da reconciliação de regra.
+ * Uma linha da reconciliação de regra ou da revisão de regras.
  * current_category_id, new_category_id e rule_id/rule_name somem quando
  * não existem (sem categoria atual; a mudança tira a categoria; sem regra
  * para mostrar — excluída).

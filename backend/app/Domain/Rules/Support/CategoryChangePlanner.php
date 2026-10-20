@@ -12,14 +12,18 @@ use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Data\RuleOutcome;
 use App\Domain\Rules\Data\RuleSubject;
 use App\Domain\Rules\Enums\ReconcileGroup;
+use App\Domain\Rules\Enums\ReviewGroup;
+use App\Domain\Rules\Models\Rule;
 use App\Domain\Transactions\Models\Transaction;
 use Illuminate\Database\Eloquent\Builder;
+use LogicException;
 
 /**
  * Decide, só para a categoria, o que mudaria num lançamento já existente
  * quando uma regra é editada (forRule(), App\Domain\Rules\Queries\ReconcileRule)
- * — a prévia e a aplicação chamam o mesmo método, que é recalculado na
- * aplicação sob trava.
+ * ou quando todas as regras ativas são revistas juntas (forRules(),
+ * App\Domain\Rules\Queries\ReviewRules) — a prévia e a aplicação de cada
+ * fluxo chamam o mesmo método, que é recalculado na aplicação sob trava.
  *
  * O casamento é sempre o de RuleEngine/RuleMatcher, com RuleContext::categoryOnly()
  * (a categoria que as regras dariam, ignorando a atual), e quem diz se a
@@ -28,16 +32,17 @@ use Illuminate\Database\Eloquent\Builder;
  *
  * Nunca muda: lançamento categorizado à mão, lançamento fora de
  * Transaction::scopeEligibleForRules() (quem chama já filtra a consulta) e
- * categoria de transferência (ela mesma ou pelo pai) ao tirá-la: sem ela o
- * lançamento voltaria a reportable() e contaria em dobro (ex.: o pagamento
- * de fatura que quita compras já contadas no cartão), como em
- * Transaction::scopeCategorizedByProvider(). Trocar a categoria dos
- * lançamentos da própria regra editada (recategorize) segue a nova
- * categoria dela, seja qual for: foi o usuário quem a mudou.
+ * categoria de transferência (ela mesma ou pelo pai) ao tirá-la, ou na
+ * revisão ao trocá-la por uma comum: sem ela o lançamento voltaria a
+ * reportable() e contaria em dobro (ex.: o pagamento de fatura que quita
+ * compras já contadas no cartão), como em
+ * Transaction::scopeCategorizedByProvider(). Na reconciliação, trocar a
+ * categoria dos lançamentos da própria regra editada (recategorize) segue a
+ * nova categoria dela, seja qual for: foi o usuário quem a mudou.
  */
 final class CategoryChangePlanner
 {
-    /** Máximo de lançamentos alterados por aplicação. */
+    /** Máximo de lançamentos alterados por aplicação (reconciliação ou revisão). */
     public const MAX_CHANGES = 5000;
 
     /**
@@ -71,6 +76,29 @@ final class CategoryChangePlanner
             ->where(fn (Builder $q) => $q->whereNull('transactions.category_id')
                 ->orWhere('transactions.categorized_by', "rule:{$ruleId}"))
             ->select(self::COLUMNS);
+    }
+
+    /**
+     * Candidatos da revisão de regras: todo lançamento elegível.
+     *
+     * @return Builder<Transaction>
+     */
+    public function reviewCandidates(): Builder
+    {
+        return Transaction::query()->eligibleForRules()->select(self::COLUMNS);
+    }
+
+    /**
+     * Regras ativas na ordem do motor (prioridade, id).
+     *
+     * @return list<RuleDefinition>
+     */
+    public function activeRules(): array
+    {
+        return Rule::query()->where('is_active', true)->ordered()->get()
+            ->map(RuleDefinition::fromRule(...))
+            ->values()
+            ->all();
     }
 
     /**
@@ -113,6 +141,53 @@ final class CategoryChangePlanner
     }
 
     /**
+     * Todas as regras ativas juntas ($rules, de activeRules()), primeira que
+     * define categoria vence:
+     * - sem categoria e as regras dão uma: fill;
+     * - categoria automática (histórico, banco, regra) diferente: conflict;
+     * - categorizado por uma regra e nenhuma regra ativa dá categoria: stale;
+     * - à mão com categoria diferente: manual (só informativo).
+     *
+     * @param  list<RuleDefinition>  $rules
+     */
+    public function forRules(Transaction $transaction, array $rules): ?CategoryChange
+    {
+        $outcome = $this->evaluate($transaction, $rules);
+        $target = $this->target($transaction, $outcome);
+        $categorizedBy = (string) $transaction->categorized_by;
+
+        if ($categorizedBy === 'manual') {
+            return $target !== null && $transaction->category_id !== null
+                ? new CategoryChange($transaction, ReviewGroup::Manual, $target, $outcome->categoryRuleId, null)
+                : null;
+        }
+
+        if ($transaction->category_id === null) {
+            return $target !== null
+                ? new CategoryChange($transaction, ReviewGroup::Fill, $target, $outcome->categoryRuleId, $outcome)
+                : null;
+        }
+
+        $byRule = self::ruleIdOf($categorizedBy);
+
+        if ($target !== null) {
+            $automatic = $byRule !== null || in_array($categorizedBy, ['history', 'pluggy'], true);
+
+            // Trocar uma categoria de transferência por uma comum tem o mesmo
+            // efeito de tirá-la (ver canClear()): só entre transferências.
+            return $automatic && ($this->canClear($transaction) || $this->isTransferCategory($target))
+                ? new CategoryChange($transaction, ReviewGroup::Conflict, $target, $outcome->categoryRuleId, $outcome)
+                : null;
+        }
+
+        if ($byRule !== null && $outcome->categoryId === null && $this->canClear($transaction)) {
+            return new CategoryChange($transaction, ReviewGroup::Stale, null, $byRule, null);
+        }
+
+        return null;
+    }
+
+    /**
      * Grava a mudança: categoria nova por ApplyRuleOutcome (categorized_by
      * vira rule:{id da regra que decidiu}); tirar a categoria zera
      * category_id e categorized_by, sem mexer na descrição (nem na
@@ -120,6 +195,10 @@ final class CategoryChangePlanner
      */
     public function apply(CategoryChange $change): bool
     {
+        if ($change->group === ReviewGroup::Manual) {
+            throw new LogicException('Categoria definida à mão nunca muda por regra.');
+        }
+
         $transaction = $change->transaction;
 
         if ($change->categoryId !== null) {
@@ -171,6 +250,20 @@ final class CategoryChangePlanner
                 ruleName: $ruleName,
             );
         }, $changes);
+    }
+
+    /**
+     * Id da regra em categorized_by = "rule:{id}"; nulo para os demais.
+     */
+    public static function ruleIdOf(string $categorizedBy): ?int
+    {
+        if (! str_starts_with($categorizedBy, 'rule:')) {
+            return null;
+        }
+
+        $id = substr($categorizedBy, 5);
+
+        return ctype_digit($id) ? (int) $id : null;
     }
 
     /**

@@ -5,7 +5,7 @@ namespace App\Domain\Rules\Data;
 use App\Domain\Transactions\Enums\Direction;
 
 /**
- * Uma linha exibida da reconciliação de regra. Nulos (sem
+ * Uma linha exibida da reconciliação ou da revisão de regras. Nulos (sem
  * categoria atual, sem categoria nova, sem regra) saem omitidos da resposta.
  */
 final readonly class CategoryChangeItem

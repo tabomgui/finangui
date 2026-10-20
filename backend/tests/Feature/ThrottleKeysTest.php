@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Banking\Models\BankConnection;
+use App\Domain\Rules\Models\Rule;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 
@@ -74,4 +75,23 @@ it('transfer-suggestions/detect tem limite próprio (6/min): martelar rules/prev
 
     // rules/preview continua livre: martelar detect não consumiu o limite dele.
     expect($this->postJson('/api/v1/rules/preview', [])->status())->not->toBe(429);
+});
+
+it('rules/review e rules/{rule}/reconcile têm limites próprios, isolados de rules/preview e entre si', function () {
+    actingAsUser();
+    $rule = Rule::factory()->create();
+
+    for ($i = 0; $i < 20; $i++) {
+        $this->getJson('/api/v1/rules/review')->assertOk();
+    }
+    $this->getJson('/api/v1/rules/review')->assertStatus(429);
+
+    expect($this->postJson('/api/v1/rules/preview', [])->status())->not->toBe(429);
+    $this->getJson("/api/v1/rules/{$rule->id}/reconcile")->assertOk();
+
+    for ($i = 0; $i < 10; $i++) {
+        expect($this->postJson('/api/v1/rules/review/apply', ['transaction_ids' => [1]])->status())->not->toBe(429);
+    }
+    $this->postJson('/api/v1/rules/review/apply', ['transaction_ids' => [1]])->assertStatus(429);
+    $this->postJson("/api/v1/rules/{$rule->id}/reconcile", ['groups' => ['fill']])->assertOk();
 });

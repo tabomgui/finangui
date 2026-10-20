@@ -847,6 +847,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/rules/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Revisão de todas as regras ativas contra os lançamentos já existentes */
+        get: operations["rule.review"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rules/review/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Aplica a revisão aos lançamentos escolhidos, recalculados na hora */
+        post: operations["rule.applyReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/rules": {
         parameters: {
             query?: never;
@@ -1226,6 +1260,11 @@ export interface components {
         /** ApplyRuleRequest */
         ApplyRuleRequest: {
             overwrite?: boolean;
+        };
+        /** ApplyRuleReviewRequest */
+        ApplyRuleReviewRequest: {
+            /** @description Lançamentos escolhidos na revisão (GET /rules/review); cada um é recalculado antes de mudar. */
+            transaction_ids: number[];
         };
         /** BankConnectionResource */
         BankConnectionResource: {
@@ -1925,6 +1964,12 @@ export interface components {
          */
         ReportBasis: "purchase" | "statement";
         /**
+         * ReviewGroup
+         * @description Grupos da revisão de todas as regras ativas (ver App\Domain\Rules\Queries\ReviewRules).
+         * @enum {string}
+         */
+        ReviewGroup: "fill" | "conflict" | "stale" | "manual";
+        /**
          * RowOutcome
          * @description Destino de uma linha decidido pela cascata de dedup (ver IngestionPlanner).
          * @enum {string}
@@ -1998,6 +2043,22 @@ export interface components {
             }[];
             last_applied_at: string | null;
             last_applied_changes: number | null;
+        };
+        /** RuleReviewApplyResource */
+        RuleReviewApplyResource: {
+            applied: number;
+            skipped: number;
+        };
+        /** RuleReviewResource */
+        RuleReviewResource: {
+            max_changes: number;
+            groups: {
+                key: components["schemas"]["ReviewGroup"];
+                count: number;
+                applicable: boolean;
+                truncated: boolean;
+                items: components["schemas"]["CategoryChangeItemResource"][];
+            }[];
         };
         /** SaveBankCredentialsRequest */
         SaveBankCredentialsRequest: {
@@ -4796,6 +4857,57 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["RulePreviewResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "rule.review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `RuleReviewResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleReviewResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
+    "rule.applyReview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyRuleReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description `RuleReviewApplyResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleReviewApplyResource"];
                     };
                 };
             };

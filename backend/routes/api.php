@@ -113,14 +113,16 @@ Route::prefix('v1')->group(function () {
         Route::patch('installment-plans/{plan}', [InstallmentPlanController::class, 'update'])->whereNumber('plan');
         Route::post('installment-plans/{plan}/cancel', [InstallmentPlanController::class, 'cancel'])->whereNumber('plan');
 
-        // rules/order e rules/preview antes de rules/{rule}, por clareza (o
-        // whereNumber já evita a colisão com esses literais).
+        // rules/order, rules/preview e rules/review antes de rules/{rule}, por
+        // clareza (o whereNumber já evita a colisão com esses literais).
         Route::put('rules/order', [RuleController::class, 'reorder']);
         // Prefixo próprio no throttle: sem ele, a chave do limite genérico
         // (throttle:max,min) é só o id do usuário — toda rota autenticada
         // sem prefixo compartilharia o mesmo contador, e martelar uma
         // derrubaria as outras bem antes do seu próprio limite.
         Route::post('rules/preview', [RuleController::class, 'preview'])->middleware('throttle:60,1,rules-preview');
+        Route::get('rules/review', [RuleController::class, 'review'])->middleware('throttle:20,1,rules-review');
+        Route::post('rules/review/apply', [RuleController::class, 'applyReview'])->middleware('throttle:10,1,rules-review-apply');
         Route::get('rules', [RuleController::class, 'index']);
         Route::post('rules', [RuleController::class, 'store']);
         Route::get('rules/{rule}', [RuleController::class, 'show'])->whereNumber('rule');

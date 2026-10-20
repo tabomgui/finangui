@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Domain\Rules\Actions\ApplyRuleReconcile;
+use App\Domain\Rules\Actions\ApplyRuleReview;
 use App\Domain\Rules\Actions\CreateRule;
 use App\Domain\Rules\Actions\QueueRuleApplication;
 use App\Domain\Rules\Actions\ReorderRules;
@@ -11,9 +12,11 @@ use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Models\Rule;
 use App\Domain\Rules\Queries\PreviewRule;
 use App\Domain\Rules\Queries\ReconcileRule;
+use App\Domain\Rules\Queries\ReviewRules;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Rules\ApplyRuleReconcileRequest;
 use App\Http\Requests\Rules\ApplyRuleRequest;
+use App\Http\Requests\Rules\ApplyRuleReviewRequest;
 use App\Http\Requests\Rules\PreviewRuleRequest;
 use App\Http\Requests\Rules\ReorderRulesRequest;
 use App\Http\Requests\Rules\StoreRuleRequest;
@@ -22,6 +25,8 @@ use App\Http\Resources\RulePreviewResource;
 use App\Http\Resources\RuleReconcileApplyResource;
 use App\Http\Resources\RuleReconcileResource;
 use App\Http\Resources\RuleResource;
+use App\Http\Resources\RuleReviewApplyResource;
+use App\Http\Resources\RuleReviewResource;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -97,5 +102,24 @@ final class RuleController extends Controller
     public function applyReconcile(ApplyRuleReconcileRequest $request, Rule $rule, ApplyRuleReconcile $applyRuleReconcile): RuleReconcileApplyResource
     {
         return RuleReconcileApplyResource::make($applyRuleReconcile->handle($rule, $request->groups()));
+    }
+
+    /**
+     * Revisão de todas as regras ativas contra os lançamentos já existentes.
+     */
+    public function review(ReviewRules $reviewRules): RuleReviewResource
+    {
+        return RuleReviewResource::make($reviewRules->handle());
+    }
+
+    /**
+     * Aplica a revisão aos lançamentos escolhidos, recalculados na hora.
+     */
+    public function applyReview(ApplyRuleReviewRequest $request, ApplyRuleReview $applyRuleReview): RuleReviewApplyResource
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        return RuleReviewApplyResource::make($applyRuleReview->handle($user->id, $request->transactionIds()));
     }
 }
