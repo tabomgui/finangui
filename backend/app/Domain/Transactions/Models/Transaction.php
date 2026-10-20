@@ -256,6 +256,11 @@ class Transaction extends Model
      * transferência, prevista de recorrência e pagamento de fatura
      * reconhecido (nunca entra em relatório; ver isCardPayment()).
      *
+     * Ao contrário de scopePendingCategorization(), lançamento ignorado,
+     * ainda não lançado (status pending) e de conta arquivada continuam no
+     * escopo: por isso as contagens da revisão de regras podem passar das
+     * da tela Categorizar.
+     *
      * @param  Builder<Transaction>  $query
      */
     public function scopeEligibleForRules(Builder $query): void
