@@ -39,7 +39,7 @@ type Scope = 'uncategorized' | 'automatic'
 
 const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
   { value: 'uncategorized', label: 'Só os lançamentos sem categoria' },
-  { value: 'automatic', label: 'Também trocar categorias automáticas (histórico, banco e outras regras)' },
+  { value: 'automatic', label: 'Também corrigir os que foram categorizados sozinhos (pelo histórico, pelo banco ou por outra regra)' },
 ]
 
 function changedCountLabel(count: number): string {
@@ -68,7 +68,8 @@ export function ApplyRuleDialog({ rule, disabled }: ApplyRuleDialogProps) {
     const body = toRuleBody(ruleDefaults(rule))
     return overwrite ? { ...body, overwrite: true } : body
   }, [rule, overwrite])
-  const preview = useRulePreview(previewBody, !disabled)
+  // Só com o diálogo aberto: fechado, nem a contagem nem a opção escolhida importam.
+  const preview = useRulePreview(previewBody, open && !disabled)
   const { data: polledRule } = useRule(rule.id, applying ? POLL_INTERVAL_MS : undefined)
 
   useEffect(() => {

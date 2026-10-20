@@ -13,12 +13,14 @@ type PreviewResult = { data: { matched: number; changed: number; sample: unknown
 let previewResult: PreviewResult
 /** Resultado da prévia quando o corpo pede `overwrite: true` (senão, `previewResult`). */
 let overwritePreviewResult: PreviewResult | undefined
-const useRulePreviewMock = vi.fn((body: { overwrite?: boolean }) => (body.overwrite ? (overwritePreviewResult ?? previewResult) : previewResult))
+const useRulePreviewMock = vi.fn((body: { overwrite?: boolean }, _enabled: boolean) =>
+  body.overwrite ? (overwritePreviewResult ?? previewResult) : previewResult,
+)
 
 vi.mock('@/api/queries/rules', () => ({
   useApplyRule: () => ({ mutateAsync: applyMutateAsync, isPending: applyIsPending }),
   useRule: () => ({ data: polledRuleData }),
-  useRulePreview: (body: { overwrite?: boolean }) => useRulePreviewMock(body),
+  useRulePreview: (body: { overwrite?: boolean }, enabled: boolean) => useRulePreviewMock(body, enabled),
 }))
 
 vi.mock('sonner', () => ({
@@ -69,10 +71,10 @@ describe('ApplyRuleDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Aplicar às existentes' }))
 
     expect(screen.getByRole('radio', { name: 'Só os lançamentos sem categoria' })).toBeChecked()
-    expect(screen.getByRole('radio', { name: /Também trocar categorias automáticas/ })).not.toBeChecked()
+    expect(screen.getByRole('radio', { name: /Também corrigir os que foram categorizados sozinhos/ })).not.toBeChecked()
     expect(screen.getByText('Os que você categorizou à mão nunca mudam.')).toBeInTheDocument()
     expect(screen.getByText('Isso vai alterar cerca de 7 lançamentos.')).toBeInTheDocument()
-    expect(useRulePreviewMock).toHaveBeenLastCalledWith(expect.not.objectContaining({ overwrite: expect.anything() }))
+    expect(useRulePreviewMock).toHaveBeenLastCalledWith(expect.not.objectContaining({ overwrite: expect.anything() }), true)
   })
 
   it('confirmar sem trocar a opção aplica com overwrite false', async () => {
@@ -91,22 +93,28 @@ describe('ApplyRuleDialog', () => {
     renderDialog()
 
     fireEvent.click(screen.getByRole('button', { name: 'Aplicar às existentes' }))
-    fireEvent.click(screen.getByRole('radio', { name: /Também trocar categorias automáticas/ }))
+    fireEvent.click(screen.getByRole('radio', { name: /Também corrigir os que foram categorizados sozinhos/ }))
 
-    expect(screen.getByRole('radio', { name: /Também trocar categorias automáticas/ })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /Também corrigir os que foram categorizados sozinhos/ })).toBeChecked()
     expect(screen.getByText('Isso vai alterar cerca de 9 lançamentos.')).toBeInTheDocument()
-    expect(useRulePreviewMock).toHaveBeenLastCalledWith(expect.objectContaining({ overwrite: true }))
+    expect(useRulePreviewMock).toHaveBeenLastCalledWith(expect.objectContaining({ overwrite: true }), true)
 
     fireEvent.click(screen.getByRole('button', { name: 'Aplicar' }))
 
     await waitFor(() => expect(applyMutateAsync).toHaveBeenCalledWith({ id: 5, body: { overwrite: true } }))
   })
 
+  it('com o diálogo fechado, a prévia de contagem não roda', () => {
+    renderDialog()
+
+    expect(useRulePreviewMock).toHaveBeenLastCalledWith(expect.anything(), false)
+  })
+
   it('reabrir o diálogo volta para "Só os lançamentos sem categoria"', () => {
     renderDialog()
 
     fireEvent.click(screen.getByRole('button', { name: 'Aplicar às existentes' }))
-    fireEvent.click(screen.getByRole('radio', { name: /Também trocar categorias automáticas/ }))
+    fireEvent.click(screen.getByRole('radio', { name: /Também corrigir os que foram categorizados sozinhos/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
     fireEvent.click(screen.getByRole('button', { name: 'Aplicar às existentes' }))
 
