@@ -70,7 +70,7 @@ final class IngestTransactions
             }
 
             // Lida já aqui, antes de tocar em qualquer transação: a trava
-            // compartilhada na linha do dono segura uma mudança concorrente
+            // FOR KEY SHARE na linha do dono segura uma mudança concorrente
             // da configuração (UpdateProviderCategoriesSetting trava a mesma
             // linha FOR UPDATE) até este lote terminar.
             $useProviderCategories = $this->ownerUsesProviderCategories($locked);
@@ -279,12 +279,15 @@ final class IngestTransactions
 
     /**
      * Configuração do dono do lote, lida do banco (não do usuário autenticado
-     * em memória) com FOR SHARE: várias importações do mesmo usuário seguem
-     * em paralelo, mas uma mudança da configuração espera o lote terminar.
+     * em memória) com FOR KEY SHARE, a trava mais fraca do Postgres: só
+     * conflita com o FOR UPDATE de UpdateProviderCategoriesSetting (que
+     * espera o lote terminar), nunca com um UPDATE comum da linha — login
+     * ou troca de nome/senha não ficam presos atrás de uma sincronização — e
+     * várias importações do mesmo usuário seguem em paralelo.
      */
     private function ownerUsesProviderCategories(ImportBatch $batch): bool
     {
-        return (bool) User::query()->whereKey($batch->user_id)->sharedLock()->value('use_provider_categories');
+        return (bool) User::query()->whereKey($batch->user_id)->lock('for key share')->value('use_provider_categories');
     }
 
     /**

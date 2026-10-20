@@ -710,6 +710,21 @@ it('a categoria do provedor segue a configuração gravada do dono do lote, não
         ->and($transaction->categorized_by)->toBe('pluggy');
 });
 
+it('lê a configuração do dono do lote com FOR KEY SHARE na linha de users', function () {
+    DB::enableQueryLog();
+
+    $this->action->handle(
+        pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
+        [ingestRow(['externalId' => 'lock-1'])],
+    );
+
+    $queries = collect(DB::getQueryLog())->pluck('query');
+    DB::disableQueryLog();
+
+    expect($queries->contains(fn (string $sql) => str_contains($sql, 'from "users"') && str_ends_with(mb_strtolower(trim($sql)), 'for key share')))
+        ->toBeTrue();
+});
+
 it('categoria do provedor sem sinônimo/nome conhecido ou sem categoria ativa correspondente não categoriza', function () {
     $this->user->forceFill(['use_provider_categories' => true])->save();
 

@@ -171,7 +171,7 @@ export function ProviderCategoriesCard({ user }: { user: User }) {
           />
         </div>
 
-        {countFailed && (
+        {!enabled && countFailed && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
             <span className="flex items-center gap-2">
               <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />

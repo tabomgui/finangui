@@ -213,7 +213,14 @@ describe('ProviderCategoriesCard', () => {
     expect(screen.queryByText(/ainda com a categoria do banco/)).not.toBeInTheDocument()
   })
 
-  it('contagem com erro mostra um aviso com "Tentar de novo"', () => {
+  it('ligado, a contagem com erro não mostra aviso nenhum (o diálogo de desligar já reconta)', () => {
+    countState = { data: undefined, isError: true }
+    render(<ProviderCategoriesCard user={userWith(true)} />)
+
+    expect(screen.queryByText('Não foi possível contar os lançamentos categorizados pelo banco.')).not.toBeInTheDocument()
+  })
+
+  it('desligado, a contagem com erro mostra um aviso com "Tentar de novo"', () => {
     countState = { data: undefined, isError: true }
     render(<ProviderCategoriesCard user={userWith(false)} />)
 

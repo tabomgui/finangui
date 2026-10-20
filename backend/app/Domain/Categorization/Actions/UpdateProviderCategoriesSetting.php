@@ -21,9 +21,10 @@ use Illuminate\Support\Facades\DB;
  * Tudo numa única transação, com a linha do usuário travada (FOR UPDATE):
  * serializa com App\Domain\Categorization\Actions\ApplyCategorization, que
  * trava a mesma linha, e com IngestTransactions, que lê a configuração com
- * FOR SHARE nessa linha e a segura até o fim do lote. Um lote já em
- * andamento termina antes (com a configuração que leu) e a limpeza vê o que
- * ele gravou; um lote que começa depois já lê o valor novo.
+ * FOR KEY SHARE nessa linha e a segura até o fim do lote (FOR UPDATE é a
+ * única trava que conflita com ela). Um lote já em andamento termina antes
+ * (com a configuração que leu) e a limpeza vê o que ele gravou; um lote que
+ * começa depois já lê o valor novo.
  */
 final class UpdateProviderCategoriesSetting
 {
