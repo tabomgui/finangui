@@ -34,4 +34,21 @@ final readonly class RuleContext
             onlyCategory: false,
         );
     }
+
+    /**
+     * Só a categoria, ignorando a categoria atual da transação: responde
+     * "que categoria as regras dariam a este lançamento?" (primeira regra
+     * que define categoria vence). Usado por quem decide, à parte, se essa
+     * resposta pode ser gravada (lançamento novo, reconciliação, revisão).
+     */
+    public static function categoryOnly(): self
+    {
+        return new self(
+            hasCategory: false,
+            categoryManual: false,
+            descriptionLocked: true,
+            overwrite: false,
+            onlyCategory: true,
+        );
+    }
 }

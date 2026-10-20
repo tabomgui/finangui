@@ -1883,6 +1883,8 @@ export interface components {
         RulePreviewResource: {
             matched: number;
             changed: number;
+            uncategorized: number;
+            other_category: number;
             sample: {
                 transaction: components["schemas"]["TransactionResource"];
                 changes: {

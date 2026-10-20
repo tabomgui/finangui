@@ -25,6 +25,8 @@ final class RulePreviewResource extends JsonResource
         return [
             'matched' => $this->matched,
             'changed' => $this->changed,
+            'uncategorized' => $this->uncategorized,
+            'other_category' => $this->otherCategory,
             'sample' => Collection::make($this->sample)->map(fn (RulePreviewSample $item) => [
                 'transaction' => TransactionResource::make($item->transaction),
                 'changes' => [

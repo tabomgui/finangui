@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Recurrences\Models\Recurrence;
 use App\Domain\Rules\Data\RuleDefinition;
@@ -185,6 +186,20 @@ it('não toca em pernas de transferência', function () {
     ApplyRuleRetroactively::dispatch($rule->id, $user->id);
 
     expect($leg->refresh()->category_id)->toBeNull();
+});
+
+it('não toca em pagamento de fatura reconhecido', function () {
+    $user = actingAsUser();
+    $statement = CardStatement::factory()->create();
+    $payment = Transaction::factory()->create([
+        'account_id' => $statement->account_id, 'description' => 'Uber pagamento', 'direction' => 'in',
+        'statement_id' => $statement->id, 'card_payment_statement_id' => $statement->id, 'category_id' => null,
+    ]);
+    $rule = uberRule();
+
+    ApplyRuleRetroactively::dispatch($rule->id, $user->id);
+
+    expect($payment->refresh()->category_id)->toBeNull();
 });
 
 it('restaura o guard sem usuário autenticado depois de rodar', function () {

@@ -17,6 +17,11 @@ use Illuminate\Database\Eloquent\Collection;
  * conferir antes de aplicar): conta quantas transações do usuário casam e
  * quantas de fato mudariam, mais uma amostra de até 20, mais recentes
  * primeiro. Nunca grava nada.
+ *
+ * Dos que casam, conta também, independente de "overwrite", quantos estão
+ * sem categoria e receberiam a da regra (uncategorized) e quantos já têm
+ * uma categoria diferente da dela (otherCategory, inclusive os definidos à
+ * mão, que nunca mudam).
  */
 final class PreviewRule
 {
@@ -30,7 +35,10 @@ final class PreviewRule
     {
         $matched = 0;
         $changed = 0;
+        $uncategorized = 0;
+        $otherCategory = 0;
         $sample = [];
+        $setsCategory = $definition->setsCategory();
 
         // Carregar tags custa uma query a mais por lote; só compensa no scan
         // inteiro quando a regra tem add_tag (as outras ações nunca tocam
@@ -38,16 +46,17 @@ final class PreviewRule
         // mas só para quem entrou nela (abaixo).
         $needsTags = $definition->usesAddTag();
 
-        $query = Transaction::query()->whereNull('transfer_id')->excludingProjectedRecurrences();
+        $query = Transaction::query()->eligibleForRules();
         if ($needsTags) {
             $query->with('tags');
         }
 
         $query->lazyByIdDesc(500)
-            ->each(function (Transaction $transaction) use ($definition, $overwrite, &$matched, &$changed, &$sample): void {
+            ->each(function (Transaction $transaction) use ($definition, $overwrite, $setsCategory, &$matched, &$changed, &$uncategorized, &$otherCategory, &$sample): void {
                 $context = RuleContext::forExisting($transaction, $overwrite);
+                $subject = RuleSubject::fromTransaction($transaction);
 
-                $outcome = RuleEngine::evaluate(RuleSubject::fromTransaction($transaction), [$definition], $context);
+                $outcome = RuleEngine::evaluate($subject, [$definition], $context);
 
                 if (! $outcome->matched()) {
                     return;
@@ -56,6 +65,17 @@ final class PreviewRule
                 $matched++;
 
                 $changes = $this->apply->changes($transaction, $outcome);
+
+                if ($setsCategory) {
+                    if ($transaction->category_id === null) {
+                        // Sem categoria, "overwrite" não importa: o contexto
+                        // acima já deixa a regra definir a categoria.
+                        $uncategorized += array_key_exists('category_id', $changes) ? 1 : 0;
+                    } else {
+                        $categoryOnly = RuleEngine::evaluate($subject, [$definition], RuleContext::categoryOnly());
+                        $otherCategory += array_key_exists('category_id', $this->apply->changes($transaction, $categoryOnly)) ? 1 : 0;
+                    }
+                }
 
                 if ($changes === []) {
                     return;
@@ -84,6 +104,6 @@ final class PreviewRule
             (new Collection(array_map(fn (RulePreviewSample $item) => $item->transaction, $sample)))->load($relations);
         }
 
-        return new RulePreviewResult($matched, $changed, $sample);
+        return new RulePreviewResult($matched, $changed, $uncategorized, $otherCategory, $sample);
     }
 }

@@ -43,8 +43,18 @@ final readonly class RuleDefinition
      */
     public function usesAddTag(): bool
     {
+        return $this->hasAction(RuleActionType::AddTag);
+    }
+
+    public function setsCategory(): bool
+    {
+        return $this->hasAction(RuleActionType::SetCategory);
+    }
+
+    private function hasAction(RuleActionType $type): bool
+    {
         foreach ($this->actions as $action) {
-            if (($action['type'] ?? null) === RuleActionType::AddTag->value) {
+            if (($action['type'] ?? null) === $type->value) {
                 return true;
             }
         }

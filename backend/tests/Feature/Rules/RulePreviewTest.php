@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Accounts\Models\Account;
+use App\Domain\Cards\Models\CardStatement;
 use App\Domain\Categories\Models\Category;
 use App\Domain\Tags\Models\Tag;
 use App\Domain\Transactions\Models\Transaction;
@@ -253,4 +254,54 @@ it('422 quando a definição da regra é inválida', function () {
             ['field' => 'amount', 'op' => 'contains', 'value' => 100],
         ],
     ]))->assertStatus(422)->assertJsonValidationErrors('conditions.0.op');
+});
+
+it('separa os que casam em sem categoria e com outra categoria, com ou sem overwrite', function (bool $overwrite) {
+    actingAsUser();
+    $target = Category::factory()->create();
+    $other = Category::factory()->create();
+
+    Transaction::factory()->create(['description' => 'Uber *1', 'category_id' => null]);
+    Transaction::factory()->create(['description' => 'Uber *2', 'category_id' => null]);
+    Transaction::factory()->create(['description' => 'Uber *3', 'category_id' => $other->id, 'categorized_by' => 'history']);
+    Transaction::factory()->create(['description' => 'Uber *4', 'category_id' => $other->id, 'categorized_by' => 'manual']);
+    Transaction::factory()->create(['description' => 'Uber *5', 'category_id' => $target->id, 'categorized_by' => 'rule:1']);
+    Transaction::factory()->create(['description' => 'Padaria', 'category_id' => null]);
+
+    $response = $this->postJson('/api/v1/rules/preview', previewPayload([
+        'actions' => [['type' => 'set_category', 'category_id' => $target->id]],
+        'overwrite' => $overwrite,
+    ]))->assertOk();
+
+    expect($response->json('data.matched'))->toBe(5);
+    expect($response->json('data.uncategorized'))->toBe(2);
+    expect($response->json('data.other_category'))->toBe(2);
+    expect($response->json('data.changed'))->toBe($overwrite ? 3 : 2);
+})->with([false, true]);
+
+it('sem set_category, as duas contagens ficam zeradas', function () {
+    actingAsUser();
+    Transaction::factory()->create(['description' => 'Uber *1', 'category_id' => null]);
+    Transaction::factory()->create(['description' => 'Uber *2', 'category_id' => Category::factory()->create()->id, 'categorized_by' => 'history']);
+
+    $response = $this->postJson('/api/v1/rules/preview', previewPayload([
+        'actions' => [['type' => 'set_payee', 'value' => 'Uber BV']],
+    ]))->assertOk();
+
+    expect($response->json('data.matched'))->toBe(2);
+    expect($response->json('data.uncategorized'))->toBe(0);
+    expect($response->json('data.other_category'))->toBe(0);
+});
+
+it('pagamento de fatura reconhecido fica fora da prévia', function () {
+    actingAsUser();
+    $statement = CardStatement::factory()->create();
+    Transaction::factory()->create([
+        'account_id' => $statement->account_id, 'description' => 'Uber pagamento', 'direction' => 'in',
+        'statement_id' => $statement->id, 'card_payment_statement_id' => $statement->id,
+    ]);
+
+    $response = $this->postJson('/api/v1/rules/preview', previewPayload())->assertOk();
+
+    expect($response->json('data.matched'))->toBe(0);
 });

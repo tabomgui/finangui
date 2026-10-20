@@ -250,6 +250,22 @@ class Transaction extends Model
     }
 
     /**
+     * Lançamentos que uma regra já salva (ou em edição) pode olhar e mudar
+     * depois do fato: prévia, aplicação retroativa, reconciliação de uma
+     * regra editada e revisão de todas as regras. Fora: perna de
+     * transferência, prevista de recorrência e pagamento de fatura
+     * reconhecido (nunca entra em relatório; ver isCardPayment()).
+     *
+     * @param  Builder<Transaction>  $query
+     */
+    public function scopeEligibleForRules(Builder $query): void
+    {
+        $query->whereNull('transactions.transfer_id')
+            ->whereNull('transactions.card_payment_statement_id')
+            ->excludingProjectedRecurrences();
+    }
+
+    /**
      * Lançamento pendente de categorização (ver
      * App\Domain\Categorization\Queries\PendingCategorization): do usuário,
      * sem categoria, lançado (posted), não ignorado, fora de transferência,

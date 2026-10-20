@@ -38,7 +38,7 @@ function validValues(): RuleFormValues {
 }
 
 function preview(overrides: Partial<RulePreview> = {}): RulePreview {
-  return { matched: 5, changed: 3, sample: [], ...overrides }
+  return { matched: 5, changed: 3, uncategorized: 3, other_category: 0, sample: [], ...overrides }
 }
 
 function idleQueryResult(data: RulePreview | undefined = undefined) {
