@@ -23,7 +23,7 @@ final class RuleEngine
         $canSetCategory = ! $context->hasCategory || ($context->overwrite && ! $context->categoryManual);
 
         foreach ($rules as $rule) {
-            if (! RuleMatcher::matches($rule->match, $rule->conditions, $subject)) {
+            if (! RuleMatcher::matches($rule->match, $rule->compiledConditions, $subject)) {
                 continue;
             }
             $outcome->matchedRuleIds[] = $rule->id;

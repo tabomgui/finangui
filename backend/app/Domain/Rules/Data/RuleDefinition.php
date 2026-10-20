@@ -4,6 +4,7 @@ namespace App\Domain\Rules\Data;
 
 use App\Domain\Rules\Enums\RuleActionType;
 use App\Domain\Rules\Models\Rule;
+use App\Domain\Rules\Support\RuleMatcher;
 
 /**
  * Regra na forma que o motor avalia: id (nulo na prévia, regra ainda não
@@ -11,6 +12,15 @@ use App\Domain\Rules\Models\Rule;
  */
 final readonly class RuleDefinition
 {
+    /**
+     * Condições preparadas uma vez para o motor (RuleMatcher::compile()):
+     * avaliar a mesma regra em milhares de transações não normaliza o valor
+     * de novo a cada linha.
+     *
+     * @var list<mixed>
+     */
+    public array $compiledConditions;
+
     /**
      * @param  list<array<string, mixed>>  $conditions
      * @param  list<array<string, mixed>>  $actions
@@ -20,7 +30,9 @@ final readonly class RuleDefinition
         public string $match,
         public array $conditions,
         public array $actions,
-    ) {}
+    ) {
+        $this->compiledConditions = RuleMatcher::compile($conditions);
+    }
 
     public static function fromRule(Rule $rule): self
     {
