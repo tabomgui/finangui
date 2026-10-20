@@ -9,7 +9,8 @@ use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Collection;
 
 /**
- * "changes" sempre sai com as 5 chaves (nulo, lista vazia ou false quando
+ * A amostra traz as transações mais recentes que casam, mudando ou não
+ * ("would_change"). "changes" sempre sai com as 5 chaves (nulo, lista vazia ou false quando
  * aquela mudança não se aplica), para o tipo no frontend ficar estável, sem
  * variar com o que a regra decide mudar.
  *
@@ -27,8 +28,10 @@ final class RulePreviewResource extends JsonResource
             'changed' => $this->changed,
             'uncategorized' => $this->uncategorized,
             'other_category' => $this->otherCategory,
+            'already_in_category' => $this->alreadyInCategory,
             'sample' => Collection::make($this->sample)->map(fn (RulePreviewSample $item) => [
                 'transaction' => TransactionResource::make($item->transaction),
+                'would_change' => $item->wouldChange,
                 'changes' => [
                     'category_id' => $item->categoryId,
                     'description' => $item->description,

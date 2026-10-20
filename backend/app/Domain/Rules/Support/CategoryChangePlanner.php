@@ -11,6 +11,7 @@ use App\Domain\Rules\Data\RuleContext;
 use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Data\RuleOutcome;
 use App\Domain\Rules\Data\RuleSubject;
+use App\Domain\Rules\Enums\CategorySource;
 use App\Domain\Rules\Enums\ReconcileGroup;
 use App\Domain\Rules\Enums\ReviewGroup;
 use App\Domain\Rules\Models\Rule;
@@ -232,14 +233,15 @@ final class CategoryChangePlanner
 
     /**
      * Linhas para exibir, mais recentes primeiro (data, depois id). Uma
-     * consulta só para os nomes das contas. $ruleNames (id → nome): regra
-     * ausente do mapa (excluída) sai sem rule_id/rule_name.
+     * consulta só para os nomes das contas. $rules (id → regra, inclusive
+     * desativadas): regra ausente do mapa (excluída) sai sem
+     * rule_id/rule_name/rule_active e sem current_rule_name.
      *
      * @param  list<CategoryChange>  $changes
-     * @param  array<int, string>  $ruleNames
+     * @param  array<int, Rule>  $rules
      * @return list<CategoryChangeItem>
      */
-    public function items(array $changes, array $ruleNames = []): array
+    public function items(array $changes, array $rules = []): array
     {
         if ($changes === []) {
             return [];
@@ -251,9 +253,12 @@ final class CategoryChangePlanner
         /** @var array<int, string> $accountNames */
         $accountNames = Account::query()->whereKey($accountIds)->pluck('name', 'id')->all();
 
-        return array_map(function (CategoryChange $change) use ($accountNames, $ruleNames): CategoryChangeItem {
+        return array_map(function (CategoryChange $change) use ($accountNames, $rules): CategoryChangeItem {
             $transaction = $change->transaction;
-            $ruleName = $change->ruleId !== null ? ($ruleNames[$change->ruleId] ?? null) : null;
+            $rule = $change->ruleId !== null ? ($rules[$change->ruleId] ?? null) : null;
+            $source = $transaction->category_id !== null ? CategorySource::fromCategorizedBy($transaction->categorized_by) : null;
+            $currentRuleId = $source === CategorySource::Rule ? self::ruleIdOf((string) $transaction->categorized_by) : null;
+            $currentRule = $currentRuleId !== null ? ($rules[$currentRuleId] ?? null) : null;
 
             return new CategoryChangeItem(
                 transactionId: $transaction->id,
@@ -264,8 +269,11 @@ final class CategoryChangePlanner
                 direction: $transaction->direction,
                 currentCategoryId: $transaction->category_id,
                 newCategoryId: $change->categoryId,
-                ruleId: $ruleName !== null ? $change->ruleId : null,
-                ruleName: $ruleName,
+                ruleId: $rule?->id,
+                ruleName: $rule?->name,
+                ruleActive: $rule?->is_active,
+                currentSource: $source,
+                currentRuleName: $currentRule?->name,
             );
         }, $changes);
     }

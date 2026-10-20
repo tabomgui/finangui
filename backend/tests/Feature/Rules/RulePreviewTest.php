@@ -75,12 +75,16 @@ it('com overwrite muda categoria de regra/histórico, mas não a definida à mã
     expect($response->json('data.matched'))->toBe(2);
     expect($response->json('data.changed'))->toBe(1);
 
-    $sampleIds = collect($response->json('data.sample'))->pluck('transaction.id')->all();
-    expect($sampleIds)->toBe([$byRule->id]);
-    expect($sampleIds)->not->toContain($manual->id);
+    // Os dois casam e entram na amostra; só o de regra muda, o à mão nunca.
+    $sample = collect($response->json('data.sample'))->keyBy('transaction.id');
+    expect($sample->keys()->all())->toEqualCanonicalizing([$byRule->id, $manual->id]);
+    expect($sample[$byRule->id]['would_change'])->toBeTrue();
+    expect($sample[$byRule->id]['changes']['category_id'])->toBe($new->id);
+    expect($sample[$manual->id]['would_change'])->toBeFalse();
+    expect($sample[$manual->id]['changes']['category_id'])->toBeNull();
 });
 
-it('amostra fica limitada a 20, só com as que mudam, mais recentes primeiro', function () {
+it('amostra: as 20 mais recentes que casam, inclusive as que não mudam, com would_change', function () {
     actingAsUser();
     $target = Category::factory()->create();
 
@@ -93,8 +97,8 @@ it('amostra fica limitada a 20, só com as que mudam, mais recentes primeiro', f
             'description' => "Uber *trip {$i}", 'category_id' => null, 'date' => now()->subDays(30 - $i)->toDateString(),
         ])->id;
     }
-    // Uma transação que casa mas não muda nada (mesma categoria já aplicada): não entra na amostra nem conta como changed.
-    Transaction::factory()->create(['description' => 'Uber *trip extra', 'category_id' => $target->id, 'date' => now()->toDateString()]);
+    // Casa mas não muda nada (já na categoria da regra): conta em matched, não em changed, e entra na amostra pela data.
+    $unchanged = Transaction::factory()->create(['description' => 'Uber *trip extra', 'category_id' => $target->id, 'date' => now()->toDateString()]);
 
     $response = $this->postJson('/api/v1/rules/preview', previewPayload([
         'actions' => [['type' => 'set_category', 'category_id' => $target->id]],
@@ -107,8 +111,36 @@ it('amostra fica limitada a 20, só com as que mudam, mais recentes primeiro', f
     expect($sample)->toHaveCount(20);
 
     $sampleIds = collect($sample)->pluck('transaction.id')->all();
-    $expected = array_slice(array_reverse($ids), 0, 20);
+    $expected = [$unchanged->id, ...array_slice(array_reverse($ids), 0, 19)];
     expect($sampleIds)->toBe($expected);
+
+    expect($sample[0]['would_change'])->toBeFalse();
+    expect($sample[0]['changes']['category_id'])->toBeNull();
+    expect($sample[1]['would_change'])->toBeTrue();
+    expect($sample[1]['changes']['category_id'])->toBe($target->id);
+});
+
+it('a amostra traz quem tem outra categoria sem overwrite, marcado como would_change false', function () {
+    actingAsUser();
+    $target = Category::factory()->create();
+    $other = Category::factory()->create();
+
+    $fromHistory = Transaction::factory()->create(['description' => 'Uber *1', 'category_id' => $other->id, 'categorized_by' => 'history']);
+
+    $withoutOverwrite = $this->postJson('/api/v1/rules/preview', previewPayload([
+        'actions' => [['type' => 'set_category', 'category_id' => $target->id]],
+    ]))->assertOk();
+
+    expect($withoutOverwrite->json('data.sample.0.transaction.id'))->toBe($fromHistory->id);
+    expect($withoutOverwrite->json('data.sample.0.would_change'))->toBeFalse();
+
+    $withOverwrite = $this->postJson('/api/v1/rules/preview', previewPayload([
+        'actions' => [['type' => 'set_category', 'category_id' => $target->id]],
+        'overwrite' => true,
+    ]))->assertOk();
+
+    expect($withOverwrite->json('data.sample.0.would_change'))->toBeTrue();
+    expect($withOverwrite->json('data.sample.0.changes.category_id'))->toBe($target->id);
 });
 
 it('changes sempre tem as 5 chaves, mesmo quando só a categoria muda', function () {
@@ -277,9 +309,10 @@ it('separa os que casam em sem categoria e com outra categoria, com ou sem overw
     expect($response->json('data.uncategorized'))->toBe(2);
     expect($response->json('data.other_category'))->toBe(2);
     expect($response->json('data.changed'))->toBe($overwrite ? 3 : 2);
+    expect($response->json('data.already_in_category'))->toBe(1);
 })->with([false, true]);
 
-it('sem set_category, as duas contagens ficam zeradas', function () {
+it('sem set_category, as contagens por categoria ficam zeradas', function () {
     actingAsUser();
     Transaction::factory()->create(['description' => 'Uber *1', 'category_id' => null]);
     Transaction::factory()->create(['description' => 'Uber *2', 'category_id' => Category::factory()->create()->id, 'categorized_by' => 'history']);
@@ -291,6 +324,7 @@ it('sem set_category, as duas contagens ficam zeradas', function () {
     expect($response->json('data.matched'))->toBe(2);
     expect($response->json('data.uncategorized'))->toBe(0);
     expect($response->json('data.other_category'))->toBe(0);
+    expect($response->json('data.already_in_category'))->toBe(0);
 });
 
 it('pagamento de fatura reconhecido fica fora da prévia', function () {

@@ -110,6 +110,44 @@ it('stale: regra excluída, desativada, que não casa mais ou que não define ma
     expect($items[$deleted->id])->not->toHaveKey('rule_name');
 });
 
+it('mostra de onde vem a categoria atual e se a regra mostrada está ativa', function () {
+    actingAsUser();
+    $transport = Category::factory()->create();
+    $food = Category::factory()->create();
+    $rule = reviewRule('uber', $transport);
+    $delivery = reviewRule('ifood', $food, ['name' => 'Delivery']);
+    $inactive = reviewRule('cinema', $food, ['name' => 'Cinema', 'is_active' => false]);
+
+    $fill = Transaction::factory()->create(['description' => 'Uber eats', 'category_id' => null]);
+    $byOtherRule = Transaction::factory()->create(['description' => 'Uber *pedido', 'category_id' => $food->id, 'categorized_by' => "rule:{$delivery->id}"]);
+    $byDeletedRule = Transaction::factory()->create(['description' => 'Uber *antigo', 'category_id' => $food->id, 'categorized_by' => 'rule:999999']);
+    $fromHistory = Transaction::factory()->create(['description' => 'Uber *trip', 'category_id' => $food->id, 'categorized_by' => 'history']);
+    $fromBank = Transaction::factory()->create(['description' => 'Uber *bank', 'category_id' => $food->id, 'categorized_by' => 'pluggy']);
+    $manual = Transaction::factory()->create(['description' => 'Uber *mão', 'category_id' => $food->id, 'categorized_by' => 'manual']);
+    $stale = Transaction::factory()->create(['description' => 'Cinema Centro', 'category_id' => $food->id, 'categorized_by' => "rule:{$inactive->id}"]);
+
+    $groups = reviewGroups();
+    $conflict = reviewItemsById($groups['conflict']);
+
+    expect($groups['fill']['items'][0])->toMatchArray(['transaction_id' => $fill->id, 'rule_id' => $rule->id, 'rule_active' => true]);
+    expect($groups['fill']['items'][0])->not->toHaveKey('current_source');
+    expect($groups['fill']['items'][0])->not->toHaveKey('current_rule_name');
+
+    expect($conflict[$byOtherRule->id])->toMatchArray(['current_source' => 'rule', 'current_rule_name' => 'Delivery']);
+    expect($conflict[$byDeletedRule->id])->toMatchArray(['current_source' => 'rule']);
+    expect($conflict[$byDeletedRule->id])->not->toHaveKey('current_rule_name');
+    expect($conflict[$fromHistory->id])->toMatchArray(['current_source' => 'history']);
+    expect($conflict[$fromHistory->id])->not->toHaveKey('current_rule_name');
+    expect($conflict[$fromBank->id])->toMatchArray(['current_source' => 'pluggy']);
+
+    expect($groups['manual']['items'][0])->toMatchArray(['transaction_id' => $manual->id, 'current_source' => 'manual']);
+
+    expect($groups['stale']['items'][0])->toMatchArray([
+        'transaction_id' => $stale->id, 'rule_id' => $inactive->id, 'rule_name' => 'Cinema', 'rule_active' => false,
+        'current_source' => 'rule', 'current_rule_name' => 'Cinema',
+    ]);
+});
+
 it('não é stale quando outra regra ativa dá a mesma categoria', function () {
     actingAsUser();
     $category = Category::factory()->create();

@@ -1438,6 +1438,9 @@ export interface components {
             new_category_id?: number;
             rule_id?: number;
             rule_name?: string;
+            rule_active?: boolean;
+            current_source?: components["schemas"]["CategorySource"];
+            current_rule_name?: string;
         };
         /** CategoryComparisonResource */
         CategoryComparisonResource: {
@@ -1476,6 +1479,12 @@ export interface components {
             is_transfer_effective: boolean;
             is_archived: boolean;
         };
+        /**
+         * CategorySource
+         * @description Quem deu a categoria atual de um lançamento, lido de categorized_by ("manual", "history", "pluggy" ou "rule:{id}").
+         * @enum {string}
+         */
+        CategorySource: "manual" | "history" | "pluggy" | "rule";
         /** ConfirmImportBatchRequest */
         ConfirmImportBatchRequest: {
             skip_lines?: number[];
@@ -1988,8 +1997,10 @@ export interface components {
             changed: number;
             uncategorized: number;
             other_category: number;
+            already_in_category: number;
             sample: {
                 transaction: components["schemas"]["TransactionResource"];
+                would_change: boolean;
                 changes: {
                     category_id: number | null;
                     description: string | null;

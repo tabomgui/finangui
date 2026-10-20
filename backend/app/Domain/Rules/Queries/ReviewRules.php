@@ -54,15 +54,16 @@ final class ReviewRules
             });
 
         // Todas as regras do usuário, inclusive desativadas: o grupo "stale"
-        // mostra o nome da regra que tinha categorizado, mesmo desligada.
-        /** @var array<int, string> $ruleNames */
-        $ruleNames = Rule::query()->pluck('name', 'id')->all();
+        // mostra o nome da regra que tinha categorizado, mesmo desligada, e
+        // conflict mostra a regra que deu a categoria atual.
+        /** @var array<int, Rule> $allRules */
+        $allRules = Rule::query()->get(['id', 'name', 'is_active'])->keyBy('id')->all();
 
         $groups = array_map(fn (ReviewGroup $group) => new RuleReviewGroupResult(
             key: $group,
             count: $counts[$group->value],
             truncated: $counts[$group->value] > self::ITEM_LIMIT,
-            items: $this->planner->items($kept[$group->value]->all(), $ruleNames),
+            items: $this->planner->items($kept[$group->value]->all(), $allRules),
         ), ReviewGroup::cases());
 
         return new RuleReviewResult($groups, CategoryChangePlanner::MAX_CHANGES);
