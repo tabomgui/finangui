@@ -4,7 +4,9 @@ namespace App\Http\Resources;
 
 use App\Domain\Rules\Data\RuleReviewGroupResult;
 use App\Domain\Rules\Data\RuleReviewResult;
+use App\Domain\Rules\Enums\ReviewGroup;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Collection;
 
@@ -17,7 +19,12 @@ use Illuminate\Support\Collection;
 final class RuleReviewResource extends JsonResource
 {
     /**
-     * @return array<string, mixed>
+     * items: cada item no formato de CategoryChangeItemResource.
+     *
+     * @return array{
+     *     max_changes: int,
+     *     groups: list<array{key: ReviewGroup, count: int, applicable: bool, truncated: bool, items: AnonymousResourceCollection}>,
+     * }
      */
     public function toArray(Request $request): array
     {

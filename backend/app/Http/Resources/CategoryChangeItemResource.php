@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Domain\Rules\Data\CategoryChangeItem;
+use App\Domain\Transactions\Enums\Direction;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -17,7 +18,18 @@ use Illuminate\Http\Resources\Json\JsonResource;
 final class CategoryChangeItemResource extends JsonResource
 {
     /**
-     * @return array<string, mixed>
+     * @return array{
+     *     transaction_id: int,
+     *     date: string,
+     *     description: string,
+     *     account_name: string,
+     *     amount: int,
+     *     direction: Direction,
+     *     current_category_id?: int,
+     *     new_category_id?: int,
+     *     rule_id?: int,
+     *     rule_name?: string,
+     * }
      */
     public function toArray(Request $request): array
     {

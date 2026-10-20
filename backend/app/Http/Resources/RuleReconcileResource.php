@@ -5,7 +5,9 @@ namespace App\Http\Resources;
 use App\Domain\Rules\Data\RuleReconcileGroupResult;
 use App\Domain\Rules\Data\RuleReconcileResult;
 use App\Domain\Rules\Enums\ReconcileClearReason;
+use App\Domain\Rules\Enums\ReconcileGroup;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Collection;
 
@@ -18,7 +20,12 @@ use Illuminate\Support\Collection;
 final class RuleReconcileResource extends JsonResource
 {
     /**
-     * @return array<string, mixed>
+     * sample: cada item no formato de CategoryChangeItemResource.
+     *
+     * @return array{
+     *     max_changes: int,
+     *     groups: list<array{key: ReconcileGroup, count: int, reason?: ReconcileClearReason, sample: AnonymousResourceCollection}>,
+     * }
      */
     public function toArray(Request $request): array
     {
