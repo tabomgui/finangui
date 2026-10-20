@@ -269,15 +269,22 @@ class Transaction extends Model
 
     /**
      * Lançamento cuja categoria atual veio do banco (categorized_by
-     * 'pluggy', ver App\Domain\Imports\Actions\IngestTransactions). Uma
-     * linha com o marcador mas sem categoria (categoria excluída depois)
-     * não entra: já não tem nada do banco para remover.
+     * 'pluggy', ver App\Domain\Imports\Actions\IngestTransactions) e que
+     * pode perder essa categoria sem mudar relatório nenhum. Fica de fora:
+     * linha com o marcador mas sem categoria (categoria excluída depois — já
+     * não há nada do banco para remover) e categoria de transferência, ela
+     * mesma ou pelo pai (ex.: "Pagamento de fatura", "Investimentos"):
+     * tirar essa categoria devolveria o lançamento a reportable() e contaria
+     * em dobro, por exemplo, o gasto do cartão que o pagamento quita.
      *
      * @param  Builder<Transaction>  $query
      */
     public function scopeCategorizedByProvider(Builder $query): void
     {
         $query->where('transactions.categorized_by', 'pluggy')
-            ->whereNotNull('transactions.category_id');
+            ->whereNotNull('transactions.category_id')
+            ->whereHas('category', fn (Builder $c) => $c->where('is_transfer', false)
+                ->where(fn (Builder $c2) => $c2->whereNull('parent_id')
+                    ->orWhereHas('parent', fn (Builder $p) => $p->where('is_transfer', false))));
     }
 }

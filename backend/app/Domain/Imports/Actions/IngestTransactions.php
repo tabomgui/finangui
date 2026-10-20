@@ -69,6 +69,12 @@ final class IngestTransactions
                 throw new ImportBatchNotPending;
             }
 
+            // Lida já aqui, antes de tocar em qualquer transação: a trava
+            // compartilhada na linha do dono segura uma mudança concorrente
+            // da configuração (UpdateProviderCategoriesSetting trava a mesma
+            // linha FOR UPDATE) até este lote terminar.
+            $useProviderCategories = $this->ownerUsesProviderCategories($locked);
+
             // Marco d'água das faturas já existentes: qualquer CardStatement
             // com id maior, ao final, foi criado por este lote (a conta fica
             // travada daqui até o fim, então nenhuma outra sessão cria uma
@@ -96,7 +102,7 @@ final class IngestTransactions
             // desligado (padrão), o mapa fica vazio e applyProviderCategory()
             // nunca categoriza.
             $billStatementMemo = ImportPreloads::billStatements($account, $decisions);
-            $usableCategoriesByName = $this->ownerUsesProviderCategories($locked)
+            $usableCategoriesByName = $useProviderCategories
                 ? ImportPreloads::usableCategoriesByName($decisions)
                 : [];
 
@@ -271,9 +277,14 @@ final class IngestTransactions
         $insertedIds[] = $transaction->id;
     }
 
+    /**
+     * Configuração do dono do lote, lida do banco (não do usuário autenticado
+     * em memória) com FOR SHARE: várias importações do mesmo usuário seguem
+     * em paralelo, mas uma mudança da configuração espera o lote terminar.
+     */
     private function ownerUsesProviderCategories(ImportBatch $batch): bool
     {
-        return (bool) User::query()->whereKey($batch->user_id)->value('use_provider_categories');
+        return (bool) User::query()->whereKey($batch->user_id)->sharedLock()->value('use_provider_categories');
     }
 
     /**

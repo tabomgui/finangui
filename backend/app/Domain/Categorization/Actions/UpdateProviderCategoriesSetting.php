@@ -15,9 +15,15 @@ use Illuminate\Support\Facades\DB;
  * tela Categorizar — category_id e categorized_by viram null; a descrição (e
  * a description_key) não mudam.
  *
- * Tudo numa única transação, com a linha do usuário travada: serializa com
- * App\Domain\Categorization\Actions\ApplyCategorization, que trava a mesma
- * linha.
+ * Lançamento com categoria de transferência (ela mesma ou pelo pai) nunca
+ * é limpo, mesmo vindo do banco: ver Transaction::scopeCategorizedByProvider().
+ *
+ * Tudo numa única transação, com a linha do usuário travada (FOR UPDATE):
+ * serializa com App\Domain\Categorization\Actions\ApplyCategorization, que
+ * trava a mesma linha, e com IngestTransactions, que lê a configuração com
+ * FOR SHARE nessa linha e a segura até o fim do lote. Um lote já em
+ * andamento termina antes (com a configuração que leu) e a limpeza vê o que
+ * ele gravou; um lote que começa depois já lê o valor novo.
  */
 final class UpdateProviderCategoriesSetting
 {

@@ -23,6 +23,7 @@ use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
 use App\Support\Money\Money;
+use App\Support\UserContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -683,17 +684,30 @@ it('com use_provider_categories desligado (padrão), a categoria do provedor nun
         ->and(Transaction::where('categorized_by', 'pluggy')->exists())->toBeFalse();
 });
 
-it('a categoria do provedor segue a configuração do dono do lote, não a de outro usuário', function () {
-    $other = User::factory()->create(['use_provider_categories' => true]);
-    Category::factory()->income()->create(['user_id' => $this->user->id, 'name' => 'Salário']);
+it('a categoria do provedor segue a configuração gravada do dono do lote, não a do usuário logado nem a de uma instância em memória', function () {
+    // Usuário logado no teste ($this->user) fica com a configuração desligada;
+    // o dono do lote, com ela ligada no banco.
+    expect($this->user->refresh()->use_provider_categories)->toBeFalse();
 
-    $this->action->handle(
-        pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
+    $owner = User::factory()->create(['use_provider_categories' => true]);
+    $ownerAccount = Account::factory()->create(['user_id' => $owner->id]);
+    $salary = Category::factory()->income()->create(['user_id' => $owner->id, 'name' => 'Salário']);
+    $batch = ImportBatch::factory()->create(['account_id' => $ownerAccount->id, 'user_id' => $owner->id, 'format' => ImportFormat::Pluggy]);
+
+    // Como no job de sync: roda no contexto do dono, aqui com uma instância
+    // que diz "desligado" só em memória — o que vale é a linha gravada.
+    $staleOwner = User::query()->findOrFail($owner->id);
+    $staleOwner->use_provider_categories = false;
+
+    UserContext::run($staleOwner, fn () => $this->action->handle(
+        $batch,
         [ingestRow(['externalId' => 'own-1', 'direction' => Direction::In, 'meta' => ['provider_category' => ['name' => 'Salário', 'parent' => null]]])],
-    );
+    ));
 
-    expect($other->use_provider_categories)->toBeTrue()
-        ->and(Transaction::where('external_id', 'own-1')->first()->category_id)->toBeNull();
+    $transaction = Transaction::query()->withoutGlobalScopes()->where('external_id', 'own-1')->first();
+    expect($transaction->user_id)->toBe($owner->id)
+        ->and($transaction->category_id)->toBe($salary->id)
+        ->and($transaction->categorized_by)->toBe('pluggy');
 });
 
 it('categoria do provedor sem sinônimo/nome conhecido ou sem categoria ativa correspondente não categoriza', function () {

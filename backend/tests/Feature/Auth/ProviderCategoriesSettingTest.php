@@ -2,8 +2,10 @@
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Categories\Models\Category;
+use App\Domain\Reports\Queries\MonthSummary;
 use App\Domain\Transactions\Models\Transaction;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 
 /**
  * Lançamento inventado do usuário com a categoria marcada pela origem
@@ -91,6 +93,44 @@ it('desligar com clear_provider_categories tira a categoria só dos lançamentos
         expect($transaction->categorized_by)->toBe($categorizedBy)
             ->and($transaction->category_id)->toBe($categoryId);
     }
+});
+
+it('a limpeza e a contagem nunca incluem categoria de transferência, nem pelo pai, e o total de despesas do mês não muda', function () {
+    $user = actingAsUser(['use_provider_categories' => true]);
+    $account = Account::factory()->create(['user_id' => $user->id]);
+
+    $groceries = Category::factory()->create(['user_id' => $user->id, 'name' => 'Mercado']);
+    $cardPayment = Category::factory()->transfer()->create(['user_id' => $user->id, 'name' => 'Pagamento de fatura']);
+    $investments = Category::factory()->transfer()->create(['user_id' => $user->id, 'name' => 'Investimentos']);
+    $treasury = Category::factory()->create(['user_id' => $user->id, 'name' => 'Tesouro', 'parent_id' => $investments->id]);
+
+    $make = fn (Category $category, int $amount) => Transaction::factory()->create([
+        'user_id' => $user->id, 'account_id' => $account->id, 'date' => '2026-09-10',
+        'amount' => $amount, 'category_id' => $category->id, 'categorized_by' => 'pluggy',
+    ]);
+    $plain = $make($groceries, 10000);
+    $payment = $make($cardPayment, 50000);
+    $invested = $make($treasury, 30000);
+
+    $expense = fn (): int => app(MonthSummary::class)
+        ->for(CarbonImmutable::parse('2026-09-01'), CarbonImmutable::parse('2026-09-30'))['expense'];
+    $expenseBefore = $expense();
+
+    $this->getJson('/api/v1/categorization/provider-categorized-count')
+        ->assertOk()
+        ->assertJsonPath('data.count', 1);
+
+    $this->patchJson('/api/v1/me', ['use_provider_categories' => false, 'clear_provider_categories' => true])
+        ->assertOk()
+        ->assertJsonPath('meta.cleared_provider_categories', 1);
+
+    expect($plain->refresh()->category_id)->toBeNull()
+        ->and($payment->refresh()->category_id)->toBe($cardPayment->id)
+        ->and($payment->categorized_by)->toBe('pluggy')
+        ->and($invested->refresh()->category_id)->toBe($treasury->id)
+        ->and($invested->categorized_by)->toBe('pluggy')
+        ->and($expenseBefore)->toBe(10000)
+        ->and($expense())->toBe($expenseBefore);
 });
 
 it('a limpeza nunca toca lançamento de outro usuário', function () {
