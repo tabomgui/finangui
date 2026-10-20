@@ -43,7 +43,7 @@ function validValues(): RuleFormValues {
 }
 
 function preview(overrides: Partial<RulePreview> = {}): RulePreview {
-  return { matched: 5, changed: 3, uncategorized: 3, other_category: 0, sample: [], ...overrides }
+  return { matched: 5, changed: 3, uncategorized: 3, other_category: 0, already_in_category: 0, sample: [], ...overrides }
 }
 
 function idleQueryResult(data: RulePreview | undefined = undefined) {
@@ -76,7 +76,7 @@ describe('RulePreviewCard', () => {
 
   it('mostra quantos pega, o detalhe da categoria e "atual → nova" na amostra', () => {
     const uncategorized = { id: 1, description: 'Uber', amount: 1500, currency: 'BRL', direction: 'out', category_id: null, category: null }
-    const recategorized = {
+    const other = {
       id: 2,
       description: 'Uber Eats',
       amount: 3200,
@@ -85,22 +85,32 @@ describe('RulePreviewCard', () => {
       category_id: 4,
       category: { id: 4, parent_id: null, name: 'Lazer', icon: null, color: null },
     }
+    const already = {
+      id: 5,
+      description: 'Uber Centro',
+      amount: 2100,
+      currency: 'BRL',
+      direction: 'out',
+      category_id: 3,
+      category: { id: 3, parent_id: 1, name: 'Aplicativo', icon: null, color: null },
+    }
+    const noChange = { category_id: null, description: null, payee: null, tag_ids: [], is_ignored: false }
 
     useRulePreviewMock.mockReturnValue(
       idleQueryResult(
         preview({
-          matched: 5,
+          matched: 6,
           uncategorized: 3,
           other_category: 2,
+          already_in_category: 1,
           sample: [
             {
               transaction: uncategorized as unknown as Transaction,
+              would_change: true,
               changes: { category_id: 3, description: null, payee: null, tag_ids: [2], is_ignored: false },
             },
-            {
-              transaction: recategorized as unknown as Transaction,
-              changes: { category_id: 3, description: null, payee: null, tag_ids: [], is_ignored: false },
-            },
+            { transaction: other as unknown as Transaction, would_change: false, changes: noChange },
+            { transaction: already as unknown as Transaction, would_change: false, changes: noChange },
           ],
         }),
       ),
@@ -113,16 +123,18 @@ describe('RulePreviewCard', () => {
     })
 
     expect(screen.getByText('Lançamentos que esta regra pega')).toBeInTheDocument()
-    expect(screen.getByText('Pega 5 lançamentos hoje')).toBeInTheDocument()
-    expect(screen.getByText(/3 sem categoria recebem/)).toHaveTextContent('3 sem categoria recebem Transporte › Aplicativo')
-    expect(screen.getByText('2 já têm outra categoria')).toBeInTheDocument()
+    expect(screen.getByText('6 lançamentos já existentes se encaixam nesta regra')).toBeInTheDocument()
+    expect(screen.getByText(/3 sem categoria vão para/)).toHaveTextContent('3 sem categoria vão para Transporte › Aplicativo')
+    expect(screen.getByText(/2 têm outra categoria e não mudam/)).toHaveTextContent('2 têm outra categoria e não mudam (use Aplicar às existentes)')
+    expect(screen.getByText(/1 já está em/)).toHaveTextContent('1 já está em Transporte › Aplicativo')
     expect(screen.getByText('sem categoria → Transporte › Aplicativo')).toBeInTheDocument()
-    expect(screen.getByText('Lazer → Transporte › Aplicativo')).toBeInTheDocument()
+    expect(screen.getByText('Lazer (não muda)')).toBeInTheDocument()
+    expect(screen.getByText('já em Transporte › Aplicativo')).toBeInTheDocument()
     expect(screen.getByText('+#viagem')).toBeInTheDocument()
   })
 
-  it('no singular: "1 sem categoria recebe" e "1 já tem outra categoria"', () => {
-    useRulePreviewMock.mockReturnValue(idleQueryResult(preview({ matched: 2, uncategorized: 1, other_category: 1 })))
+  it('esconde as linhas com contagem zero e usa o singular', () => {
+    useRulePreviewMock.mockReturnValue(idleQueryResult(preview({ matched: 1, uncategorized: 1, other_category: 0, already_in_category: 0 })))
 
     render(<Wrapper initialValues={validValues()} />)
 
@@ -130,8 +142,10 @@ describe('RulePreviewCard', () => {
       vi.advanceTimersByTime(900)
     })
 
-    expect(screen.getByText(/1 sem categoria recebe$/)).toHaveTextContent('1 sem categoria recebe Transporte › Aplicativo')
-    expect(screen.getByText('1 já tem outra categoria')).toBeInTheDocument()
+    expect(screen.getByText('1 lançamento já existente se encaixa nesta regra')).toBeInTheDocument()
+    expect(screen.getByText(/1 sem categoria vai para/)).toHaveTextContent('1 sem categoria vai para Transporte › Aplicativo')
+    expect(screen.queryByText(/outra categoria/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/já est/)).not.toBeInTheDocument()
   })
 
   it('regra sem ação de categoria não mostra o detalhe por categoria', () => {
@@ -145,8 +159,8 @@ describe('RulePreviewCard', () => {
       vi.advanceTimersByTime(900)
     })
 
-    expect(screen.getByText('Pega 4 lançamentos hoje')).toBeInTheDocument()
-    expect(screen.queryByText(/sem categoria receb/)).not.toBeInTheDocument()
+    expect(screen.getByText('4 lançamentos já existentes se encaixam nesta regra')).toBeInTheDocument()
+    expect(screen.queryByText(/sem categoria v/)).not.toBeInTheDocument()
     expect(screen.queryByText(/outra categoria/)).not.toBeInTheDocument()
   })
 
@@ -178,7 +192,7 @@ describe('RulePreviewCard', () => {
     useRulePreviewMock.mockReturnValue(
       idleQueryResult(
         preview({
-          sample: [{ transaction, changes: { category_id: null, description: null, payee: null, tag_ids: [999], is_ignored: false } }],
+          sample: [{ transaction, would_change: true, changes: { category_id: null, description: null, payee: null, tag_ids: [999], is_ignored: false } }],
         }),
       ),
     )
