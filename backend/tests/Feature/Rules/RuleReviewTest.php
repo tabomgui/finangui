@@ -269,6 +269,22 @@ it('itens limitados a 500 por grupo, com a contagem completa e truncated', funct
     expect($fill['items'])->toHaveCount(500);
 });
 
+it('os 500 itens são os mais recentes pela data, não pelo id', function () {
+    $user = actingAsUser();
+    reviewRule('uber', Category::factory()->create());
+    $account = Account::factory()->create();
+    // O de menor id é o mais recente: um corte pelos maiores ids o perderia.
+    $newest = Transaction::factory()->for($account)->create(['description' => 'Uber novo', 'category_id' => null, 'date' => '2026-06-01']);
+    insertBulkTransactions($user, $account, 500, ['description' => 'Uber eats', 'date' => '2026-01-01']);
+    $oldest = Transaction::factory()->for($account)->create(['description' => 'Uber antigo', 'category_id' => null, 'date' => '2025-01-01']);
+
+    $items = reviewGroups()['fill']['items'];
+
+    expect($items)->toHaveCount(500);
+    expect($items[0]['transaction_id'])->toBe($newest->id);
+    expect(collect($items)->pluck('transaction_id'))->not->toContain($oldest->id);
+});
+
 it('a revisão não grava nada', function () {
     actingAsUser();
     reviewRule('uber', Category::factory()->create());

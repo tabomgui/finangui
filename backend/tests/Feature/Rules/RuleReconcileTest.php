@@ -270,6 +270,22 @@ it('amostra limitada a 20, mais recentes primeiro, com a contagem completa', fun
     expect(reconcileSampleIds($groups['fill']))->toBe(array_slice(array_reverse($ids), 0, 20));
 });
 
+it('a amostra fica com os mais recentes pela data, não pelo id', function () {
+    actingAsUser();
+    $rule = reconcileRule(Category::factory()->create());
+    $account = Account::factory()->create();
+
+    $newest = Transaction::factory()->for($account)->create(['description' => 'Uber novo', 'category_id' => null, 'date' => '2026-06-01']);
+    for ($i = 0; $i < 20; $i++) {
+        Transaction::factory()->for($account)->create(['description' => "Uber {$i}", 'category_id' => null, 'date' => '2026-01-01']);
+    }
+
+    $sample = reconcileGroups($this->getJson("/api/v1/rules/{$rule->id}/reconcile")->assertOk()->json())['fill']['sample'];
+
+    expect($sample)->toHaveCount(20);
+    expect($sample[0]['transaction_id'])->toBe($newest->id);
+});
+
 it('a prévia da reconciliação não grava nada', function () {
     actingAsUser();
     $old = Category::factory()->create();
