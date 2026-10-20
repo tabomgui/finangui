@@ -1,4 +1,4 @@
-import type { ReconcileClearReason, RuleReconcile, RuleReconcileGroup } from '@/api/types'
+import type { ReconcileClearReason, ReviewGroupKey, RuleReconcile, RuleReconcileGroup } from '@/api/types'
 import { pluralize } from './rule-labels'
 
 const CLEAR_LABELS: Record<ReconcileClearReason, string> = {
@@ -25,6 +25,28 @@ export function reconcileGroupLabel(group: Pick<RuleReconcileGroup, 'key' | 'rea
  */
 export function reconcileGroupCheckedByDefault(group: Pick<RuleReconcileGroup, 'key' | 'reason'>): boolean {
   return !(group.key === 'clear' && group.reason === 'inactive')
+}
+
+/** Ordem em que a revisão mostra os grupos. */
+export const REVIEW_GROUP_ORDER: readonly ReviewGroupKey[] = ['fill', 'conflict', 'stale', 'manual']
+
+export const REVIEW_GROUP_LABELS: Record<ReviewGroupKey, string> = {
+  fill: 'Sem categoria — as regras resolvem',
+  conflict: 'Categoria automática diferente da regra',
+  stale: 'Categorizados por regra que não se aplica mais',
+  manual: 'Categorizados à mão com regra diferente',
+}
+
+export const REVIEW_GROUP_HINTS: Record<ReviewGroupKey, string> = {
+  fill: 'Recebem a categoria da primeira regra que casa.',
+  conflict: 'Histórico, banco ou outra regra deram uma categoria diferente da que as regras dão hoje.',
+  stale: 'A regra foi excluída, desativada ou não casa mais: voltam para Categorizar.',
+  manual: 'Só para conferir: o que você categorizou à mão nunca muda.',
+}
+
+/** Só a seleção de "Sem categoria" começa marcada; trocar ou tirar categoria é escolha explícita. */
+export function reviewGroupCheckedByDefault(key: ReviewGroupKey): boolean {
+  return key === 'fill'
 }
 
 export function launchCount(count: number): string {

@@ -49,6 +49,7 @@ export const router = createBrowserRouter([
           { path: 'categorias', lazy: lazyPage(() => import('@/features/categories/categories-page'), 'CategoriesPage') },
           { path: 'tags', lazy: lazyPage(() => import('@/features/tags/tags-page'), 'TagsPage') },
           { path: 'regras', lazy: lazyPage(() => import('@/features/rules/rules-page'), 'RulesPage') },
+          { path: 'regras/revisao', lazy: lazyPage(() => import('@/features/rules/rule-review-page'), 'RuleReviewPage') },
           { path: 'regras/nova', lazy: lazyPage(() => import('@/features/rules/rule-editor-page'), 'RuleEditorPage') },
           { path: 'regras/:id', lazy: lazyPage(() => import('@/features/rules/rule-editor-page'), 'RuleEditorPage') },
           {

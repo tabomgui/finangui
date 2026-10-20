@@ -1,6 +1,6 @@
 import { type Announcements, closestCenter, DndContext, type DragEndEvent, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { Plus, TriangleAlert, Wand2 } from 'lucide-react'
+import { ListChecks, Plus, TriangleAlert, Wand2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -93,12 +93,22 @@ export function RulesPage() {
         title="Regras"
         subtitle="Categorização automática"
         actions={
-          <Button asChild className={headerButton}>
-            <Link to="/regras/nova">
-              <Plus className="h-4 w-4" />
-              Nova regra
-            </Link>
-          </Button>
+          <>
+            {rules && rules.length > 0 && (
+              <Button asChild className={headerButton}>
+                <Link to="/regras/revisao" aria-label="Revisar regras">
+                  <ListChecks aria-hidden className="h-4 w-4" />
+                  <span className="hidden sm:inline">Revisar regras</span>
+                </Link>
+              </Button>
+            )}
+            <Button asChild className={headerButton}>
+              <Link to="/regras/nova">
+                <Plus aria-hidden className="h-4 w-4" />
+                Nova regra
+              </Link>
+            </Button>
+          </>
         }
       />
       <PageBody>

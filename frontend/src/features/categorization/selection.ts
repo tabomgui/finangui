@@ -1,10 +1,11 @@
 import type { CategoryKind, Direction } from '@/api/types'
+import type { GroupCheckState } from '@/components/shared/group-checkbox'
+
+export type { GroupCheckState }
 
 /** Forma mínima que as funções de seleção precisam — qualquer grupo/lançamento real serve. */
 export type SelectableTransaction = { id: number; direction: Direction }
 export type SelectableGroup = { key: string; transactions: SelectableTransaction[] }
-
-export type GroupCheckState = 'none' | 'partial' | 'all'
 
 /** Estado do checkbox do cabeçalho do grupo: nenhum, parcial (alguns marcados) ou todos. */
 export function groupCheckState(group: SelectableGroup, selectedIds: ReadonlySet<number>): GroupCheckState {

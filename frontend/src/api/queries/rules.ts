@@ -11,6 +11,7 @@ type UpdateRuleRequest = components['schemas']['UpdateRuleRequest']
 type PreviewRuleRequest = components['schemas']['PreviewRuleRequest']
 type ApplyRuleRequest = components['schemas']['ApplyRuleRequest']
 type ApplyRuleReconcileRequest = components['schemas']['ApplyRuleReconcileRequest']
+type ApplyRuleReviewRequest = components['schemas']['ApplyRuleReviewRequest']
 
 export type CreateRuleBody = RuleBody & { name: string; is_active?: boolean }
 export type UpdateRuleBody = Partial<RuleBody> & { name?: string; is_active?: boolean }
@@ -167,6 +168,31 @@ export function useApplyRuleReconcile() {
   return useMutation({
     mutationFn: async ({ id, body }: { id: number; body: ApplyRuleReconcileRequest }) =>
       (await unwrap(api.POST('/rules/{rule}/reconcile', { params: { path: { rule: id } }, body }))).data,
+    onSuccess: () => {
+      void invalidateLedger(queryClient)
+      void invalidateRules(queryClient)
+    },
+  })
+}
+
+/**
+ * Revisão de todas as regras ativas contra os lançamentos. `staleTime: 0`: lançamentos mudam por
+ * fora (Categorizar, edição, sync) sem invalidar esta chave, então cada visita pede de novo,
+ * mostrando a resposta anterior enquanto isso.
+ */
+export function useRuleReview() {
+  return useQuery({
+    queryKey: queryKeys.ruleReview(),
+    queryFn: async () => (await unwrap(api.GET('/rules/review'))).data,
+    staleTime: 0,
+  })
+}
+
+/** Aplica as linhas escolhidas da revisão. `invalidateRules` cobre a própria revisão (`rules/review`). */
+export function useApplyRuleReview() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: ApplyRuleReviewRequest) => (await unwrap(api.POST('/rules/review/apply', { body }))).data,
     onSuccess: () => {
       void invalidateLedger(queryClient)
       void invalidateRules(queryClient)

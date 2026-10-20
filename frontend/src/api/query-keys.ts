@@ -58,6 +58,7 @@ export const queryKeys = {
   rules: () => ['rules'] as const,
   rule: (id: number) => ['rules', id] as const,
   ruleReconcile: (id: number) => ['rules', id, 'reconcile'] as const,
+  ruleReview: () => ['rules', 'review'] as const,
   rulePreview: (body: unknown) => ['rule-preview', body] as const,
   importBatches: (accountId?: number) => ['import-batches', 'list', { accountId }] as const,
   importBatch: (id: number) => ['import-batches', 'detail', id] as const,

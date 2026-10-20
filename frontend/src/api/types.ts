@@ -43,6 +43,11 @@ export type RuleReconcileGroup = RuleReconcile['groups'][number]
 export type ReconcileGroupKey = Schemas['ReconcileGroup']
 export type ReconcileClearReason = Schemas['ReconcileClearReason']
 export type RuleReconcileResult = Schemas['RuleReconcileApplyResource']
+export type RuleReview = Schemas['RuleReviewResource']
+export type RuleReviewGroup = RuleReview['groups'][number]
+export type ReviewGroupKey = Schemas['ReviewGroup']
+export type RuleReviewApplyItem = Schemas['ApplyRuleReviewRequest']['items'][number]
+export type RuleReviewResult = Schemas['RuleReviewApplyResource']
 
 // O Scramble documenta conditions/actions das requisições (Store/Update/PreviewRuleRequest) a partir
 // das regras de validação, que são deliberadamente soltas (a forma de fato é checada pelo
