@@ -154,7 +154,7 @@ export function BudgetFormDialog({ open, onOpenChange, month, item }: BudgetForm
                   control={form.control}
                   name="amount"
                   render={({ field }) => (
-                    <MoneyInput {...control} value={field.value} onChange={field.onChange} onBlur={field.onBlur} />
+                    <MoneyInput {...control} value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
                   )}
                 />
               )}

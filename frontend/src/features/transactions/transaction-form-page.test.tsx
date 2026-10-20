@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { StrictMode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -249,7 +250,7 @@ describe('TransactionFormPage', () => {
 
     renderPage(['/transacoes/nova'])
 
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '10,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '1000')
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Compra' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))
 
@@ -262,7 +263,7 @@ describe('TransactionFormPage', () => {
 
     renderPage(['/transacoes/nova?tipo=transferencia'])
 
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '10,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '1000')
     const toTrigger = screen.getByLabelText('Para')
     fireEvent.pointerDown(toTrigger, { button: 0, pointerType: 'mouse' })
     fireEvent.click(toTrigger)
@@ -290,7 +291,7 @@ describe('TransactionFormPage', () => {
 
     renderPage([{ pathname: '/transacoes/nova', state: { from: '/cartoes/5' } }])
 
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '10,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '1000')
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Compra' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))
 
@@ -391,7 +392,7 @@ describe('TransactionFormPage', () => {
 
     renderPage(['/transacoes/nova'])
 
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '50,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '5000')
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Streaming' } })
     fireEvent.click(screen.getByLabelText('Repetir'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))
@@ -409,7 +410,7 @@ describe('TransactionFormPage', () => {
 
     renderPage(['/transacoes/nova'])
 
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '1.500,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '150000')
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Aluguel' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))
 
@@ -424,7 +425,7 @@ describe('TransactionFormPage', () => {
 
     renderPage(['/transacoes/nova'])
 
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '1.500,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '150000')
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Aluguel' } })
     fireEvent.click(screen.getByLabelText('Repetir'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))
@@ -440,7 +441,7 @@ describe('TransactionFormPage', () => {
 
     renderPage(['/transacoes/nova'])
 
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '50,00' } })
+    await userEvent.type(screen.getByLabelText('Valor'), '5000')
     fireEvent.change(screen.getByLabelText('Descrição'), { target: { value: 'Streaming' } })
     fireEvent.click(screen.getByLabelText('Repetir'))
     fireEvent.click(screen.getByRole('button', { name: 'Salvar despesa' }))

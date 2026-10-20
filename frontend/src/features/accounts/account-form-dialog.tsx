@@ -227,7 +227,7 @@ export function AccountFormDialog({ open, onOpenChange, account, defaultType }: 
                 control={form.control}
                 name="opening_balance"
                 render={({ field }) => (
-                  <MoneyInput {...control} allowNegative value={field.value} onChange={field.onChange} onBlur={field.onBlur} />
+                  <MoneyInput {...control} allowNegative value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
                 )}
               />
             )}

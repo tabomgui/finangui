@@ -13,7 +13,7 @@ export function CardFields({ form }: { form: UseFormReturn<AccountFormValues> })
           <Controller
             control={form.control}
             name="credit_limit"
-            render={({ field }) => <MoneyInput {...control} value={field.value} onChange={field.onChange} onBlur={field.onBlur} />}
+            render={({ field }) => <MoneyInput {...control} value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />}
           />
         )}
       </Field>

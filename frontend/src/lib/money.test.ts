@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { centsToInputString, formatCompactMoney, formatMoney, formatSignedMoney, parseMoneyInput } from './money'
+import { centsToInputString, formatCompactMoney, formatMoney, formatMoneyDigits, formatSignedMoney, moneyDigits, parseMoneyInput, parsePastedMoney } from './money'
 
 const nbsp = ' '
 
@@ -77,5 +77,56 @@ describe('centsToInputString', () => {
 
   it('normaliza zero negativo para não exibir sinal', () => {
     expect(centsToInputString(-0)).toBe('0,00')
+  })
+})
+
+describe('moneyDigits', () => {
+  it.each([
+    ['1.234,56', '123456'],
+    ['R$ 0012', '12'],
+    ['000', '0'],
+    ['0', '0'],
+    ['-', ''],
+    ['', ''],
+    ['abc', ''],
+  ])('%s → %s', (raw, expected) => {
+    expect(moneyDigits(raw)).toBe(expected)
+  })
+})
+
+describe('formatMoneyDigits', () => {
+  it.each([
+    ['1', false, '0,01'],
+    ['12', false, '0,12'],
+    ['123', false, '1,23'],
+    ['123456', false, '1.234,56'],
+    ['0', false, '0,00'],
+    ['', false, ''],
+    ['123456', true, '-1.234,56'],
+    ['', true, '-'],
+    ['9999999999999', false, '99.999.999.999,99'],
+  ])('%s (negativo: %s) → %s', (digits, negative, expected) => {
+    expect(formatMoneyDigits(digits, negative)).toBe(expected)
+  })
+})
+
+describe('parsePastedMoney', () => {
+  it.each([
+    ['1.234,56', 123456],
+    ['1234,5', 123450],
+    ['1234.56', 123456],
+    ['R$ 50', 5000],
+    ['R$ 50 - mercado', 5000],
+    ['2026-10-20 R$ 50', 5000],
+    ['Pix enviado: -R$ 1.069,36 em 20/10', -106936],
+    ['Total: 12x 34', 1200],
+    ['Pagamento de 99,90 confirmado', 9990],
+    ['Saldo -150,00', -15000],
+  ])('"%s" → %s', (text, expected) => {
+    expect(parsePastedMoney(text)).toBe(expected)
+  })
+
+  it.each(['abc', '', 'R$', 'R$ 1,2,3'])('"%s" → null', (text) => {
+    expect(parsePastedMoney(text)).toBeNull()
   })
 })

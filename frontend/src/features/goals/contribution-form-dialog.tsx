@@ -104,7 +104,7 @@ export function ContributionFormDialog({ open, onOpenChange, goalId }: Contribut
                 control={form.control}
                 name="amount"
                 render={({ field }) => (
-                  <MoneyInput {...control} value={field.value} onChange={field.onChange} onBlur={field.onBlur} />
+                  <MoneyInput {...control} value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
                 )}
               />
             )}

@@ -105,3 +105,45 @@ export function parseMoneyInput(raw: string): number | null {
 
   return negative && cents !== 0 ? -cents : cents
 }
+
+/** Teto de dígitos do campo de dinheiro (até 99.999.999.999,99), longe do limite de inteiro seguro. */
+export const MONEY_INPUT_MAX_DIGITS = 13
+
+/**
+ * Só os dígitos do texto, sem zeros à esquerda ("0012" → "12"). Um texto só de zeros vira "0",
+ * para o campo ainda mostrar "0,00"; sem nenhum dígito, devolve "".
+ */
+export function moneyDigits(raw: string): string {
+  const digits = raw.replace(/\D/g, '')
+  if (digits === '') return ''
+  return digits.replace(/^0+/, '') || '0'
+}
+
+/** Dígitos lidos como centavos, sempre com duas casas ("123456" → "1.234,56"); "-" sozinho quando ainda não há dígito. */
+export function formatMoneyDigits(digits: string, negative = false): string {
+  const sign = negative ? '-' : ''
+  if (digits === '') return sign
+  return sign + centsToInputString(Number(digits))
+}
+
+const PREFIXED_AMOUNT = /(-\s*)?R\$\s*(-)?(\d(?:[\d.,]*\d)?)/i
+const BARE_AMOUNT = /(?:^|[^\d.,])(-)?(\d(?:[\d.,]*\d)?)/
+
+/**
+ * Valor de um texto colado num campo de dinheiro. Tenta o texto inteiro com `parseMoneyInput`;
+ * se não der, o primeiro número depois de "R$" e, sem "R$", o primeiro número do texto
+ * ("R$ 50 - mercado" → 5000). Nunca junta todos os dígitos do texto: sem número legível, null.
+ */
+export function parsePastedMoney(text: string): number | null {
+  const whole = parseMoneyInput(text)
+  if (whole !== null) return whole
+
+  const prefixed = PREFIXED_AMOUNT.exec(text)
+  const token = prefixed
+    ? `${prefixed[1] || prefixed[2] ? '-' : ''}${prefixed[3]}`
+    : (() => {
+        const bare = BARE_AMOUNT.exec(text)
+        return bare ? `${bare[1] ?? ''}${bare[2]}` : null
+      })()
+  return token === null ? null : parseMoneyInput(token)
+}

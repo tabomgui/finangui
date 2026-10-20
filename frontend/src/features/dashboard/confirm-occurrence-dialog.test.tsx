@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/errors'
 import type { Transaction } from '@/api/types'
@@ -75,7 +76,8 @@ describe('ConfirmOccurrenceDialog', () => {
     const onOpenChange = vi.fn()
     renderDialog({ onOpenChange })
 
-    fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '1.450,00' } })
+    await userEvent.clear(screen.getByLabelText('Valor'))
+    await userEvent.type(screen.getByLabelText('Valor'), '145000')
     fireEvent.change(screen.getByLabelText('Data'), { target: { value: '2026-09-19' } })
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
 

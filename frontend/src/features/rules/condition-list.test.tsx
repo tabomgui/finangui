@@ -36,7 +36,7 @@ describe('ConditionList', () => {
 
     expect(screen.getByLabelText('Campo', { exact: false })).toHaveTextContent('Descrição')
     expect(screen.getByLabelText('Operador', { exact: false })).toHaveTextContent('contém')
-    expect(screen.getByLabelText('Valor', { exact: false })).not.toHaveAttribute('inputmode', 'decimal')
+    expect(screen.getByLabelText('Valor', { exact: false })).not.toHaveAttribute('inputmode', 'numeric')
   })
 
   it('trocar o campo para um numérico troca o operador e o controle de valor', async () => {
@@ -45,7 +45,7 @@ describe('ConditionList', () => {
     await chooseOption('Campo', 'Valor')
 
     expect(screen.getByLabelText('Operador', { exact: false })).toHaveTextContent('é igual a')
-    expect(screen.getByLabelText('Valor', { exact: false })).toHaveAttribute('inputmode', 'decimal')
+    expect(screen.getByLabelText('Valor', { exact: false })).toHaveAttribute('inputmode', 'numeric')
   })
 
   it('mantém o operador quando ele continua válido no campo novo', async () => {
