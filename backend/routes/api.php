@@ -70,6 +70,7 @@ Route::prefix('v1')->group(function () {
         // literais, sem parâmetro de rota, então não colidem de fato.
         Route::get('categorization/pending-count', [CategorizationController::class, 'pendingCount']);
         Route::get('categorization/pending', [CategorizationController::class, 'pending']);
+        Route::get('categorization/provider-categorized-count', [CategorizationController::class, 'providerCategorizedCount']);
         // Prefixo próprio no throttle: mesmo motivo do rules/preview, mais abaixo neste arquivo.
         Route::post('categorization/apply', [CategorizationController::class, 'apply'])->middleware('throttle:30,1,categorization-apply');
 

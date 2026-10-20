@@ -266,4 +266,18 @@ class Transaction extends Model
             ->whereNull('transactions.card_payment_statement_id')
             ->whereHas('account', fn (Builder $q) => $q->where('is_archived', false));
     }
+
+    /**
+     * Lançamento cuja categoria atual veio do banco (categorized_by
+     * 'pluggy', ver App\Domain\Imports\Actions\IngestTransactions). Uma
+     * linha com o marcador mas sem categoria (categoria excluída depois)
+     * não entra: já não tem nada do banco para remover.
+     *
+     * @param  Builder<Transaction>  $query
+     */
+    public function scopeCategorizedByProvider(Builder $query): void
+    {
+        $query->where('transactions.categorized_by', 'pluggy')
+            ->whereNotNull('transactions.category_id');
+    }
 }

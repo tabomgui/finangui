@@ -23,6 +23,19 @@ final class UpdateProfileRequest extends ApiRequest
                 'nullable',
                 'current_password',
             ],
+            // Usar a categoria do banco na sincronização quando nem regra nem histórico categorizam.
+            'use_provider_categories' => ['sometimes', 'required', 'boolean'],
+            // Só junto de use_provider_categories = false: tira também a categoria de todo lançamento categorizado pelo banco.
+            'clear_provider_categories' => [
+                'sometimes',
+                'boolean',
+                Rule::prohibitedIf(fn () => $this->boolean('clear_provider_categories') && ! $this->turnsProviderCategoriesOff()),
+            ],
         ];
+    }
+
+    private function turnsProviderCategoriesOff(): bool
+    {
+        return $this->has('use_provider_categories') && ! $this->boolean('use_provider_categories');
     }
 }

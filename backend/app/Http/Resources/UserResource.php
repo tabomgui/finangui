@@ -31,6 +31,10 @@ final class UserResource extends JsonResource
             // este usuário, o frontend leva o botão "Conectar banco" para o card
             // de Configurações em vez de abrir o widget da Pluggy.
             'banking_enabled' => BankCredential::isVerifiedFor($this->resource),
+            // Ligado, a sincronização bancária usa a categoria do banco (casada
+            // por nome) quando nem regra nem histórico categorizam um lançamento
+            // novo; desligado (padrão), ele fica para a tela Categorizar.
+            'use_provider_categories' => $this->use_provider_categories,
         ];
     }
 }

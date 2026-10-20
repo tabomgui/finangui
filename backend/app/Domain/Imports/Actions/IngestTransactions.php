@@ -22,6 +22,7 @@ use App\Domain\Rules\Models\Rule;
 use App\Domain\Rules\Support\HistoryCategorizer;
 use App\Domain\Transactions\Models\Transaction;
 use App\Domain\Transfers\Actions\DetectTransfers;
+use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -90,9 +91,14 @@ final class IngestTransactions
 
             // Idem para a fatura do banco (meta.bill_id) e para a categoria
             // do provedor (meta.provider_category): uma consulta para o
-            // lote inteiro, não uma por linha nova.
+            // lote inteiro, não uma por linha nova. A categoria do provedor
+            // só entra quando o dono do lote ligou use_provider_categories;
+            // desligado (padrão), o mapa fica vazio e applyProviderCategory()
+            // nunca categoriza.
             $billStatementMemo = ImportPreloads::billStatements($account, $decisions);
-            $usableCategoriesByName = ImportPreloads::usableCategoriesByName($decisions);
+            $usableCategoriesByName = $this->ownerUsesProviderCategories($locked)
+                ? ImportPreloads::usableCategoriesByName($decisions)
+                : [];
 
             [$stats, $undo, $insertedIds] = $this->applyDecisions($locked, $account, $decisions, $rules, $historyMemo, $billStatementMemo, $usableCategoriesByName);
 
@@ -265,6 +271,11 @@ final class IngestTransactions
         $insertedIds[] = $transaction->id;
     }
 
+    private function ownerUsesProviderCategories(ImportBatch $batch): bool
+    {
+        return (bool) User::query()->whereKey($batch->user_id)->value('use_provider_categories');
+    }
+
     /**
      * Terceiro passo da categorização de uma linha nova importada do banco
      * — só depois de regras e histórico (handleImported(), chamado antes
@@ -272,12 +283,14 @@ final class IngestTransactions
      * categoria e a linha carrega a categoria do provedor (meta.provider_category,
      * ver TransactionMapper), usa ProviderCategoryMatcher pra casar pelo
      * nome com uma categoria ativa do usuário. Sem match, não categoriza.
+     * Mapa vazio (dono do lote com use_provider_categories desligado) nunca
+     * casa nada.
      *
      * @param  array<string, list<array{id: int, kind: string, is_transfer: bool, has_parent: bool}>>  $usableCategoriesByName
      */
     private function applyProviderCategory(Transaction $transaction, ParsedRow $row, array $usableCategoriesByName): void
     {
-        if ($transaction->category_id !== null) {
+        if ($transaction->category_id !== null || $usableCategoriesByName === []) {
             return;
         }
 

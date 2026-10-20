@@ -61,6 +61,7 @@ it('insere transações novas com source pluggy', function () {
 });
 
 it('categoriza pelo pipeline, com a categoria do provedor por último', function () {
+    $this->user->forceFill(['use_provider_categories' => true])->save();
     $category = Category::factory()->create(['name' => 'Academia']);
     $categoriesById = ['cat-1' => new ProviderCategory(id: 'cat-1', name: 'Academia', parentId: null)];
 
@@ -70,6 +71,18 @@ it('categoriza pelo pipeline, com a categoria do provedor por último', function
     $transaction = Transaction::query()->where('external_id', 'ext-cat')->first();
     expect($transaction->category_id)->toBe($category->id)
         ->and($transaction->categorized_by)->toBe('pluggy');
+});
+
+it('com use_provider_categories desligado (padrão), a categoria do provedor não categoriza', function () {
+    Category::factory()->create(['name' => 'Academia']);
+    $categoriesById = ['cat-1' => new ProviderCategory(id: 'cat-1', name: 'Academia', parentId: null)];
+
+    $account = Account::factory()->create();
+    $this->action->handle($this->fake, $account, [syncProviderTransaction(['id' => 'ext-cat-off', 'categoryId' => 'cat-1'])], $this->now, $categoriesById);
+
+    $transaction = Transaction::query()->where('external_id', 'ext-cat-off')->first();
+    expect($transaction->category_id)->toBeNull()
+        ->and($transaction->categorized_by)->toBeNull();
 });
 
 it('parcela 1/N em cartão cria o plano e projeta as demais', function () {

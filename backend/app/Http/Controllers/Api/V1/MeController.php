@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Domain\Categorization\Actions\UpdateProviderCategoriesSetting;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\UpdateProfileRequest;
 use App\Http\Resources\UserResource;
@@ -15,7 +16,7 @@ final class MeController extends Controller
         return UserResource::make($request->user());
     }
 
-    public function update(UpdateProfileRequest $request): UserResource
+    public function update(UpdateProfileRequest $request, UpdateProviderCategoriesSetting $updateProviderCategories): UserResource
     {
         /** @var User $user */
         $user = $request->user();
@@ -29,6 +30,21 @@ final class MeController extends Controller
         }
         $user->save();
 
-        return UserResource::make($user);
+        $cleared = 0;
+
+        if (array_key_exists('use_provider_categories', $data)) {
+            $cleared = $updateProviderCategories->handle(
+                $user,
+                (bool) $data['use_provider_categories'],
+                (bool) ($data['clear_provider_categories'] ?? false),
+            );
+        }
+
+        return UserResource::make($user)->additional([
+            'meta' => [
+                // Quantos lançamentos perderam a categoria do banco nesta chamada (clear_provider_categories); 0 quando não houve limpeza.
+                'cleared_provider_categories' => $cleared,
+            ],
+        ]);
     }
 }

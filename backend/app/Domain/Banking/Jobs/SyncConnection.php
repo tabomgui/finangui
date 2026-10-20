@@ -292,7 +292,11 @@ final class SyncConnection implements ShouldBeUnique, ShouldQueue
             // OUTDATED ou ainda UPDATING depois do tempo máximo de espera:
             // segue com o que o banco já tem agora, em vez de falhar o sync.
 
-            $categoriesById = $this->categoriesById($provider);
+            // Categoria do banco só serve ao terceiro passo da categorização
+            // (ver IngestTransactions::applyProviderCategory()), que só roda
+            // com use_provider_categories ligado: desligado (padrão), nem
+            // pede a lista ao provedor e nenhuma linha leva provider_category.
+            $categoriesById = $user->use_provider_categories ? $this->categoriesById($provider) : [];
             $providerAccounts = $provider->accounts($connection->external_id);
             $syncAccounts->handle($connection, $providerAccounts);
 
