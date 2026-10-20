@@ -142,11 +142,19 @@ describe('RulesPage', () => {
     expect(toast.success).toHaveBeenCalledWith('Regra excluída.')
   })
 
-  it('mostra o estado vazio quando não há regras', () => {
+  it('mostra o estado vazio quando não há regras, ainda com o botão de revisar', () => {
     rulesState = { data: [], isPending: false, isError: false }
     renderPage()
 
     expect(screen.getByText('Nenhuma regra ainda')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Revisar regras' })).toHaveAttribute('href', '/regras/revisao')
+  })
+
+  it('com regras, o cabeçalho leva para a revisão', () => {
+    rulesState = { data: [rule({ id: 1, name: 'Uber', priority: 1 })], isPending: false, isError: false }
+    renderPage()
+
+    expect(screen.getByRole('link', { name: 'Revisar regras' })).toHaveAttribute('href', '/regras/revisao')
   })
 
   it('mostra erro com opção de tentar de novo quando a busca falha', () => {

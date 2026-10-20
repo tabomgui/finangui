@@ -356,6 +356,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/categorization/provider-categorized-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["categorization.providerCategorizedCount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/categorization/apply": {
         parameters: {
             query?: never;
@@ -831,6 +847,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/rules/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Revisão de todas as regras ativas contra os lançamentos já existentes */
+        get: operations["rule.review"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rules/review/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Aplica a revisão às linhas escolhidas, recalculadas na hora: uma
+         *     linha cujo destino mudou desde a prévia é pulada
+         */
+        post: operations["rule.applyReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/rules": {
         parameters: {
             query?: never;
@@ -873,6 +926,27 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["rule.apply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rules/{rule}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Prévia do que a regra salva mudaria na categoria dos lançamentos
+         *     (avaliada mesmo desativada), para oferecer depois de editá-la
+         */
+        get: operations["rule.reconcile"];
+        put?: never;
+        /** Aplica os grupos escolhidos da prévia, recalculados na hora */
+        post: operations["rule.applyReconcile"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1181,9 +1255,23 @@ export interface components {
                 apply_to_pending?: boolean;
             };
         };
+        /** ApplyRuleReconcileRequest */
+        ApplyRuleReconcileRequest: {
+            /** @description Grupos da prévia (GET /rules/{rule}/reconcile) a aplicar. */
+            groups: components["schemas"]["ReconcileGroup"][];
+        };
         /** ApplyRuleRequest */
         ApplyRuleRequest: {
             overwrite?: boolean;
+        };
+        /** ApplyRuleReviewRequest */
+        ApplyRuleReviewRequest: {
+            /** @description Linhas escolhidas na revisão (GET /rules/review), cada uma com a categoria nova que a tela mostrou. */
+            items: {
+                transaction_id: number;
+                /** @description Categoria nova mostrada para a linha; omita quando a revisão tira a categoria (grupo stale). Se o recálculo der outra coisa, a linha é pulada. */
+                category_id?: number;
+            }[];
         };
         /** BankConnectionResource */
         BankConnectionResource: {
@@ -1338,6 +1426,22 @@ export interface components {
                 name: string;
             };
         };
+        /** CategoryChangeItemResource */
+        CategoryChangeItemResource: {
+            transaction_id: number;
+            date: string;
+            description: string;
+            account_name: string;
+            amount: number;
+            direction: components["schemas"]["Direction"];
+            current_category_id?: number;
+            new_category_id?: number;
+            rule_id?: number;
+            rule_name?: string;
+            rule_active?: boolean;
+            current_source?: components["schemas"]["CategorySource"];
+            current_rule_name?: string;
+        };
         /** CategoryComparisonResource */
         CategoryComparisonResource: {
             currency: string;
@@ -1375,6 +1479,12 @@ export interface components {
             is_transfer_effective: boolean;
             is_archived: boolean;
         };
+        /**
+         * CategorySource
+         * @description Quem deu a categoria atual de um lançamento, lido de categorized_by ("manual", "history", "pluggy" ou "rule:{id}").
+         * @enum {string}
+         */
+        CategorySource: "manual" | "history" | "pluggy" | "rule";
         /** ConfirmImportBatchRequest */
         ConfirmImportBatchRequest: {
             skip_lines?: number[];
@@ -1793,6 +1903,22 @@ export interface components {
             balance: number;
             suggested_account_id: number | null;
         };
+        /** ProviderCategorizedCountResource */
+        ProviderCategorizedCountResource: {
+            count: number;
+        };
+        /**
+         * ReconcileClearReason
+         * @description Por que o grupo "clear" da reconciliação tira a categoria: a regra não casa mais com esses lançamentos, deixou de ter a ação set_category, ou está desativada.
+         * @enum {string}
+         */
+        ReconcileClearReason: "no_longer_matches" | "no_category_action" | "inactive";
+        /**
+         * ReconcileGroup
+         * @description Grupos da reconciliação de uma regra recém-editada (ver App\Domain\Rules\Queries\ReconcileRule): o que mudaria nos lançamentos por causa da edição.
+         * @enum {string}
+         */
+        ReconcileGroup: "recategorize" | "fill" | "clear";
         /**
          * ReconnectedRequest
          * @description `item_id` é o item devolvido pelo widget ao fim do fluxo de reconexão (modo atualização);
@@ -1854,6 +1980,12 @@ export interface components {
          */
         ReportBasis: "purchase" | "statement";
         /**
+         * ReviewGroup
+         * @description Grupos da revisão de todas as regras ativas (ver App\Domain\Rules\Queries\ReviewRules).
+         * @enum {string}
+         */
+        ReviewGroup: "fill" | "conflict" | "stale" | "manual";
+        /**
          * RowOutcome
          * @description Destino de uma linha decidido pela cascata de dedup (ver IngestionPlanner).
          * @enum {string}
@@ -1863,8 +1995,12 @@ export interface components {
         RulePreviewResource: {
             matched: number;
             changed: number;
+            uncategorized: number;
+            other_category: number;
+            already_in_category: number;
             sample: {
                 transaction: components["schemas"]["TransactionResource"];
+                would_change: boolean;
                 changes: {
                     category_id: number | null;
                     description: string | null;
@@ -1872,6 +2008,23 @@ export interface components {
                     tag_ids: number[];
                     is_ignored: boolean;
                 };
+            }[];
+        };
+        /** RuleReconcileApplyResource */
+        RuleReconcileApplyResource: {
+            recategorize: number;
+            fill: number;
+            clear: number;
+            skipped: number;
+        };
+        /** RuleReconcileResource */
+        RuleReconcileResource: {
+            max_changes: number;
+            groups: {
+                key: components["schemas"]["ReconcileGroup"];
+                count: number;
+                reason?: components["schemas"]["ReconcileClearReason"];
+                sample: components["schemas"]["CategoryChangeItemResource"][];
             }[];
         };
         /** RuleResource */
@@ -1908,6 +2061,22 @@ export interface components {
             }[];
             last_applied_at: string | null;
             last_applied_changes: number | null;
+        };
+        /** RuleReviewApplyResource */
+        RuleReviewApplyResource: {
+            applied: number;
+            skipped: number;
+        };
+        /** RuleReviewResource */
+        RuleReviewResource: {
+            max_changes: number;
+            groups: {
+                key: components["schemas"]["ReviewGroup"];
+                count: number;
+                applicable: boolean;
+                truncated: boolean;
+                items: components["schemas"]["CategoryChangeItemResource"][];
+            }[];
         };
         /** SaveBankCredentialsRequest */
         SaveBankCredentialsRequest: {
@@ -2280,6 +2449,10 @@ export interface components {
             name?: string;
             password?: string;
             current_password?: string | null;
+            /** @description Usar a categoria do banco na sincronização quando nem regra nem histórico categorizam. */
+            use_provider_categories?: boolean;
+            /** @description Só junto de use_provider_categories = false: tira também a categoria de todo lançamento categorizado pelo banco. */
+            clear_provider_categories?: boolean;
             password_confirmation?: string;
         };
         /**
@@ -2391,6 +2564,12 @@ export interface components {
              *     de Configurações em vez de abrir o widget da Pluggy.
              */
             banking_enabled: boolean;
+            /**
+             * @description Ligado, a sincronização bancária usa a categoria do banco (casada
+             *     por nome) quando nem regra nem histórico categorizam um lançamento
+             *     novo; desligado (padrão), ele fica para a tela Categorizar.
+             */
+            use_provider_categories: boolean;
         };
     };
     responses: {
@@ -3396,6 +3575,29 @@ export interface operations {
             422: components["responses"]["ValidationException"];
         };
     };
+    "categorization.providerCategorizedCount": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `ProviderCategorizedCountResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProviderCategorizedCountResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
     "categorization.apply": {
         parameters: {
             query?: never;
@@ -4148,6 +4350,10 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["UserResource"];
+                        meta: {
+                            /** @description Quantos lançamentos perderam a categoria do banco nesta chamada (clear_provider_categories); 0 quando não houve limpeza. */
+                            cleared_provider_categories: number;
+                        };
                     };
                 };
             };
@@ -4676,6 +4882,57 @@ export interface operations {
             422: components["responses"]["ValidationException"];
         };
     };
+    "rule.review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `RuleReviewResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleReviewResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
+    "rule.applyReview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyRuleReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description `RuleReviewApplyResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleReviewApplyResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
     "rule.index": {
         parameters: {
             query?: never;
@@ -4839,6 +5096,77 @@ export interface operations {
             };
             401: components["responses"]["AuthenticationException"];
             404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "rule.reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The rule ID */
+                rule: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `RuleReconcileResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleReconcileResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "rule.applyReconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The rule ID */
+                rule: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyRuleReconcileRequest"];
+            };
+        };
+        responses: {
+            /** @description `RuleReconcileApplyResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleReconcileApplyResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "too_many_category_changes";
+                        message: string;
+                    };
+                };
+            };
             422: components["responses"]["ValidationException"];
         };
     };

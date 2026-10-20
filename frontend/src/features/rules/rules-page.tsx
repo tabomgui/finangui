@@ -1,6 +1,6 @@
 import { type Announcements, closestCenter, DndContext, type DragEndEvent, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { Plus, TriangleAlert, Wand2 } from 'lucide-react'
+import { ListChecks, Plus, TriangleAlert, Wand2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -94,14 +94,25 @@ export function RulesPage() {
         subtitle="Categorização automática"
         actions={
           <Button asChild className={headerButton}>
-            <Link to="/regras/nova">
-              <Plus className="h-4 w-4" />
-              Nova regra
+            <Link to="/regras/nova" aria-label="Nova regra">
+              <Plus aria-hidden className="h-4 w-4" />
+              <span className="sm:hidden">Nova</span>
+              <span className="hidden sm:inline">Nova regra</span>
             </Link>
           </Button>
         }
       />
       <PageBody>
+        {/* Fora do cabeçalho (onde não caberia com rótulo no celular) e mesmo sem regras: a revisão
+            também acha lançamentos de regras já excluídas. Opaco sobre a faixa esmeralda. */}
+        <div className="flex justify-end">
+          <Button asChild variant="outline" className="bg-card shadow-card">
+            <Link to="/regras/revisao">
+              <ListChecks aria-hidden className="h-4 w-4" />
+              Revisar regras
+            </Link>
+          </Button>
+        </div>
         {isError && !rules ? (
           <EmptyState
             icon={TriangleAlert}

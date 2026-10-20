@@ -22,6 +22,7 @@ use App\Domain\Rules\Models\Rule;
 use App\Domain\Rules\Support\HistoryCategorizer;
 use App\Domain\Transactions\Models\Transaction;
 use App\Domain\Transfers\Actions\DetectTransfers;
+use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -68,6 +69,12 @@ final class IngestTransactions
                 throw new ImportBatchNotPending;
             }
 
+            // Lida já aqui, antes de tocar em qualquer transação: a trava
+            // FOR KEY SHARE na linha do dono segura uma mudança concorrente
+            // da configuração (UpdateProviderCategoriesSetting trava a mesma
+            // linha FOR UPDATE) até este lote terminar.
+            $useProviderCategories = $this->ownerUsesProviderCategories($locked);
+
             // Marco d'água das faturas já existentes: qualquer CardStatement
             // com id maior, ao final, foi criado por este lote (a conta fica
             // travada daqui até o fim, então nenhuma outra sessão cria uma
@@ -90,9 +97,14 @@ final class IngestTransactions
 
             // Idem para a fatura do banco (meta.bill_id) e para a categoria
             // do provedor (meta.provider_category): uma consulta para o
-            // lote inteiro, não uma por linha nova.
+            // lote inteiro, não uma por linha nova. A categoria do provedor
+            // só entra quando o dono do lote ligou use_provider_categories;
+            // desligado (padrão), o mapa fica vazio e applyProviderCategory()
+            // nunca categoriza.
             $billStatementMemo = ImportPreloads::billStatements($account, $decisions);
-            $usableCategoriesByName = ImportPreloads::usableCategoriesByName($decisions);
+            $usableCategoriesByName = $useProviderCategories
+                ? ImportPreloads::usableCategoriesByName($decisions)
+                : [];
 
             [$stats, $undo, $insertedIds] = $this->applyDecisions($locked, $account, $decisions, $rules, $historyMemo, $billStatementMemo, $usableCategoriesByName);
 
@@ -266,18 +278,33 @@ final class IngestTransactions
     }
 
     /**
+     * Configuração do dono do lote, lida do banco (não do usuário autenticado
+     * em memória) com FOR KEY SHARE, a trava mais fraca do Postgres: só
+     * conflita com o FOR UPDATE de UpdateProviderCategoriesSetting (que
+     * espera o lote terminar), nunca com um UPDATE comum da linha — login
+     * ou troca de nome/senha não ficam presos atrás de uma sincronização — e
+     * várias importações do mesmo usuário seguem em paralelo.
+     */
+    private function ownerUsesProviderCategories(ImportBatch $batch): bool
+    {
+        return (bool) User::query()->whereKey($batch->user_id)->lock('for key share')->value('use_provider_categories');
+    }
+
+    /**
      * Terceiro passo da categorização de uma linha nova importada do banco
      * — só depois de regras e histórico (handleImported(), chamado antes
      * disso, já cobre os dois primeiros): se a transação ainda não tem
      * categoria e a linha carrega a categoria do provedor (meta.provider_category,
      * ver TransactionMapper), usa ProviderCategoryMatcher pra casar pelo
      * nome com uma categoria ativa do usuário. Sem match, não categoriza.
+     * Mapa vazio (dono do lote com use_provider_categories desligado) nunca
+     * casa nada.
      *
      * @param  array<string, list<array{id: int, kind: string, is_transfer: bool, has_parent: bool}>>  $usableCategoriesByName
      */
     private function applyProviderCategory(Transaction $transaction, ParsedRow $row, array $usableCategoriesByName): void
     {
-        if ($transaction->category_id !== null) {
+        if ($transaction->category_id !== null || $usableCategoriesByName === []) {
             return;
         }
 

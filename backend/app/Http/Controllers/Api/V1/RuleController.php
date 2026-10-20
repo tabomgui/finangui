@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Domain\Rules\Actions\ApplyRuleReconcile;
+use App\Domain\Rules\Actions\ApplyRuleReview;
 use App\Domain\Rules\Actions\CreateRule;
 use App\Domain\Rules\Actions\QueueRuleApplication;
 use App\Domain\Rules\Actions\ReorderRules;
@@ -9,14 +11,22 @@ use App\Domain\Rules\Actions\UpdateRule;
 use App\Domain\Rules\Data\RuleDefinition;
 use App\Domain\Rules\Models\Rule;
 use App\Domain\Rules\Queries\PreviewRule;
+use App\Domain\Rules\Queries\ReconcileRule;
+use App\Domain\Rules\Queries\ReviewRules;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Rules\ApplyRuleReconcileRequest;
 use App\Http\Requests\Rules\ApplyRuleRequest;
+use App\Http\Requests\Rules\ApplyRuleReviewRequest;
 use App\Http\Requests\Rules\PreviewRuleRequest;
 use App\Http\Requests\Rules\ReorderRulesRequest;
 use App\Http\Requests\Rules\StoreRuleRequest;
 use App\Http\Requests\Rules\UpdateRuleRequest;
 use App\Http\Resources\RulePreviewResource;
+use App\Http\Resources\RuleReconcileApplyResource;
+use App\Http\Resources\RuleReconcileResource;
 use App\Http\Resources\RuleResource;
+use App\Http\Resources\RuleReviewApplyResource;
+use App\Http\Resources\RuleReviewResource;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -75,5 +85,42 @@ final class RuleController extends Controller
         $queueRuleApplication->handle($rule, $user->id, $request->boolean('overwrite'));
 
         return response()->json(['data' => ['queued' => true]], 202);
+    }
+
+    /**
+     * Prévia do que a regra salva mudaria na categoria dos lançamentos
+     * (avaliada mesmo desativada), para oferecer depois de editá-la.
+     */
+    public function reconcile(Rule $rule, ReconcileRule $reconcileRule): RuleReconcileResource
+    {
+        return RuleReconcileResource::make($reconcileRule->handle($rule));
+    }
+
+    /**
+     * Aplica os grupos escolhidos da prévia, recalculados na hora.
+     */
+    public function applyReconcile(ApplyRuleReconcileRequest $request, Rule $rule, ApplyRuleReconcile $applyRuleReconcile): RuleReconcileApplyResource
+    {
+        return RuleReconcileApplyResource::make($applyRuleReconcile->handle($rule, $request->groups()));
+    }
+
+    /**
+     * Revisão de todas as regras ativas contra os lançamentos já existentes.
+     */
+    public function review(ReviewRules $reviewRules): RuleReviewResource
+    {
+        return RuleReviewResource::make($reviewRules->handle());
+    }
+
+    /**
+     * Aplica a revisão às linhas escolhidas, recalculadas na hora: uma
+     * linha cujo destino mudou desde a prévia é pulada.
+     */
+    public function applyReview(ApplyRuleReviewRequest $request, ApplyRuleReview $applyRuleReview): RuleReviewApplyResource
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        return RuleReviewApplyResource::make($applyRuleReview->handle($user->id, $request->expectedTargets()));
     }
 }

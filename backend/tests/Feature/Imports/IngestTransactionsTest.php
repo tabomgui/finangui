@@ -21,7 +21,9 @@ use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Enums\TransactionStatus;
 use App\Domain\Transactions\Models\Transaction;
+use App\Models\User;
 use App\Support\Money\Money;
+use App\Support\UserContext;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -594,6 +596,8 @@ it('meta.bill_id sem fatura local correspondente cai na resolução por data nor
 });
 
 it('categoria do provedor só entra depois de regra e histórico, e só se o usuário tiver a categoria ativa', function () {
+    $this->user->forceFill(['use_provider_categories' => true])->save();
+
     $categoryRule = Category::factory()->create(['user_id' => $this->user->id, 'name' => 'Categoria da regra']);
     Rule::factory()->create([
         'user_id' => $this->user->id,
@@ -637,7 +641,93 @@ it('categoria do provedor só entra depois de regra e histórico, e só se o usu
         ->and($byProvider->categorized_by)->toBe('pluggy');
 });
 
+it('com use_provider_categories desligado (padrão), a categoria do provedor nunca entra, mas regra e histórico continuam', function () {
+    expect($this->user->refresh()->use_provider_categories)->toBeFalse();
+
+    $categoryRule = Category::factory()->create(['user_id' => $this->user->id, 'name' => 'Categoria da regra']);
+    Rule::factory()->create([
+        'user_id' => $this->user->id,
+        'conditions' => [['field' => 'description', 'op' => 'contains', 'value' => 'mercado']],
+        'actions' => [['type' => 'set_category', 'category_id' => $categoryRule->id]],
+    ]);
+
+    $categoryHistory = Category::factory()->create(['user_id' => $this->user->id, 'name' => 'Categoria do histórico']);
+    Transaction::factory()->count(2)->create([
+        'account_id' => $this->account->id, 'user_id' => $this->user->id,
+        'description' => 'Padaria Joao', 'direction' => 'out', 'category_id' => $categoryHistory->id,
+    ]);
+
+    Category::factory()->income()->create(['user_id' => $this->user->id, 'name' => 'Salário']);
+
+    $providerCategory = ['provider_category' => ['name' => 'Salário', 'parent' => null]];
+
+    $this->action->handle(
+        pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
+        [
+            ingestRow(['description' => 'Compra Mercado Exemplo', 'externalId' => 'off-r1', 'meta' => $providerCategory]),
+            ingestRow(['description' => 'Padaria Joao 99', 'externalId' => 'off-r2', 'meta' => $providerCategory]),
+            // Com o passo do provedor ligado, cairia em "Salário" (ver o teste acima).
+            ingestRow(['description' => 'Pix recebido', 'direction' => Direction::In, 'externalId' => 'off-r3', 'meta' => $providerCategory]),
+        ],
+    );
+
+    $byRule = Transaction::where('external_id', 'off-r1')->first();
+    $byHistory = Transaction::where('external_id', 'off-r2')->first();
+    $uncategorized = Transaction::where('external_id', 'off-r3')->first();
+
+    expect($byRule->category_id)->toBe($categoryRule->id)
+        ->and($byRule->categorized_by)->toStartWith('rule:')
+        ->and($byHistory->category_id)->toBe($categoryHistory->id)
+        ->and($byHistory->categorized_by)->toBe('history')
+        ->and($uncategorized->category_id)->toBeNull()
+        ->and($uncategorized->categorized_by)->toBeNull()
+        ->and(Transaction::where('categorized_by', 'pluggy')->exists())->toBeFalse();
+});
+
+it('a categoria do provedor segue a configuração gravada do dono do lote, não a do usuário logado nem a de uma instância em memória', function () {
+    // Usuário logado no teste ($this->user) fica com a configuração desligada;
+    // o dono do lote, com ela ligada no banco.
+    expect($this->user->refresh()->use_provider_categories)->toBeFalse();
+
+    $owner = User::factory()->create(['use_provider_categories' => true]);
+    $ownerAccount = Account::factory()->create(['user_id' => $owner->id]);
+    $salary = Category::factory()->income()->create(['user_id' => $owner->id, 'name' => 'Salário']);
+    $batch = ImportBatch::factory()->create(['account_id' => $ownerAccount->id, 'user_id' => $owner->id, 'format' => ImportFormat::Pluggy]);
+
+    // Como no job de sync: roda no contexto do dono, aqui com uma instância
+    // que diz "desligado" só em memória — o que vale é a linha gravada.
+    $staleOwner = User::query()->findOrFail($owner->id);
+    $staleOwner->use_provider_categories = false;
+
+    UserContext::run($staleOwner, fn () => $this->action->handle(
+        $batch,
+        [ingestRow(['externalId' => 'own-1', 'direction' => Direction::In, 'meta' => ['provider_category' => ['name' => 'Salário', 'parent' => null]]])],
+    ));
+
+    $transaction = Transaction::query()->withoutGlobalScopes()->where('external_id', 'own-1')->first();
+    expect($transaction->user_id)->toBe($owner->id)
+        ->and($transaction->category_id)->toBe($salary->id)
+        ->and($transaction->categorized_by)->toBe('pluggy');
+});
+
+it('lê a configuração do dono do lote com FOR KEY SHARE na linha de users', function () {
+    DB::enableQueryLog();
+
+    $this->action->handle(
+        pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
+        [ingestRow(['externalId' => 'lock-1'])],
+    );
+
+    $queries = collect(DB::getQueryLog())->pluck('query');
+    DB::disableQueryLog();
+
+    expect($queries->contains(fn (string $sql) => str_contains($sql, 'from "users"') && str_ends_with(mb_strtolower(trim($sql)), 'for key share')))
+        ->toBeTrue();
+});
+
 it('categoria do provedor sem sinônimo/nome conhecido ou sem categoria ativa correspondente não categoriza', function () {
+    $this->user->forceFill(['use_provider_categories' => true])->save();
+
     $this->action->handle(
         pendingBatch(['account_id' => $this->account->id, 'user_id' => $this->user->id, 'format' => ImportFormat::Pluggy]),
         [
@@ -653,6 +743,8 @@ it('categoria do provedor sem sinônimo/nome conhecido ou sem categoria ativa co
 });
 
 it('categoria do provedor ignora categoria arquivada com o mesmo nome', function () {
+    $this->user->forceFill(['use_provider_categories' => true])->save();
+
     Category::factory()->income()->create(['user_id' => $this->user->id, 'name' => 'Salário', 'is_archived' => true]);
 
     $this->action->handle(
@@ -664,6 +756,8 @@ it('categoria do provedor ignora categoria arquivada com o mesmo nome', function
 });
 
 it('categoria do provedor nunca escolhe uma categoria is_transfer sem um sinônimo explícito', function () {
+    $this->user->forceFill(['use_provider_categories' => true])->save();
+
     Category::factory()->transfer()->create(['user_id' => $this->user->id, 'name' => 'Transferências']);
 
     $this->action->handle(

@@ -2,6 +2,7 @@
 
 use App\Domain\Accounts\Models\Account;
 use App\Domain\Banking\Contracts\BankProvider;
+use App\Domain\Banking\Data\ProviderCategory;
 use App\Domain\Banking\Data\ProviderItem;
 use App\Domain\Banking\Enums\ConnectionStatus;
 use App\Domain\Banking\Enums\SyncRunStatus;
@@ -15,6 +16,8 @@ use App\Domain\Banking\Models\BankCredential;
 use App\Domain\Banking\Models\BankSyncRun;
 use App\Domain\Banking\Providers\FakeBankProvider;
 use App\Domain\Cards\Models\CardStatement;
+use App\Domain\Categories\Models\Category;
+use App\Domain\Rules\Models\Rule;
 use App\Domain\Transactions\Enums\Direction;
 use App\Domain\Transactions\Enums\TransactionSource;
 use App\Domain\Transactions\Models\Transaction;
@@ -129,6 +132,67 @@ it('sincroniza contas, faturas e transações, e marca a conexão como sincroniz
     expect(CardStatement::query()->where('account_id', $card->id)->where('external_id', 'bill-1')->exists())->toBeTrue();
     expect(Transaction::query()->where('account_id', $checking->id)->where('external_id', 'tx-1')->first()->source)
         ->toBe(TransactionSource::Pluggy);
+});
+
+it('com use_provider_categories desligado (padrão), o sync nem busca as categorias do banco e nenhum lançamento fica categorizado por ele; regra e histórico continuam', function () {
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+    $checking = Account::factory()->create(['user_id' => $this->user->id, 'connection_id' => $connection->id, 'external_id' => 'acc-1']);
+
+    Category::factory()->create(['user_id' => $this->user->id, 'name' => 'Academia']);
+    $ruleCategory = Category::factory()->create(['user_id' => $this->user->id, 'name' => 'Mercado']);
+    Rule::factory()->create([
+        'user_id' => $this->user->id,
+        'conditions' => [['field' => 'description', 'op' => 'contains', 'value' => 'mercado']],
+        'actions' => [['type' => 'set_category', 'category_id' => $ruleCategory->id]],
+    ]);
+    $historyCategory = Category::factory()->create(['user_id' => $this->user->id, 'name' => 'Padaria']);
+    Transaction::factory()->create([
+        'account_id' => $checking->id, 'user_id' => $this->user->id,
+        'description' => 'Padaria Exemplo', 'category_id' => $historyCategory->id,
+    ]);
+
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId]);
+    $this->fake->accountsByItem[$this->itemId] = [providerAccount(['id' => 'acc-1'])];
+    $this->fake->categories = [new ProviderCategory(id: 'cat-1', name: 'Academia', parentId: null)];
+    $this->fake->transactionsByAccount['acc-1'] = [
+        syncProviderTransaction(['id' => 'tx-rule', 'description' => 'Mercado Exemplo', 'categoryId' => 'cat-1']),
+        syncProviderTransaction(['id' => 'tx-history', 'description' => 'Padaria Exemplo', 'categoryId' => 'cat-1']),
+        syncProviderTransaction(['id' => 'tx-none', 'description' => 'Academia Exemplo', 'categoryId' => 'cat-1']),
+    ];
+
+    runConnectionSync($connection->id);
+
+    $byExternalId = Transaction::query()->where('account_id', $checking->id)->whereNotNull('external_id')->get()->keyBy('external_id');
+
+    expect(collect($this->fake->calls)->pluck('method'))->not->toContain('categories')
+        ->and($byExternalId['tx-rule']->category_id)->toBe($ruleCategory->id)
+        ->and($byExternalId['tx-rule']->categorized_by)->toStartWith('rule:')
+        ->and($byExternalId['tx-history']->category_id)->toBe($historyCategory->id)
+        ->and($byExternalId['tx-history']->categorized_by)->toBe('history')
+        ->and($byExternalId['tx-none']->category_id)->toBeNull()
+        ->and($byExternalId['tx-none']->categorized_by)->toBeNull()
+        ->and(Transaction::query()->where('categorized_by', 'pluggy')->exists())->toBeFalse();
+});
+
+it('com use_provider_categories ligado, o sync usa a categoria do banco quando nem regra nem histórico categorizam', function () {
+    $this->user->forceFill(['use_provider_categories' => true])->save();
+
+    $connection = BankConnection::factory()->active()->create(['user_id' => $this->user->id, 'external_id' => $this->itemId, 'last_synced_at' => now()]);
+    $checking = Account::factory()->create(['user_id' => $this->user->id, 'connection_id' => $connection->id, 'external_id' => 'acc-1']);
+    $category = Category::factory()->create(['user_id' => $this->user->id, 'name' => 'Academia']);
+
+    $this->fake->items[$this->itemId] = providerItem(['id' => $this->itemId]);
+    $this->fake->accountsByItem[$this->itemId] = [providerAccount(['id' => 'acc-1'])];
+    $this->fake->categories = [new ProviderCategory(id: 'cat-1', name: 'Academia', parentId: null)];
+    $this->fake->transactionsByAccount['acc-1'] = [syncProviderTransaction(['id' => 'tx-cat', 'description' => 'Academia Exemplo', 'categoryId' => 'cat-1'])];
+
+    runConnectionSync($connection->id);
+
+    $transaction = Transaction::query()->where('account_id', $checking->id)->where('external_id', 'tx-cat')->first();
+
+    expect(collect($this->fake->calls)->pluck('method'))->toContain('categories')
+        ->and($transaction->category_id)->toBe($category->id)
+        ->and($transaction->categorized_by)->toBe('pluggy');
 });
 
 it('job serializado antes deste deploy (sem trigger/jobUuid no payload) ainda sincroniza, caindo para trigger scheduled', function () {

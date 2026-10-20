@@ -250,6 +250,27 @@ class Transaction extends Model
     }
 
     /**
+     * Lançamentos que uma regra já salva (ou em edição) pode olhar e mudar
+     * depois do fato: prévia, aplicação retroativa, reconciliação de uma
+     * regra editada e revisão de todas as regras. Fora: perna de
+     * transferência, prevista de recorrência e pagamento de fatura
+     * reconhecido (nunca entra em relatório; ver isCardPayment()).
+     *
+     * Ao contrário de scopePendingCategorization(), lançamento ignorado,
+     * ainda não lançado (status pending) e de conta arquivada continuam no
+     * escopo: por isso as contagens da revisão de regras podem passar das
+     * da tela Categorizar.
+     *
+     * @param  Builder<Transaction>  $query
+     */
+    public function scopeEligibleForRules(Builder $query): void
+    {
+        $query->whereNull('transactions.transfer_id')
+            ->whereNull('transactions.card_payment_statement_id')
+            ->excludingProjectedRecurrences();
+    }
+
+    /**
      * Lançamento pendente de categorização (ver
      * App\Domain\Categorization\Queries\PendingCategorization): do usuário,
      * sem categoria, lançado (posted), não ignorado, fora de transferência,
@@ -265,5 +286,26 @@ class Transaction extends Model
             ->whereNull('transactions.transfer_id')
             ->whereNull('transactions.card_payment_statement_id')
             ->whereHas('account', fn (Builder $q) => $q->where('is_archived', false));
+    }
+
+    /**
+     * Lançamento cuja categoria atual veio do banco (categorized_by
+     * 'pluggy', ver App\Domain\Imports\Actions\IngestTransactions) e que
+     * pode perder essa categoria sem mudar relatório nenhum. Fica de fora:
+     * linha com o marcador mas sem categoria (categoria excluída depois — já
+     * não há nada do banco para remover) e categoria de transferência, ela
+     * mesma ou pelo pai (ex.: "Pagamento de fatura", "Investimentos"):
+     * tirar essa categoria devolveria o lançamento a reportable() e contaria
+     * em dobro, por exemplo, o gasto do cartão que o pagamento quita.
+     *
+     * @param  Builder<Transaction>  $query
+     */
+    public function scopeCategorizedByProvider(Builder $query): void
+    {
+        $query->where('transactions.categorized_by', 'pluggy')
+            ->whereNotNull('transactions.category_id')
+            ->whereHas('category', fn (Builder $c) => $c->where('is_transfer', false)
+                ->where(fn (Builder $c2) => $c2->whereNull('parent_id')
+                    ->orWhereHas('parent', fn (Builder $p) => $p->where('is_transfer', false))));
     }
 }

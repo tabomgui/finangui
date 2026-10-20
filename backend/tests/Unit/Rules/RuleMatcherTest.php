@@ -115,3 +115,45 @@ it('field, op ou value vindos como array ou objeto nunca casam e não lançam', 
         ->and(matcherMatches(['field' => 'direction', 'op' => 'equals', 'value' => new stdClass]))->toBeFalse()
         ->and(matcherMatches(['field' => 'account_id', 'op' => 'equals', 'value' => new stdClass]))->toBeFalse();
 });
+
+it('condições compiladas dão o mesmo resultado que as cruas, regex e grupos inclusos', function () {
+    $conditions = [
+        ['field' => 'description', 'op' => 'contains', 'value' => 'são joão'],
+        ['field' => 'description', 'op' => 'not_contains', 'value' => 'mercado'],
+        ['field' => 'description', 'op' => 'equals', 'value' => ' padaria  são joão '],
+        ['field' => 'payee', 'op' => 'contains', 'value' => ''],
+        ['field' => 'payee', 'op' => 'not_contains', 'value' => ''],
+        ['field' => 'original_description', 'op' => 'regex', 'value' => '^pag\*padaria'],
+        ['field' => 'description', 'op' => 'regex', 'value' => 'sao~joao'],
+        ['field' => 'description', 'op' => 'regex', 'value' => '(unclosed'],
+        ['field' => 'amount', 'op' => 'gte', 'value' => 1590],
+        ['field' => 'direction', 'op' => 'equals', 'value' => 'in'],
+        ['match' => 'any', 'conditions' => [
+            ['field' => 'description', 'op' => 'starts_with', 'value' => 'mercado'],
+            ['field' => 'description', 'op' => 'ends_with', 'value' => 'joão'],
+        ]],
+        'oops',
+    ];
+
+    foreach ($conditions as $condition) {
+        foreach (['all', 'any'] as $match) {
+            $raw = RuleMatcher::matches($match, [$condition], matcherSubject());
+            $compiled = RuleMatcher::matches($match, RuleMatcher::compile([$condition]), matcherSubject());
+
+            expect($compiled)->toBe($raw, json_encode($condition));
+        }
+    }
+
+    foreach (['all', 'any'] as $match) {
+        expect(RuleMatcher::matches($match, RuleMatcher::compile($conditions), matcherSubject()))
+            ->toBe(RuleMatcher::matches($match, $conditions, matcherSubject()));
+    }
+});
+
+it('compile() recalcula as chaves internas, nunca confia nas que vieram na entrada', function () {
+    $condition = ['field' => 'description', 'op' => 'contains', 'value' => 'mercado', '_needle' => 'PADARIA'];
+    $regex = ['field' => 'description', 'op' => 'regex', 'value' => 'mercado', '_pattern' => '~padaria~i'];
+
+    expect(RuleMatcher::matches('all', RuleMatcher::compile([$condition]), matcherSubject()))->toBeFalse()
+        ->and(RuleMatcher::matches('all', RuleMatcher::compile([$regex]), matcherSubject()))->toBeFalse();
+});

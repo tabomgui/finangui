@@ -17,17 +17,17 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { notifyError } from '@/lib/form-errors'
 import { pluralize } from './rule-labels'
 import { ruleDefaults, toRuleBody } from './rule-form-values'
 
 type ApplyRuleDialogProps = {
   rule: Rule
-  overwrite: boolean
-  onOverwriteChange: (value: boolean) => void
   /** Formulário com alterações ainda não salvas: a aplicação usaria uma versão velha da regra. */
   disabled: boolean
+  /** Avisa quando o diálogo abre ou fecha (a página não abre outro diálogo por cima dele). */
+  onOpenChange?: (open: boolean) => void
 }
 
 const POLL_INTERVAL_MS = 2_000
@@ -37,6 +37,13 @@ function formatAppliedAt(value: string): string {
   return format(parseISO(value), "dd/MM/yyyy 'às' HH:mm")
 }
 
+type Scope = 'uncategorized' | 'automatic'
+
+const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
+  { value: 'uncategorized', label: 'Só os lançamentos sem categoria' },
+  { value: 'automatic', label: 'Também corrigir os que foram categorizados sozinhos (pelo histórico, pelo banco ou por outra regra)' },
+]
+
 function changedCountLabel(count: number): string {
   return `${count} ${pluralize(count, 'alterado', 'alterados')}`
 }
@@ -45,8 +52,14 @@ function changedCountLabel(count: number): string {
  * Confirma e dispara a aplicação retroativa (job por regra), depois acompanha `last_applied_at`
  * via polling até o job terminar ou até 60s passarem — o que vier primeiro.
  */
-export function ApplyRuleDialog({ rule, overwrite, onOverwriteChange, disabled }: ApplyRuleDialogProps) {
-  const [open, setOpen] = useState(false)
+export function ApplyRuleDialog({ rule, disabled, onOpenChange }: ApplyRuleDialogProps) {
+  const [open, setOpenState] = useState(false)
+  const setOpen = (value: boolean) => {
+    setOpenState(value)
+    onOpenChange?.(value)
+  }
+  const [scope, setScope] = useState<Scope>('uncategorized')
+  const overwrite = scope === 'automatic'
   const [applying, setApplying] = useState(false)
   // Compara com o `last_applied_at` anterior (não com um timestamp absoluto): evita depender do
   // relógio do servidor estar sincronizado com o do navegador.
@@ -55,8 +68,14 @@ export function ApplyRuleDialog({ rule, overwrite, onOverwriteChange, disabled }
   const queryClient = useQueryClient()
   const apply = useApplyRule()
 
-  const previewBody: PreviewRuleBody = useMemo(() => ({ ...toRuleBody(ruleDefaults(rule)), overwrite }), [rule, overwrite])
-  const preview = useRulePreview(previewBody, !disabled)
+  // Sem `overwrite` quando desligado (o padrão do backend): o mesmo corpo da prévia do editor com a
+  // regra salva, então as duas compartilham o cache em vez de pedir a mesma conta duas vezes.
+  const previewBody: PreviewRuleBody = useMemo(() => {
+    const body = toRuleBody(ruleDefaults(rule))
+    return overwrite ? { ...body, overwrite: true } : body
+  }, [rule, overwrite])
+  // Só com o diálogo aberto: fechado, nem a contagem nem a opção escolhida importam.
+  const preview = useRulePreview(previewBody, open && !disabled)
   const { data: polledRule } = useRule(rule.id, applying ? POLL_INTERVAL_MS : undefined)
 
   useEffect(() => {
@@ -118,7 +137,15 @@ export function ApplyRuleDialog({ rule, overwrite, onOverwriteChange, disabled }
 
   return (
     <div className="space-y-2">
-      <Button type="button" variant="outline" disabled={disabled || applying} onClick={() => setOpen(true)}>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={disabled || applying}
+        onClick={() => {
+          setScope('uncategorized')
+          setOpen(true)
+        }}
+      >
         {applying && <LoaderCircle className="h-4 w-4 animate-spin" />}
         {applying ? 'Aplicando…' : 'Aplicar às existentes'}
       </Button>
@@ -135,21 +162,32 @@ export function ApplyRuleDialog({ rule, overwrite, onOverwriteChange, disabled }
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Aplicar às existentes?</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription>Escolha quais lançamentos já existentes a regra pode alterar.</AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <RadioGroup
+            value={scope}
+            onValueChange={(value) => setScope(value as Scope)}
+            aria-label="Quais lançamentos"
+            className="gap-2"
+          >
+            {SCOPE_OPTIONS.map((option) => (
+              <label
+                key={option.value}
+                className="flex cursor-pointer items-start gap-3 rounded-xl border border-border p-3 has-[[data-state=checked]]:border-primary"
+              >
+                <RadioGroupItem value={option.value} className="mt-0.5" />
+                <span className="text-sm">{option.label}</span>
+              </label>
+            ))}
+          </RadioGroup>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">Os que você categorizou à mão nunca mudam.</p>
+            <p className="text-sm font-medium" aria-live="polite">
               {preview.isPending || preview.isPlaceholderData || preview.data === undefined
                 ? 'Calculando quantos lançamentos seriam alterados…'
                 : `Isso vai alterar cerca de ${preview.data.changed} ${pluralize(preview.data.changed, 'lançamento', 'lançamentos')}.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          <div className="flex items-start gap-3 rounded-xl border border-border p-3">
-            <Switch id="apply-rule-overwrite" checked={overwrite} onCheckedChange={onOverwriteChange} />
-            <div className="space-y-1">
-              <label htmlFor="apply-rule-overwrite" className="text-sm font-medium">
-                Sobrescrever categorias existentes
-              </label>
-              <p className="text-xs text-muted-foreground">Categorias definidas à mão nunca são sobrescritas.</p>
-            </div>
+            </p>
           </div>
 
           <AlertDialogFooter>

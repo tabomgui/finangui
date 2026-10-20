@@ -142,15 +142,7 @@ final class CategorizeTransaction
      */
     private function suggestFromRules(Transaction $transaction, array $rules, ?array $usableCategoryIds): ?array
     {
-        $context = new RuleContext(
-            hasCategory: false,
-            categoryManual: false,
-            descriptionLocked: true,
-            overwrite: false,
-            onlyCategory: true,
-        );
-
-        $outcome = RuleEngine::evaluate(RuleSubject::fromTransaction($transaction), $rules, $context);
+        $outcome = RuleEngine::evaluate(RuleSubject::fromTransaction($transaction), $rules, RuleContext::categoryOnly());
 
         if ($outcome->categoryId === null) {
             return null;

@@ -11,11 +11,21 @@ use Illuminate\Support\Str;
  * Decide se as condições de uma regra casam com uma transação. Puro. Espera
  * condições já validadas (RuleDefinitionValidator); entrada malformada não
  * casa em vez de lançar exceção.
+ *
+ * compile() prepara as condições uma vez por regra (valor de texto já
+ * normalizado, padrão de regex já montado), para o scan de milhares de
+ * transações não refazer isso a cada linha; matches() aceita as condições
+ * compiladas ou cruas, com o mesmo resultado. Para na primeira condição que
+ * decide ("all": a primeira falsa; "any": a primeira verdadeira).
  */
 final class RuleMatcher
 {
+    private const NEEDLE = '_needle';
+
+    private const PATTERN = '_pattern';
+
     /**
-     * @param  list<array<string, mixed>>  $conditions
+     * @param  list<mixed>  $conditions  cruas ou de compile()
      */
     public static function matches(string $match, array $conditions, RuleSubject $subject): bool
     {
@@ -23,9 +33,59 @@ final class RuleMatcher
             return false;
         }
 
-        $results = array_map(fn (mixed $node): bool => self::node($node, $subject), $conditions);
+        $any = $match === 'any';
 
-        return $match === 'any' ? in_array(true, $results, true) : ! in_array(false, $results, true);
+        foreach ($conditions as $node) {
+            if (self::node($node, $subject) === $any) {
+                return $any;
+            }
+        }
+
+        return ! $any;
+    }
+
+    /**
+     * Mesma árvore de condições, com o valor de cada condição de texto já
+     * normalizado (ou, em regex, o padrão já montado). Sempre recalcula as
+     * chaves internas: nunca reaproveita uma que já viesse na entrada.
+     *
+     * @param  list<mixed>  $conditions
+     * @return list<mixed>
+     */
+    public static function compile(array $conditions): array
+    {
+        return array_map(function (mixed $node): mixed {
+            if (! is_array($node)) {
+                return $node;
+            }
+
+            unset($node[self::NEEDLE], $node[self::PATTERN]);
+
+            if (isset($node['conditions'])) {
+                if (is_array($node['conditions'])) {
+                    $node['conditions'] = self::compile(array_values($node['conditions']));
+                }
+
+                return $node;
+            }
+
+            $field = RuleField::tryFrom(self::str($node['field'] ?? ''));
+            $op = RuleOperator::tryFrom(self::str($node['op'] ?? ''));
+
+            if ($field === null || $op === null || ! self::isTextField($field)) {
+                return $node;
+            }
+
+            $value = self::str($node['value'] ?? null);
+
+            if ($op === RuleOperator::Regex) {
+                $node[self::PATTERN] = self::pattern($value);
+            } else {
+                $node[self::NEEDLE] = TextNormalizer::normalize($value);
+            }
+
+            return $node;
+        }, $conditions);
     }
 
     /**
@@ -63,7 +123,7 @@ final class RuleMatcher
         }
 
         return match ($field) {
-            RuleField::Description, RuleField::OriginalDescription, RuleField::Payee, RuleField::Notes => self::text($op, $subject->text($field), self::str($value)),
+            RuleField::Description, RuleField::OriginalDescription, RuleField::Payee, RuleField::Notes => self::text($op, $subject->text($field), $condition),
             RuleField::Amount => self::compare($op, $subject->amount <=> self::toInt($value)),
             RuleField::Date => self::compare($op, strcmp($subject->date, self::str($value)) <=> 0),
             RuleField::Direction => self::compare($op, $subject->direction === self::str($value) ? 0 : 1),
@@ -71,13 +131,21 @@ final class RuleMatcher
         };
     }
 
-    private static function text(RuleOperator $op, string $haystack, string $value): bool
+    /**
+     * @param  array<string, mixed>  $condition  compilada ou crua (ver compile())
+     */
+    private static function text(RuleOperator $op, string $haystack, array $condition): bool
     {
+        $value = self::str($condition['value'] ?? null);
+
         if ($op === RuleOperator::Regex) {
-            return self::regexMatches($value, $haystack);
+            $pattern = $condition[self::PATTERN] ?? null;
+
+            return self::regexMatches(is_string($pattern) ? $pattern : self::pattern($value), $haystack);
         }
 
-        $needle = TextNormalizer::normalize($value);
+        $needle = $condition[self::NEEDLE] ?? null;
+        $needle = is_string($needle) ? $needle : TextNormalizer::normalize($value);
 
         return match ($op) {
             RuleOperator::Contains => $needle !== '' && str_contains($haystack, $needle),
@@ -94,12 +162,12 @@ final class RuleMatcher
      * Limita o backtracking da PCRE enquanto avalia, para um padrão
      * patológico (ReDoS) não travar a aplicação; restaura o ini depois.
      */
-    private static function regexMatches(string $value, string $haystack): bool
+    private static function regexMatches(string $pattern, string $haystack): bool
     {
         $previous = ini_set('pcre.backtrack_limit', '100000');
 
         try {
-            return @preg_match(self::pattern($value), $haystack) === 1;
+            return @preg_match($pattern, $haystack) === 1;
         } finally {
             if ($previous !== false) {
                 ini_set('pcre.backtrack_limit', $previous);
@@ -119,6 +187,11 @@ final class RuleMatcher
         $escaped = preg_replace('/(?<!\\\\)((?:\\\\\\\\)*)~/', '$1\~', $ascii) ?? $ascii;
 
         return '~'.$escaped.'~iu';
+    }
+
+    private static function isTextField(RuleField $field): bool
+    {
+        return in_array($field, [RuleField::Description, RuleField::OriginalDescription, RuleField::Payee, RuleField::Notes], true);
     }
 
     /**

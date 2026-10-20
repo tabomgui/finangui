@@ -22,4 +22,18 @@ describe('ConfirmDialog', () => {
     expect(onOpenChange).not.toHaveBeenCalledWith(false)
     expect(screen.getByText('Excluir?')).toBeInTheDocument()
   })
+
+  it('depois de uma falha, devolve o foco ao botão de confirmar', async () => {
+    const onConfirm = vi.fn().mockRejectedValue(new Error('falhou'))
+
+    render(<ConfirmDialog open onOpenChange={vi.fn()} title="Excluir?" onConfirm={onConfirm} />)
+
+    const confirm = screen.getByRole('button', { name: 'Confirmar' })
+    await act(async () => {
+      fireEvent.click(confirm)
+    })
+
+    expect(confirm).toBeEnabled()
+    expect(confirm).toHaveFocus()
+  })
 })

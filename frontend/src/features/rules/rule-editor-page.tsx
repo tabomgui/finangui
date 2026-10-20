@@ -1,12 +1,14 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { isCancelledError } from '@tanstack/react-query'
 import { LoaderCircle, Trash2, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ApiError } from '@/api/errors'
-import { useCreateRule, useDeleteRule, useRule, useUpdateRule } from '@/api/queries/rules'
+import { useCreateRule, useDeleteRule, useFetchRuleReconcile, useRule, useUpdateRule } from '@/api/queries/rules'
 import { useTransaction } from '@/api/queries/transactions'
+import type { Rule, RuleReconcile } from '@/api/types'
 import { PageBody } from '@/components/layout/page-body'
 import { headerIconButton } from '@/components/layout/theme-toggle'
 import { PageHeader } from '@/components/layout/page-header'
@@ -21,12 +23,23 @@ import { Switch } from '@/components/ui/switch'
 import { applyFieldErrors, notifyError } from '@/lib/form-errors'
 import { ActionList } from './action-list'
 import { ApplyRuleDialog } from './apply-rule-dialog'
+import { nonEmptyReconcileGroups } from './category-change-labels'
 import { ConditionList } from './condition-list'
+import { ReconcileRuleDialog } from './reconcile-rule-dialog'
 import { isCoverablePath } from './rule-labels'
 import { ruleDefaults, ruleDefaultsFromTransaction, ruleSchema, toRuleBody, type RuleFormValues } from './rule-form-values'
 import { RulePreviewCard } from './rule-preview-card'
 
 const POSITIVE_INTEGER = /^[1-9]\d*$/
+
+/** O que define o efeito da regra nos lançamentos: condições, ações e "ativa" (não o nome). */
+function definitionKey(values: RuleFormValues): string {
+  return JSON.stringify({ ...toRuleBody(values), is_active: values.is_active })
+}
+
+function ruleCategoryId(rule: Rule): number | null {
+  return rule.actions.find((action) => action.type === 'set_category')?.category_id ?? null
+}
 
 export function RuleEditorPage() {
   const params = useParams()
@@ -41,11 +54,9 @@ export function RuleEditorPage() {
 
 type RuleFormBodyProps = {
   form: ReturnType<typeof useForm<RuleFormValues>>
-  overwrite: boolean
-  onOverwriteChange: (value: boolean) => void
 }
 
-function RuleFormBody({ form, overwrite, onOverwriteChange }: RuleFormBodyProps) {
+function RuleFormBody({ form }: RuleFormBodyProps) {
   const { errors } = form.formState
 
   return (
@@ -81,7 +92,7 @@ function RuleFormBody({ form, overwrite, onOverwriteChange }: RuleFormBodyProps)
           <ActionList form={form} />
         </div>
 
-        <RulePreviewCard form={form} overwrite={overwrite} onOverwriteChange={onOverwriteChange} />
+        <RulePreviewCard form={form} />
       </CardContent>
     </Card>
   )
@@ -118,7 +129,6 @@ function NewRulePage() {
 function NewRuleForm({ initialValues }: { initialValues: RuleFormValues }) {
   const create = useCreateRule()
   const navigate = useNavigate()
-  const [overwrite, setOverwrite] = useState(false)
 
   const form = useForm<RuleFormValues>({ resolver: zodResolver(ruleSchema), defaultValues: initialValues })
 
@@ -137,7 +147,7 @@ function NewRuleForm({ initialValues }: { initialValues: RuleFormValues }) {
       <PageHeader title="Nova regra" back="/regras" />
       <PageBody className="max-w-2xl space-y-4">
         <form className="space-y-4" onSubmit={submit} noValidate>
-          <RuleFormBody form={form} overwrite={overwrite} onOverwriteChange={setOverwrite} />
+          <RuleFormBody form={form} />
           <Button type="submit" className="w-full rounded-2xl py-6 text-base" disabled={form.formState.isSubmitting}>
             {form.formState.isSubmitting && <LoaderCircle className="h-4 w-4 animate-spin" />}
             Salvar regra
@@ -154,7 +164,31 @@ function EditRulePage({ id }: { id: number }) {
   const remove = useDeleteRule()
   const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [overwrite, setOverwrite] = useState(false)
+  // `seq` remonta o diálogo a cada busca (a marcação inicial dos grupos sai da resposta nova).
+  const [reconcile, setReconcile] = useState<{ seq: number; data: RuleReconcile } | null>(null)
+  const fetchReconcile = useFetchRuleReconcile()
+  // Cada gravação que muda o efeito da regra ganha um número novo (0: nenhuma ainda).
+  const [reconcileRequest, setReconcileRequest] = useState(0)
+  const applyOpenRef = useRef(false)
+
+  // Sem segurar a gravação: o botão de salvar já volta ao normal. A limpeza do efeito descarta a
+  // resposta de uma gravação anterior (salvar de novo) e a que chega depois de sair da página; o
+  // diálogo só abre se algo mudaria e se o diálogo de aplicar às existentes não estiver na frente.
+  useEffect(() => {
+    if (reconcileRequest === 0) return
+    let current = true
+    fetchReconcile(id).then(
+      (data) => {
+        if (current && !applyOpenRef.current && nonEmptyReconcileGroups(data).length > 0) setReconcile({ seq: reconcileRequest, data })
+      },
+      (error: unknown) => {
+        if (current && !isCancelledError(error)) toast.error('Não foi possível conferir os lançamentos desta regra.')
+      },
+    )
+    return () => {
+      current = false
+    }
+  }, [reconcileRequest, fetchReconcile, id])
 
   const notFound = isError && error instanceof ApiError && error.status === 404
 
@@ -203,6 +237,8 @@ function EditRulePage({ id }: { id: number }) {
   if (!rule) return <FullPageSpinner />
 
   const submit = form.handleSubmit(async (values) => {
+    // Só condições, ações ou "ativa" mudam o que a regra faz com os lançamentos: renomear não.
+    const definitionChanged = definitionKey(values) !== definitionKey(ruleDefaults(rule))
     try {
       const updated = await update.mutateAsync({
         id,
@@ -213,6 +249,7 @@ function EditRulePage({ id }: { id: number }) {
       // "isDirty" ficar true, "Aplicar às existentes" continuaria desabilitado mesmo recém-salvo.
       form.reset(ruleDefaults(updated))
       toast.success('Regra salva.')
+      if (definitionChanged) setReconcileRequest((value) => value + 1)
     } catch (error) {
       if (!applyFieldErrors(error, form.setError, '*', isCoverablePath)) notifyError(error)
     }
@@ -231,15 +268,32 @@ function EditRulePage({ id }: { id: number }) {
       />
       <PageBody className="max-w-2xl space-y-4">
         <form className="space-y-4" onSubmit={submit} noValidate>
-          <RuleFormBody form={form} overwrite={overwrite} onOverwriteChange={setOverwrite} />
+          <RuleFormBody form={form} />
           <Button type="submit" className="w-full rounded-2xl py-6 text-base" disabled={form.formState.isSubmitting}>
             {form.formState.isSubmitting && <LoaderCircle className="h-4 w-4 animate-spin" />}
             Salvar regra
           </Button>
         </form>
 
-        <ApplyRuleDialog rule={rule} overwrite={overwrite} onOverwriteChange={setOverwrite} disabled={form.formState.isDirty} />
+        <ApplyRuleDialog
+          rule={rule}
+          disabled={form.formState.isDirty}
+          onOpenChange={(open) => {
+            applyOpenRef.current = open
+            if (open) setReconcile(null)
+          }}
+        />
       </PageBody>
+
+      {reconcile && (
+        <ReconcileRuleDialog
+          key={reconcile.seq}
+          ruleId={id}
+          categoryId={ruleCategoryId(rule)}
+          reconcile={reconcile.data}
+          onClose={() => setReconcile(null)}
+        />
+      )}
 
       <ConfirmDialog
         open={confirmDelete}

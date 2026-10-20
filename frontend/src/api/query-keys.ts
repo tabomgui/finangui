@@ -57,6 +57,8 @@ export const queryKeys = {
   installmentPlans: (cardId: number) => ['installment-plans', cardId] as const,
   rules: () => ['rules'] as const,
   rule: (id: number) => ['rules', id] as const,
+  ruleReconcile: (id: number) => ['rules', id, 'reconcile'] as const,
+  ruleReview: () => ['rules', 'review'] as const,
   rulePreview: (body: unknown) => ['rule-preview', body] as const,
   importBatches: (accountId?: number) => ['import-batches', 'list', { accountId }] as const,
   importBatch: (id: number) => ['import-batches', 'detail', id] as const,
@@ -79,6 +81,7 @@ export const queryKeys = {
   pendingCategorizationCount: () => ['categorization', 'pending-count'] as const,
   pendingCategorization: (filters: PendingCategorizationFilters) =>
     ['categorization', 'pending', compactPendingCategorizationFilters(filters)] as const,
+  providerCategorizedCount: () => ['categorization', 'provider-categorized-count'] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {

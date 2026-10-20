@@ -19,9 +19,10 @@ use Throwable;
 
 /**
  * Aplica retroativamente uma regra já salva a todas as transações do
- * usuário que casam (pernas de transferência ficam de fora), com
- * "overwrite" opcional. Roda em UserContext para o escopo por usuário
- * valer; grava last_applied_at/last_applied_changes na regra ao terminar.
+ * usuário que casam (só as de Transaction::scopeEligibleForRules(), o mesmo
+ * conjunto da prévia), com "overwrite" opcional. Roda em UserContext para o
+ * escopo por usuário valer; grava last_applied_at/last_applied_changes na
+ * regra ao terminar.
  *
  * Único por regra (ShouldBeUnique): aplicar duas vezes em paralelo não
  * corrompe nada (idempotente), mas desperdiça trabalho e pode fazer
@@ -76,7 +77,7 @@ final class ApplyRuleRetroactively implements ShouldBeUnique, ShouldQueue
             // Carregar tags custa uma query a mais por lote; só compensa
             // quando a regra tem add_tag (as outras ações nunca tocam
             // $transaction->tags).
-            $query = Transaction::query()->whereNull('transfer_id')->excludingProjectedRecurrences();
+            $query = Transaction::query()->eligibleForRules();
             if ($definition->usesAddTag()) {
                 $query->with('tags');
             }

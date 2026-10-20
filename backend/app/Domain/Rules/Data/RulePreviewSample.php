@@ -5,9 +5,10 @@ namespace App\Domain\Rules\Data;
 use App\Domain\Transactions\Models\Transaction;
 
 /**
- * Uma transação da amostra da prévia e o que mudaria nela. As 5 propriedades
- * de mudança saem sempre presentes (nulo/lista vazia/false quando aquela
- * mudança não se aplica), para o tipo no frontend ficar estável.
+ * Uma transação da amostra da prévia e o que mudaria nela (wouldChange
+ * falso: casa, mas nada muda). As 5 propriedades de mudança saem sempre
+ * presentes (nulo/lista vazia/false quando aquela mudança não se aplica),
+ * para o tipo no frontend ficar estável.
  */
 final readonly class RulePreviewSample
 {
@@ -21,6 +22,7 @@ final readonly class RulePreviewSample
         public ?string $payee,
         public array $tagIds,
         public bool $isIgnored,
+        public bool $wouldChange,
     ) {}
 
     /**
@@ -35,6 +37,7 @@ final readonly class RulePreviewSample
             payee: $changes['payee'] ?? null,
             tagIds: $changes['tag_ids'] ?? [],
             isIgnored: $changes['is_ignored'] ?? false,
+            wouldChange: $changes !== [],
         );
     }
 }

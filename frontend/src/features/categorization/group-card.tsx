@@ -1,7 +1,8 @@
-import { Check, ChevronDown, LoaderCircle, Minus, Sparkles } from 'lucide-react'
+import { ChevronDown, LoaderCircle, Sparkles } from 'lucide-react'
 import { memo, useId, useState } from 'react'
 import type { Direction, PendingCategorizationGroup } from '@/api/types'
 import { CategoryIcon } from '@/components/shared/category-icon'
+import { GroupCheckbox } from '@/components/shared/group-checkbox'
 import { MoneyText } from '@/components/shared/money-text'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -13,33 +14,6 @@ import type { GroupCheckState } from './selection'
 const VISIBLE_LIMIT = 8
 
 const FOCUS_RING = 'outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50'
-
-type GroupCheckboxProps = { state: GroupCheckState; label: string; onClick: () => void }
-
-/**
- * Checkbox de três estados do cabeçalho do grupo: o `Checkbox` do shadcn (ui/checkbox.tsx) não
- * distingue "parcial" visualmente (sempre mostra o mesmo ícone de check), então o cabeçalho usa
- * um botão próprio com `role="checkbox"`/`aria-checked="mixed"`, o padrão de acessibilidade para
- * esse terceiro estado.
- */
-function GroupCheckbox({ state, label, onClick }: GroupCheckboxProps) {
-  return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={state === 'all' ? true : state === 'partial' ? 'mixed' : false}
-      aria-label={label}
-      onClick={onClick}
-      className={cn(
-        'flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] border outline-none transition-shadow focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
-        state === 'none' ? 'border-input' : 'border-primary bg-primary text-primary-foreground',
-      )}
-    >
-      {state === 'all' && <Check aria-hidden className="h-3.5 w-3.5" />}
-      {state === 'partial' && <Minus aria-hidden className="h-3.5 w-3.5" />}
-    </button>
-  )
-}
 
 type GroupCardProps = {
   group: PendingCategorizationGroup

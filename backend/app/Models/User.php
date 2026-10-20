@@ -17,6 +17,10 @@ class User extends Authenticatable
 
     protected $hidden = ['password', 'remember_token'];
 
+    protected $attributes = [
+        'use_provider_categories' => false,
+    ];
+
     /**
      * @return array<string, string>
      */
@@ -25,6 +29,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'use_provider_categories' => 'boolean',
         ];
     }
 

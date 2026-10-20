@@ -3,13 +3,16 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Domain\Categorization\Actions\ApplyCategorization;
+use App\Domain\Categorization\Data\ProviderCategorizedCount;
 use App\Domain\Categorization\Queries\PendingCategorization;
+use App\Domain\Transactions\Models\Transaction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Categorization\ApplyCategorizationRequest;
 use App\Http\Requests\Categorization\IndexPendingCategorizationRequest;
 use App\Http\Resources\CategorizationApplyResource;
 use App\Http\Resources\PendingCategorizationCountResource;
 use App\Http\Resources\PendingCategorizationResource;
+use App\Http\Resources\ProviderCategorizedCountResource;
 use App\Models\User;
 
 final class CategorizationController extends Controller
@@ -24,6 +27,13 @@ final class CategorizationController extends Controller
     public function pendingCount(PendingCategorization $query): PendingCategorizationCountResource
     {
         return PendingCategorizationCountResource::make($query->count());
+    }
+
+    public function providerCategorizedCount(): ProviderCategorizedCountResource
+    {
+        return ProviderCategorizedCountResource::make(
+            new ProviderCategorizedCount(Transaction::query()->categorizedByProvider()->count())
+        );
     }
 
     public function apply(ApplyCategorizationRequest $request, ApplyCategorization $applyCategorization): CategorizationApplyResource
