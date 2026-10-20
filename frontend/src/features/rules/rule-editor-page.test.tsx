@@ -1,10 +1,10 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { CancelledError, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/errors'
-import type { Category, Rule, Transaction } from '@/api/types'
+import type { Category, Rule, RuleReconcile, Transaction } from '@/api/types'
 import { RuleEditorPage } from './rule-editor-page'
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
@@ -85,6 +85,17 @@ function rule(overrides: Partial<Rule> = {}): Rule {
     last_applied_at: null,
     last_applied_changes: null,
     ...overrides,
+  }
+}
+
+function reconcileWith(fill: number): RuleReconcile {
+  return {
+    max_changes: 5000,
+    groups: [
+      { key: 'recategorize', count: 0, sample: [] },
+      { key: 'fill', count: fill, sample: [] },
+      { key: 'clear', count: 0, reason: 'no_longer_matches', sample: [] },
+    ],
   }
 }
 
@@ -254,19 +265,13 @@ describe('RuleEditorPage', () => {
     expect(screen.queryByText('Salve a regra antes de aplicar.')).not.toBeInTheDocument()
   })
 
-  it('editar: depois de salvar, confere a reconciliação e abre o diálogo quando algo mudaria', async () => {
+  it('editar: depois de salvar uma mudança nas condições, confere a reconciliação e abre o diálogo', async () => {
     mockRule = rule()
     updateMutateAsync.mockImplementation(async () => rule())
-    fetchReconcile.mockResolvedValue({
-      max_changes: 5000,
-      groups: [
-        { key: 'recategorize', count: 0, sample: [] },
-        { key: 'fill', count: 4, sample: [] },
-        { key: 'clear', count: 0, reason: 'no_longer_matches', sample: [] },
-      ],
-    })
+    fetchReconcile.mockResolvedValue(reconcileWith(4))
 
     renderPage(['/regras/5'])
+    fireEvent.change(screen.getByLabelText('Valor', { exact: false }), { target: { value: 'uber eats' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
 
     expect(await screen.findByText('Atualizar lançamentos desta regra?')).toBeInTheDocument()
@@ -274,16 +279,95 @@ describe('RuleEditorPage', () => {
     expect(screen.getByRole('button', { name: 'Atualizar 4 lançamentos' })).toBeInTheDocument()
   })
 
+  it('editar: desativar a regra também confere a reconciliação', async () => {
+    mockRule = rule()
+    updateMutateAsync.mockImplementation(async () => rule({ is_active: false }))
+
+    renderPage(['/regras/5'])
+    fireEvent.click(screen.getByRole('switch', { name: 'Ativa' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
+
+    await waitFor(() => expect(fetchReconcile).toHaveBeenCalledWith(5))
+  })
+
+  it('editar: só renomear não confere nem abre a reconciliação', async () => {
+    mockRule = rule()
+    updateMutateAsync.mockImplementation(async () => rule({ name: 'Uber viagens' }))
+    fetchReconcile.mockResolvedValue(reconcileWith(4))
+
+    renderPage(['/regras/5'])
+    fireEvent.change(screen.getByLabelText('Nome'), { target: { value: 'Uber viagens' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Regra salva.'))
+    expect(fetchReconcile).not.toHaveBeenCalled()
+    expect(screen.queryByText('Atualizar lançamentos desta regra?')).not.toBeInTheDocument()
+  })
+
   it('editar: sem nada a mudar, não abre o diálogo de atualizar lançamentos', async () => {
     mockRule = rule()
     updateMutateAsync.mockImplementation(async () => rule())
-    fetchReconcile.mockResolvedValue({ max_changes: 5000, groups: [{ key: 'fill', count: 0, sample: [] }] })
+    fetchReconcile.mockResolvedValue(reconcileWith(0))
 
     renderPage(['/regras/5'])
+    fireEvent.change(screen.getByLabelText('Valor', { exact: false }), { target: { value: 'uber eats' } })
     fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
 
     await waitFor(() => expect(fetchReconcile).toHaveBeenCalledWith(5))
     expect(screen.queryByText('Atualizar lançamentos desta regra?')).not.toBeInTheDocument()
+  })
+
+  it('editar: falha ao conferir a reconciliação avisa, sem abrir o diálogo', async () => {
+    mockRule = rule()
+    updateMutateAsync.mockImplementation(async () => rule())
+    fetchReconcile.mockRejectedValue(new ApiError(500, 'Erro inesperado no servidor. Tente novamente.'))
+
+    renderPage(['/regras/5'])
+    fireEvent.change(screen.getByLabelText('Valor', { exact: false }), { target: { value: 'uber eats' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Não foi possível conferir os lançamentos desta regra.'))
+    expect(screen.queryByText('Atualizar lançamentos desta regra?')).not.toBeInTheDocument()
+  })
+
+  it('editar: busca cancelada (CancelledError) não avisa nada', async () => {
+    mockRule = rule()
+    updateMutateAsync.mockImplementation(async () => rule())
+    fetchReconcile.mockRejectedValue(new CancelledError())
+
+    renderPage(['/regras/5'])
+    fireEvent.change(screen.getByLabelText('Valor', { exact: false }), { target: { value: 'uber eats' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
+
+    await waitFor(() => expect(fetchReconcile).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it('editar: salvando duas vezes, a resposta da primeira gravação (que chega por último) é ignorada', async () => {
+    mockRule = rule()
+    updateMutateAsync.mockImplementation(async () => rule())
+    let resolveFirst!: (value: RuleReconcile) => void
+    fetchReconcile
+      .mockImplementationOnce(() => new Promise<RuleReconcile>((resolve) => (resolveFirst = resolve)))
+      .mockResolvedValueOnce(reconcileWith(2))
+
+    renderPage(['/regras/5'])
+    fireEvent.change(screen.getByLabelText('Valor', { exact: false }), { target: { value: 'uber eats' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
+    await waitFor(() => expect(fetchReconcile).toHaveBeenCalledTimes(1))
+
+    fireEvent.change(screen.getByLabelText('Valor', { exact: false }), { target: { value: 'uber eats centro' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar regra' }))
+
+    expect(await screen.findByRole('button', { name: 'Atualizar 2 lançamentos' })).toBeInTheDocument()
+
+    await act(async () => {
+      resolveFirst(reconcileWith(9))
+    })
+
+    expect(screen.getByRole('button', { name: 'Atualizar 2 lançamentos' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Atualizar 9 lançamentos' })).not.toBeInTheDocument()
   })
 
   it('criar uma regra não confere reconciliação', async () => {

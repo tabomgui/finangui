@@ -1,4 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { isCancelledError } from '@tanstack/react-query'
 import { LoaderCircle, Trash2, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
@@ -7,7 +8,7 @@ import { toast } from 'sonner'
 import { ApiError } from '@/api/errors'
 import { useCreateRule, useDeleteRule, useFetchRuleReconcile, useRule, useUpdateRule } from '@/api/queries/rules'
 import { useTransaction } from '@/api/queries/transactions'
-import type { RuleReconcile } from '@/api/types'
+import type { Rule, RuleReconcile } from '@/api/types'
 import { PageBody } from '@/components/layout/page-body'
 import { headerIconButton } from '@/components/layout/theme-toggle'
 import { PageHeader } from '@/components/layout/page-header'
@@ -30,6 +31,15 @@ import { ruleDefaults, ruleDefaultsFromTransaction, ruleSchema, toRuleBody, type
 import { RulePreviewCard } from './rule-preview-card'
 
 const POSITIVE_INTEGER = /^[1-9]\d*$/
+
+/** O que define o efeito da regra nos lançamentos: condições, ações e "ativa" (não o nome). */
+function definitionKey(values: RuleFormValues): string {
+  return JSON.stringify({ ...toRuleBody(values), is_active: values.is_active })
+}
+
+function ruleCategoryId(rule: Rule): number | null {
+  return rule.actions.find((action) => action.type === 'set_category')?.category_id ?? null
+}
 
 export function RuleEditorPage() {
   const params = useParams()
@@ -154,8 +164,31 @@ function EditRulePage({ id }: { id: number }) {
   const remove = useDeleteRule()
   const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [reconcile, setReconcile] = useState<RuleReconcile | null>(null)
+  // `seq` remonta o diálogo a cada busca (a marcação inicial dos grupos sai da resposta nova).
+  const [reconcile, setReconcile] = useState<{ seq: number; data: RuleReconcile } | null>(null)
   const fetchReconcile = useFetchRuleReconcile()
+  // Cada gravação que muda o efeito da regra ganha um número novo (0: nenhuma ainda).
+  const [reconcileRequest, setReconcileRequest] = useState(0)
+  const applyOpenRef = useRef(false)
+
+  // Sem segurar a gravação: o botão de salvar já volta ao normal. A limpeza do efeito descarta a
+  // resposta de uma gravação anterior (salvar de novo) e a que chega depois de sair da página; o
+  // diálogo só abre se algo mudaria e se o diálogo de aplicar às existentes não estiver na frente.
+  useEffect(() => {
+    if (reconcileRequest === 0) return
+    let current = true
+    fetchReconcile(id).then(
+      (data) => {
+        if (current && !applyOpenRef.current && nonEmptyReconcileGroups(data).length > 0) setReconcile({ seq: reconcileRequest, data })
+      },
+      (error: unknown) => {
+        if (current && !isCancelledError(error)) toast.error('Não foi possível conferir os lançamentos desta regra.')
+      },
+    )
+    return () => {
+      current = false
+    }
+  }, [reconcileRequest, fetchReconcile, id])
 
   const notFound = isError && error instanceof ApiError && error.status === 404
 
@@ -204,6 +237,8 @@ function EditRulePage({ id }: { id: number }) {
   if (!rule) return <FullPageSpinner />
 
   const submit = form.handleSubmit(async (values) => {
+    // Só condições, ações ou "ativa" mudam o que a regra faz com os lançamentos: renomear não.
+    const definitionChanged = definitionKey(values) !== definitionKey(ruleDefaults(rule))
     try {
       const updated = await update.mutateAsync({
         id,
@@ -214,14 +249,7 @@ function EditRulePage({ id }: { id: number }) {
       // "isDirty" ficar true, "Aplicar às existentes" continuaria desabilitado mesmo recém-salvo.
       form.reset(ruleDefaults(updated))
       toast.success('Regra salva.')
-      // Sem esperar: o botão de salvar já volta ao normal; o diálogo só abre se a versão nova da
-      // regra mudaria a categoria de algum lançamento existente.
-      fetchReconcile(id).then(
-        (data) => {
-          if (nonEmptyReconcileGroups(data).length > 0) setReconcile(data)
-        },
-        () => toast.error('Não foi possível conferir os lançamentos desta regra.'),
-      )
+      if (definitionChanged) setReconcileRequest((value) => value + 1)
     } catch (error) {
       if (!applyFieldErrors(error, form.setError, '*', isCoverablePath)) notifyError(error)
     }
@@ -247,10 +275,25 @@ function EditRulePage({ id }: { id: number }) {
           </Button>
         </form>
 
-        <ApplyRuleDialog rule={rule} disabled={form.formState.isDirty} />
+        <ApplyRuleDialog
+          rule={rule}
+          disabled={form.formState.isDirty}
+          onOpenChange={(open) => {
+            applyOpenRef.current = open
+            if (open) setReconcile(null)
+          }}
+        />
       </PageBody>
 
-      {reconcile && <ReconcileRuleDialog ruleId={id} reconcile={reconcile} onClose={() => setReconcile(null)} />}
+      {reconcile && (
+        <ReconcileRuleDialog
+          key={reconcile.seq}
+          ruleId={id}
+          categoryId={ruleCategoryId(rule)}
+          reconcile={reconcile.data}
+          onClose={() => setReconcile(null)}
+        />
+      )}
 
       <ConfirmDialog
         open={confirmDelete}

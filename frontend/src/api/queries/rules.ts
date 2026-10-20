@@ -147,17 +147,21 @@ export function useApplyRule() {
 
 /**
  * Busca, sob demanda, o que a regra salva mudaria na categoria dos lançamentos (chamada logo depois
- * de salvar uma edição). `staleTime: 0`: cada gravação pede uma conta nova, nunca a da anterior.
+ * de salvar uma edição). Cancela antes uma busca anterior ainda em voo (salvar duas vezes seguidas):
+ * a resposta velha nunca chega a quem chamou. `staleTime: 0`: cada gravação pede uma conta nova.
  */
 export function useFetchRuleReconcile() {
   const queryClient = useQueryClient()
   return useCallback(
-    (id: number) =>
-      queryClient.fetchQuery({
-        queryKey: queryKeys.ruleReconcile(id),
-        queryFn: async () => (await unwrap(api.GET('/rules/{rule}/reconcile', { params: { path: { rule: id } } }))).data,
+    async (id: number) => {
+      const queryKey = queryKeys.ruleReconcile(id)
+      await queryClient.cancelQueries({ queryKey })
+      return queryClient.fetchQuery({
+        queryKey,
+        queryFn: async ({ signal }) => (await unwrap(api.GET('/rules/{rule}/reconcile', { params: { path: { rule: id } }, signal }))).data,
         staleTime: 0,
-      }),
+      })
+    },
     [queryClient],
   )
 }

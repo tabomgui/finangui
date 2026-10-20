@@ -96,7 +96,7 @@ export const ReviewGroupCard = memo(function ReviewGroupCard({
                   item={item}
                   categoriesById={categoriesById}
                   categoriesLoading={categoriesLoading}
-                  showRule
+                  showOrigin
                   selection={group.applicable ? { checked: selectedIds.has(item.transaction_id), onToggle: onToggleItem } : undefined}
                 />
               </li>

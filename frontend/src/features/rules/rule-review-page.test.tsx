@@ -167,7 +167,7 @@ describe('RuleReviewPage', () => {
     const manual = group('Categorizados à mão com regra diferente')
     expect(within(manual).getByText('Feira manual')).toBeInTheDocument()
     expect(within(manual).queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(within(manual).getByText('Lazer')).toBeInTheDocument()
+    expect(within(manual).getByText(/Hoje: Lazer/)).toBeInTheDocument()
     expect(within(manual).getByText('Alimentação › Mercado')).toBeInTheDocument()
     expect(within(manual).getByText('Regra: Feira')).toBeInTheDocument()
   })

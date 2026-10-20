@@ -26,6 +26,10 @@ vi.mock('sonner', () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }))
 
+const RECATEGORIZE = 'Já categorizados por esta regra: passam para Transporte › Aplicativo'
+const FILL = 'Sem categoria que esta regra vai categorizar como Transporte › Aplicativo'
+const NO_LONGER = 'Esta regra não pega mais: ficam sem categoria'
+
 function item(overrides: Partial<CategoryChangeItem> = {}): CategoryChangeItem {
   return {
     transaction_id: 1,
@@ -38,14 +42,14 @@ function item(overrides: Partial<CategoryChangeItem> = {}): CategoryChangeItem {
   }
 }
 
-function reconcile(groups: RuleReconcile['groups']): RuleReconcile {
-  return { max_changes: 5000, groups }
+function reconcile(groups: RuleReconcile['groups'], maxChanges = 5000): RuleReconcile {
+  return { max_changes: maxChanges, groups }
 }
 
 const onClose = vi.fn()
 
 function renderDialog(data: RuleReconcile) {
-  return render(<ReconcileRuleDialog ruleId={5} reconcile={data} onClose={onClose} />)
+  return render(<ReconcileRuleDialog ruleId={5} categoryId={2} reconcile={data} onClose={onClose} />)
 }
 
 beforeEach(() => {
@@ -57,7 +61,7 @@ beforeEach(() => {
 })
 
 describe('ReconcileRuleDialog', () => {
-  it('mostra só os grupos com lançamentos, todos marcados, e soma no botão', () => {
+  it('mostra só os grupos com lançamentos, com a contagem no rótulo; tirar categoria começa desmarcado', () => {
     renderDialog(
       reconcile([
         { key: 'recategorize', count: 3, sample: [] },
@@ -67,27 +71,51 @@ describe('ReconcileRuleDialog', () => {
     )
 
     expect(screen.getByText('Atualizar lançamentos desta regra?')).toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: 'Categorizados por esta regra que mudam de categoria' })).toBeChecked()
-    expect(screen.getByRole('checkbox', { name: 'Categorizados por esta regra que não casam mais (voltam para Categorizar)' })).toBeChecked()
-    expect(screen.queryByRole('checkbox', { name: 'Sem categoria que agora casam' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Atualizar 5 lançamentos' })).toBeEnabled()
+    expect(screen.getByText(/Alguns lançamentos não batem com a regra como ela está agora/)).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: `${RECATEGORIZE} (3)` })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: `${NO_LONGER} (2)` })).not.toBeChecked()
+    expect(screen.queryByRole('checkbox', { name: new RegExp(FILL) })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Atualizar 3 lançamentos' })).toBeEnabled()
   })
 
-  it('regra inativa: o grupo de tirar a categoria começa desmarcado', () => {
-    renderDialog(reconcile([{ key: 'clear', count: 4, reason: 'inactive', sample: [] }]))
-
-    expect(screen.getByRole('checkbox', { name: 'Regra inativa: remover a categoria que ela deu' })).not.toBeChecked()
-    expect(screen.getByRole('button', { name: 'Atualizar 0 lançamentos' })).toBeDisabled()
+  it('tirar categoria começa desmarcado em qualquer motivo, com rótulo próprio', () => {
+    renderDialog(
+      reconcile([
+        { key: 'clear', count: 4, reason: 'inactive', sample: [] },
+      ]),
+    )
+    expect(screen.getByRole('checkbox', { name: 'Regra inativa: remover a categoria que ela deu (4)' })).not.toBeChecked()
   })
 
-  it('regra sem ação de categoria usa o rótulo próprio', () => {
+  it('sem nada marcado, o botão pede para marcar e fica desabilitado', () => {
     renderDialog(reconcile([{ key: 'clear', count: 1, reason: 'no_category_action', sample: [] }]))
 
-    expect(screen.getByRole('checkbox', { name: /a regra não define mais categoria/ })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'A regra não define mais categoria: ficam sem categoria (1)' })).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Marque o que atualizar' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /A regra não define mais categoria/ }))
     expect(screen.getByRole('button', { name: 'Atualizar 1 lançamento' })).toBeEnabled()
   })
 
-  it('a amostra abre com "atual → nova"', () => {
+  it('acima de max_changes avisa e desabilita o botão', () => {
+    renderDialog(
+      reconcile(
+        [
+          { key: 'fill', count: 40, sample: [] },
+          { key: 'clear', count: 30, reason: 'no_longer_matches', sample: [] },
+        ],
+        50,
+      ),
+    )
+
+    expect(screen.getByRole('button', { name: 'Atualizar 40 lançamentos' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('checkbox', { name: new RegExp(NO_LONGER) }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('São 70 lançamentos marcados; o máximo é 50 por vez.')
+    expect(screen.getByRole('button', { name: 'Atualizar 70 lançamentos' })).toBeDisabled()
+  })
+
+  it('a amostra abre com "atual → nova", e o botão de exemplos aponta para o grupo', () => {
     renderDialog(
       reconcile([
         {
@@ -99,7 +127,9 @@ describe('ReconcileRuleDialog', () => {
     )
 
     expect(screen.queryByText('Corrida teste')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Ver exemplos' }))
+    const examples = screen.getByRole('button', { name: 'Ver exemplos' })
+    expect(examples).toHaveAccessibleDescription(`${RECATEGORIZE} (25)`)
+    fireEvent.click(examples)
 
     expect(screen.getByText('Corrida teste')).toBeInTheDocument()
     expect(screen.getByText('Lazer')).toBeInTheDocument()
@@ -117,21 +147,19 @@ describe('ReconcileRuleDialog', () => {
       ]),
     )
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Sem categoria que agora casam' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: new RegExp(FILL) }))
     fireEvent.click(screen.getByRole('button', { name: 'Atualizar 3 lançamentos' }))
 
     await waitFor(() => expect(applyMutateAsync).toHaveBeenCalledWith({ id: 5, body: { groups: ['recategorize'] } }))
-    expect(toast.success).toHaveBeenCalledWith('3 lançamentos atualizados · 1 ignorado porque mudou')
+    expect(toast.success).toHaveBeenCalledWith('3 lançamentos atualizados · 1 pulado porque mudou')
     expect(onClose).toHaveBeenCalled()
   })
 
   it('409 acima do limite mostra a mensagem e mantém o diálogo aberto', async () => {
-    applyMutateAsync.mockRejectedValue(
-      new ApiError(409, 'São alterações demais de uma vez (máximo de 5000).', 'too_many_category_changes'),
-    )
-    renderDialog(reconcile([{ key: 'fill', count: 6000, sample: [] }]))
+    applyMutateAsync.mockRejectedValue(new ApiError(409, 'São alterações demais de uma vez (máximo de 5000).', 'too_many_category_changes'))
+    renderDialog(reconcile([{ key: 'fill', count: 60, sample: [] }]))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Atualizar 6000 lançamentos' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Atualizar 60 lançamentos' }))
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('São alterações demais de uma vez (máximo de 5000).'))
     expect(onClose).not.toHaveBeenCalled()

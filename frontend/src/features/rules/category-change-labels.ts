@@ -2,8 +2,8 @@ import type { ReconcileClearReason, ReviewGroupKey, RuleReconcile, RuleReconcile
 import { pluralize } from './rule-labels'
 
 const CLEAR_LABELS: Record<ReconcileClearReason, string> = {
-  no_longer_matches: 'Categorizados por esta regra que não casam mais (voltam para Categorizar)',
-  no_category_action: 'Categorizados por esta regra: a regra não define mais categoria (voltam para Categorizar)',
+  no_longer_matches: 'Esta regra não pega mais: ficam sem categoria',
+  no_category_action: 'A regra não define mais categoria: ficam sem categoria',
   inactive: 'Regra inativa: remover a categoria que ela deu',
 }
 
@@ -12,19 +12,22 @@ export function nonEmptyReconcileGroups(reconcile: RuleReconcile): RuleReconcile
   return reconcile.groups.filter((group) => group.count > 0)
 }
 
-/** Rótulo de um grupo da reconciliação de uma regra editada (`GET /rules/{rule}/reconcile`). */
-export function reconcileGroupLabel(group: Pick<RuleReconcileGroup, 'key' | 'reason'>): string {
-  if (group.key === 'recategorize') return 'Categorizados por esta regra que mudam de categoria'
-  if (group.key === 'fill') return 'Sem categoria que agora casam'
+/**
+ * Rótulo de um grupo da reconciliação de uma regra editada (`GET /rules/{rule}/reconcile`).
+ * `categoryLabel`: caminho "Pai › Sub" da categoria que a regra define agora.
+ */
+export function reconcileGroupLabel(group: Pick<RuleReconcileGroup, 'key' | 'reason'>, categoryLabel: string): string {
+  if (group.key === 'recategorize') return `Já categorizados por esta regra: passam para ${categoryLabel}`
+  if (group.key === 'fill') return `Sem categoria que esta regra vai categorizar como ${categoryLabel}`
   return CLEAR_LABELS[group.reason ?? 'no_longer_matches']
 }
 
 /**
- * Marcado ao abrir a reconciliação: tudo, menos tirar a categoria que uma regra desativada deu —
- * desativar costuma ser "parar de categorizar daqui pra frente", não desfazer o passado.
+ * Marcado ao abrir a reconciliação: categorizar ou trocar para a categoria da regra, sim; tirar
+ * categoria (`clear`, qualquer motivo) só se o usuário marcar.
  */
-export function reconcileGroupCheckedByDefault(group: Pick<RuleReconcileGroup, 'key' | 'reason'>): boolean {
-  return !(group.key === 'clear' && group.reason === 'inactive')
+export function reconcileGroupCheckedByDefault(group: Pick<RuleReconcileGroup, 'key'>): boolean {
+  return group.key !== 'clear'
 }
 
 /** Ordem em que a revisão mostra os grupos. */

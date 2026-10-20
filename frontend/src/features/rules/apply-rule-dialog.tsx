@@ -26,6 +26,8 @@ type ApplyRuleDialogProps = {
   rule: Rule
   /** Formulário com alterações ainda não salvas: a aplicação usaria uma versão velha da regra. */
   disabled: boolean
+  /** Avisa quando o diálogo abre ou fecha (a página não abre outro diálogo por cima dele). */
+  onOpenChange?: (open: boolean) => void
 }
 
 const POLL_INTERVAL_MS = 2_000
@@ -50,8 +52,12 @@ function changedCountLabel(count: number): string {
  * Confirma e dispara a aplicação retroativa (job por regra), depois acompanha `last_applied_at`
  * via polling até o job terminar ou até 60s passarem — o que vier primeiro.
  */
-export function ApplyRuleDialog({ rule, disabled }: ApplyRuleDialogProps) {
-  const [open, setOpen] = useState(false)
+export function ApplyRuleDialog({ rule, disabled, onOpenChange }: ApplyRuleDialogProps) {
+  const [open, setOpenState] = useState(false)
+  const setOpen = (value: boolean) => {
+    setOpenState(value)
+    onOpenChange?.(value)
+  }
   const [scope, setScope] = useState<Scope>('uncategorized')
   const overwrite = scope === 'automatic'
   const [applying, setApplying] = useState(false)
