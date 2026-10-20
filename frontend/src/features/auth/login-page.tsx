@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { applyFieldErrors, notifyError } from '@/lib/form-errors'
 import { AuthLayout } from './auth-layout'
+import { GoogleIcon } from './google-icon'
 import { googleErrorMessage } from './google-errors'
 
 const schema = z.object({
@@ -88,7 +89,10 @@ export function LoginPage() {
                 <Separator className="flex-1" />
               </div>
               <Button variant="outline" className="w-full" asChild>
-                <a href="/api/auth/google/redirect">Entrar com Google</a>
+                <a href="/api/auth/google/redirect">
+                  <GoogleIcon />
+                  Entrar com Google
+                </a>
               </Button>
             </>
           )}
