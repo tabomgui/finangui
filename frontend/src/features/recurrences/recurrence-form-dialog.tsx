@@ -210,7 +210,7 @@ export function RecurrenceFormDialog({ open, onOpenChange, recurrence }: Recurre
                   control={form.control}
                   name="amount"
                   render={({ field }) => (
-                    <MoneyInput {...control} value={field.value} onChange={field.onChange} onBlur={field.onBlur} />
+                    <MoneyInput {...control} value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
                   )}
                 />
               )}

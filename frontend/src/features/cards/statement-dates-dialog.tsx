@@ -111,7 +111,7 @@ export function StatementDatesDialog({ open, onOpenChange, statement }: Statemen
                 control={form.control}
                 name="reported_total"
                 render={({ field }) => (
-                  <MoneyInput {...control} allowNegative value={field.value} onChange={field.onChange} onBlur={field.onBlur} />
+                  <MoneyInput {...control} allowNegative value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
                 )}
               />
             )}

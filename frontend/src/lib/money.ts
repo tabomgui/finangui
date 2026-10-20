@@ -125,3 +125,25 @@ export function formatMoneyDigits(digits: string, negative = false): string {
   if (digits === '') return sign
   return sign + centsToInputString(Number(digits))
 }
+
+const PREFIXED_AMOUNT = /(-\s*)?R\$\s*(-)?(\d(?:[\d.,]*\d)?)/i
+const BARE_AMOUNT = /(?:^|[^\d.,])(-)?(\d(?:[\d.,]*\d)?)/
+
+/**
+ * Valor de um texto colado num campo de dinheiro. Tenta o texto inteiro com `parseMoneyInput`;
+ * se não der, o primeiro número depois de "R$" e, sem "R$", o primeiro número do texto
+ * ("R$ 50 - mercado" → 5000). Nunca junta todos os dígitos do texto: sem número legível, null.
+ */
+export function parsePastedMoney(text: string): number | null {
+  const whole = parseMoneyInput(text)
+  if (whole !== null) return whole
+
+  const prefixed = PREFIXED_AMOUNT.exec(text)
+  const token = prefixed
+    ? `${prefixed[1] || prefixed[2] ? '-' : ''}${prefixed[3]}`
+    : (() => {
+        const bare = BARE_AMOUNT.exec(text)
+        return bare ? `${bare[1] ?? ''}${bare[2]}` : null
+      })()
+  return token === null ? null : parseMoneyInput(token)
+}

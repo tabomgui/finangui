@@ -50,6 +50,7 @@ export function TransferForm({ defaultValues, onSubmit, submitLabel, autoFocusAm
                     value={field.value}
                     onChange={field.onChange}
                     onBlur={field.onBlur}
+                    ref={field.ref}
                     autoFocus={autoFocusAmount}
                   />
                 )}

@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useState } from 'react'
+import { createRef, useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { MoneyInput } from './money-input'
 
@@ -89,7 +89,7 @@ describe('MoneyInput', () => {
     expect(onChange).toHaveBeenLastCalledWith(null)
   })
 
-  it('sem keydown (teclado virtual), apagar o último caractere tira o último dígito', () => {
+  it('sem beforeinput, onChange cobre: apagar o fim tira o último dígito, inclusive de "0,00"', () => {
     const { input, onChange } = setup({ value: 100 })
 
     fireEvent.change(input, { target: { value: '1,0' } })
@@ -100,6 +100,23 @@ describe('MoneyInput', () => {
     fireEvent.change(input, { target: { value: '0,0' } })
     expect(input).toHaveValue('')
     expect(onChange).toHaveBeenLastCalledWith(null)
+  })
+
+  it('sem beforeinput, apagar só um separador não muda o valor', () => {
+    const { input, onChange } = setup({ value: 123456 })
+
+    fireEvent.change(input, { target: { value: '1234,56' } })
+
+    expect(input).toHaveValue('1.234,56')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('onChange é ignorado durante composição de IME', () => {
+    const { input, onChange } = setup({ value: 100 })
+
+    fireEvent.input(input, { target: { value: '1,005' }, isComposing: true })
+
+    expect(onChange).not.toHaveBeenCalled()
   })
 
   it('Delete também tira o último dígito, mesmo com o cursor no fim', async () => {
@@ -132,13 +149,26 @@ describe('MoneyInput', () => {
     expect(onChange).toHaveBeenLastCalledWith(null)
   })
 
-  it('mantém o cursor no fim depois de cada dígito', async () => {
-    const { user, input } = setup()
+  it('cursor solto no meio do número volta para o fim', () => {
+    const { input } = setup({ value: 123456 })
+    input.focus()
 
-    await user.type(input, '12345')
+    input.setSelectionRange(2, 2)
+    fireEvent.select(input)
 
-    expect(input.selectionStart).toBe(input.value.length)
-    expect(input.selectionEnd).toBe(input.value.length)
+    expect(input.selectionStart).toBe(8)
+    expect(input.selectionEnd).toBe(8)
+  })
+
+  it('uma seleção de verdade fica como está', () => {
+    const { input } = setup({ value: 123456 })
+    input.focus()
+
+    input.setSelectionRange(0, 5)
+    fireEvent.select(input)
+
+    expect(input.selectionStart).toBe(0)
+    expect(input.selectionEnd).toBe(5)
   })
 
   it.each([
@@ -168,14 +198,18 @@ describe('MoneyInput', () => {
     expect(onChange).toHaveBeenLastCalledWith(1230)
   })
 
-  it('colar texto que não é valor cai para os dígitos dele', async () => {
+  it.each([
+    ['R$ 50 - mercado', '50,00', 5000],
+    ['2026-10-20 R$ 50', '50,00', 5000],
+    ['Total: 12x 34', '12,00', 1200],
+  ])('colar "%s" lê o primeiro valor, nunca todos os dígitos juntos', async (pasted, shown, cents) => {
     const { user, input, onChange } = setup()
 
     await user.click(input)
-    await user.paste('Total: 12x 34')
+    await user.paste(pasted)
 
-    expect(input).toHaveValue('12,34')
-    expect(onChange).toHaveBeenLastCalledWith(1234)
+    expect(input).toHaveValue(shown)
+    expect(onChange).toHaveBeenLastCalledWith(cents)
   })
 
   it('colar texto sem dígito não muda nada', async () => {
@@ -333,5 +367,231 @@ describe('MoneyInput', () => {
     expect(input).toHaveAttribute('aria-describedby', 'ajuda')
     expect(input).toHaveAttribute('aria-invalid', 'true')
     expect(input).toHaveAttribute('inputmode', 'numeric')
+  })
+
+  describe('beforeinput', () => {
+    /** Dispara o evento como o navegador; devolve true se o componente cancelou a mudança nativa. */
+    function beforeInput(input: HTMLInputElement, inputType: string, data: string | null = null, isComposing = false) {
+      const event = new InputEvent('beforeinput', { inputType, data, isComposing, bubbles: true, cancelable: true })
+      act(() => {
+        input.dispatchEvent(event)
+      })
+      return event.defaultPrevented
+    }
+
+    function focusAtEnd(input: HTMLInputElement) {
+      input.focus()
+      input.setSelectionRange(input.value.length, input.value.length)
+    }
+
+    it('deleteContentBackward tira só o último dígito e cancela o apagar nativo', () => {
+      const { input, onChange } = setup({ value: 123456 })
+      focusAtEnd(input)
+
+      expect(beforeInput(input, 'deleteContentBackward')).toBe(true)
+
+      expect(input).toHaveValue('123,45')
+      expect(onChange).toHaveBeenCalledTimes(1)
+      expect(onChange).toHaveBeenLastCalledWith(12345)
+    })
+
+    it('deleteContentForward também tira o último dígito', () => {
+      const { input, onChange } = setup({ value: 123 })
+      focusAtEnd(input)
+
+      expect(beforeInput(input, 'deleteContentForward')).toBe(true)
+
+      expect(input).toHaveValue('0,12')
+      expect(onChange).toHaveBeenLastCalledWith(12)
+    })
+
+    it('apagar palavra a partir do fim esvazia o campo', () => {
+      const { input, onChange } = setup({ value: 123456 })
+      focusAtEnd(input)
+
+      beforeInput(input, 'deleteWordBackward')
+
+      expect(input).toHaveValue('')
+      expect(onChange).toHaveBeenLastCalledWith(null)
+    })
+
+    it('insertText acrescenta o dígito à direita', () => {
+      const { input, onChange } = setup({ value: 123 })
+      focusAtEnd(input)
+
+      expect(beforeInput(input, 'insertText', '4')).toBe(true)
+
+      expect(input).toHaveValue('12,34')
+      expect(onChange).toHaveBeenLastCalledWith(1234)
+    })
+
+    it('insertText com tudo selecionado substitui o valor', () => {
+      const { input, onChange } = setup({ value: 123456 })
+      input.focus()
+      input.setSelectionRange(0, input.value.length)
+
+      beforeInput(input, 'insertText', '9')
+
+      expect(input).toHaveValue('0,09')
+      expect(onChange).toHaveBeenLastCalledWith(9)
+    })
+
+    it('insertText com letra é cancelado sem mudar nada', () => {
+      const { input, onChange } = setup({ value: 123 })
+      focusAtEnd(input)
+
+      expect(beforeInput(input, 'insertText', 'a')).toBe(true)
+
+      expect(input).toHaveValue('1,23')
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('insertText "-" inverte o sinal só com allowNegative', () => {
+      const negative = setup({ value: 123, allowNegative: true })
+      focusAtEnd(negative.input)
+      beforeInput(negative.input, 'insertText', '-')
+      expect(negative.input).toHaveValue('-1,23')
+      expect(negative.onChange).toHaveBeenLastCalledWith(-123)
+      negative.unmount()
+
+      const positive = setup({ value: 123 })
+      focusAtEnd(positive.input)
+      expect(beforeInput(positive.input, 'insertText', '-')).toBe(true)
+      expect(positive.input).toHaveValue('1,23')
+      expect(positive.onChange).not.toHaveBeenCalled()
+    })
+
+    it('insertFromPaste usa a mesma leitura de colar', () => {
+      const { input, onChange } = setup({ value: 999 })
+      focusAtEnd(input)
+
+      expect(beforeInput(input, 'insertFromPaste', 'R$ 50 - mercado')).toBe(true)
+
+      expect(input).toHaveValue('50,00')
+      expect(onChange).toHaveBeenLastCalledWith(5000)
+    })
+
+    it('apagar um "." selecionado não muda o valor', () => {
+      const { input, onChange } = setup({ value: 123456 })
+      input.focus()
+      input.setSelectionRange(1, 2)
+
+      expect(beforeInput(input, 'deleteContentBackward')).toBe(true)
+
+      expect(input).toHaveValue('1.234,56')
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('apagar um "0" selecionado no meio tira só esse dígito', () => {
+      const { input, onChange } = setup({ value: 103456 })
+      input.focus()
+      input.setSelectionRange(2, 3)
+
+      beforeInput(input, 'deleteContentBackward')
+
+      expect(input).toHaveValue('134,56')
+      expect(onChange).toHaveBeenLastCalledWith(13456)
+    })
+
+    it('durante composição de IME, deixa o evento seguir', () => {
+      const { input, onChange } = setup({ value: 123 })
+      focusAtEnd(input)
+
+      expect(beforeInput(input, 'insertCompositionText', '4', true)).toBe(false)
+      expect(onChange).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('readOnly', () => {
+    it('não aceita digitar, apagar nem colar, e trava o botão de sinal', async () => {
+      const onChange = vi.fn()
+      const user = userEvent.setup()
+      render(<MoneyInput aria-label="Valor" value={1234} onChange={onChange} readOnly allowNegative />)
+      const input = screen.getByLabelText('Valor')
+
+      await user.type(input, '5{Backspace}{Delete}-')
+      await user.paste('R$ 50')
+      fireEvent.change(input, { target: { value: '9' } })
+
+      expect(input).toHaveValue('12,34')
+      expect(onChange).not.toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: 'Valor negativo' })).toBeDisabled()
+    })
+  })
+
+  describe('botão de sinal', () => {
+    it('fica desativado com o campo desativado', () => {
+      render(<MoneyInput aria-label="Valor" value={100} onChange={() => {}} disabled allowNegative />)
+
+      expect(screen.getByRole('button', { name: 'Valor negativo' })).toBeDisabled()
+    })
+
+    it('clicado com o campo fora de foco, leva o foco para o campo; sair dele chama onBlur', async () => {
+      const onBlur = vi.fn()
+      const onChange = vi.fn()
+      const user = userEvent.setup()
+      render(
+        <>
+          <MoneyInput aria-label="Valor" value={1500} onChange={onChange} onBlur={onBlur} allowNegative />
+          <button type="button">Outro</button>
+        </>,
+      )
+      const input = screen.getByLabelText('Valor')
+
+      await user.click(screen.getByRole('button', { name: 'Valor negativo' }))
+      expect(input).toHaveFocus()
+      expect(input).toHaveValue('-15,00')
+      expect(onChange).toHaveBeenLastCalledWith(-1500)
+
+      await user.click(screen.getByRole('button', { name: 'Outro' }))
+      expect(onBlur).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('ao sair do campo, "-" sem valor some', async () => {
+    const { user, input, onChange } = setup({ allowNegative: true })
+
+    await user.type(input, '-')
+    expect(input).toHaveValue('-')
+    await user.tab()
+
+    expect(input).toHaveValue('')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('ao sair do campo, "-0,00" vira "0,00"', async () => {
+    const { user, input, onChange } = setup({ allowNegative: true })
+
+    await user.type(input, '-0')
+    expect(input).toHaveValue('-0,00')
+    await user.tab()
+
+    expect(input).toHaveValue('0,00')
+    expect(onChange).toHaveBeenLastCalledWith(0)
+  })
+
+  it('repassa onBlur e ref (objeto ou callback com limpeza)', async () => {
+    const onBlur = vi.fn()
+    const objectRef = createRef<HTMLInputElement>()
+    const cleanup = vi.fn()
+    const callbackRef = vi.fn(() => cleanup)
+    const user = userEvent.setup()
+    const { unmount } = render(
+      <>
+        <MoneyInput aria-label="Primeiro" value={null} onChange={() => {}} onBlur={onBlur} ref={objectRef} />
+        <MoneyInput aria-label="Segundo" value={null} onChange={() => {}} ref={callbackRef} />
+      </>,
+    )
+
+    expect(objectRef.current).toBe(screen.getByLabelText('Primeiro'))
+    expect(callbackRef).toHaveBeenCalledWith(screen.getByLabelText('Segundo'))
+
+    await user.click(screen.getByLabelText('Primeiro'))
+    await user.tab()
+    expect(onBlur).toHaveBeenCalledTimes(1)
+
+    unmount()
+    expect(objectRef.current).toBeNull()
+    expect(cleanup).toHaveBeenCalledTimes(1)
   })
 })

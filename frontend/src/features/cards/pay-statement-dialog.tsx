@@ -130,7 +130,7 @@ export function PayStatementDialog({ open, onOpenChange, statement, currency }: 
               <Controller
                 control={form.control}
                 name="amount"
-                render={({ field }) => <MoneyInput {...control} value={field.value} onChange={field.onChange} onBlur={field.onBlur} />}
+                render={({ field }) => <MoneyInput {...control} value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />}
               />
             )}
           </Field>
