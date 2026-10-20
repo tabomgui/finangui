@@ -40,7 +40,7 @@ export function WallpaperCarousel() {
           />
         ))}
         {/* Escurece as fotos (que são claras) para o texto branco do painel e o logo continuarem legíveis. */}
-        <div className="absolute inset-0 bg-emerald-950/55 lg:bg-linear-to-r lg:from-emerald-950/85 lg:via-emerald-950/50 lg:to-black/30" />
+        <div className="absolute inset-0 bg-black/40 lg:bg-linear-to-r lg:from-black/70 lg:via-black/35 lg:to-black/10" />
       </div>
 
       <div role="group" aria-label="Imagens de fundo" className="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 gap-2">
