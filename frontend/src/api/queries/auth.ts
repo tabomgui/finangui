@@ -1,7 +1,7 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ensureCsrf, expectOk, unwrap } from '@/api/client'
 import { toApiError } from '@/api/errors'
-import { invalidateLedger } from '@/api/query-keys'
+import { invalidateLedger, queryKeys } from '@/api/query-keys'
 import type { LoginRequest, RegisterRequest, UpdateProfileRequest, User } from '@/api/types'
 
 export const meKey = ['me'] as const
@@ -90,7 +90,8 @@ export type UpdateProviderCategoriesVariables = {
 /**
  * Liga/desliga "Usar categorias do banco" (`PATCH /me`). Devolve o usuário atualizado e quantos
  * lançamentos perderam a categoria do banco (`meta.cleared_provider_categories`); quando a limpeza
- * foi pedida, invalida o razão — os lançamentos limpos voltam para Categorizar.
+ * foi pedida, invalida o razão — os lançamentos limpos ficam sem categoria. Em qualquer caso a
+ * contagem de lançamentos categorizados pelo banco é refeita.
  */
 export function useUpdateProviderCategories() {
   const queryClient = useQueryClient()
@@ -101,7 +102,9 @@ export function useUpdateProviderCategories() {
     },
     onSuccess: ({ user }, variables) => {
       queryClient.setQueryData(meKey, user)
+      // `invalidateLedger` já cobre a contagem (raiz `categorization`); sem limpeza, invalida só ela.
       if (variables.clear_provider_categories) void invalidateLedger(queryClient)
+      else void queryClient.invalidateQueries({ queryKey: queryKeys.providerCategorizedCount() })
     },
   })
 }

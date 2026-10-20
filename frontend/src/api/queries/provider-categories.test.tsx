@@ -43,7 +43,7 @@ describe('useProviderCategorizedCount', () => {
 })
 
 describe('useUpdateProviderCategories', () => {
-  it('desliga via PATCH /me, grava o usuário no cache e não invalida o razão sem limpeza', async () => {
+  it('desliga via PATCH /me, grava o usuário no cache e, sem limpeza, invalida só a contagem', async () => {
     PATCH.mockResolvedValue({
       data: { data: updatedUser, meta: { cleared_provider_categories: 0 } },
       error: undefined,
@@ -52,6 +52,7 @@ describe('useUpdateProviderCategories', () => {
     const client = new QueryClient()
     client.setQueryData(meKey, { ...updatedUser, use_provider_categories: true })
     client.setQueryData(['transactions', 'recent'], [])
+    client.setQueryData(queryKeys.providerCategorizedCount(), { count: 2 })
 
     const { result } = renderHook(() => useUpdateProviderCategories(), { wrapper: wrapper(client) })
     let response: Awaited<ReturnType<typeof result.current.mutateAsync>> | undefined
@@ -63,6 +64,7 @@ describe('useUpdateProviderCategories', () => {
     expect(response).toEqual({ user: updatedUser, cleared: 0 })
     expect(client.getQueryData(meKey)).toEqual(updatedUser)
     expect(client.getQueryState(['transactions', 'recent'])?.isInvalidated).toBe(false)
+    expect(client.getQueryState(queryKeys.providerCategorizedCount())?.isInvalidated).toBe(true)
   })
 
   it('com clear_provider_categories, devolve quantos foram limpos e invalida o razão e a contagem', async () => {

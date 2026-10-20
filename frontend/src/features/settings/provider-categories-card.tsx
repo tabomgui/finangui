@@ -1,5 +1,6 @@
-import { LoaderCircle } from 'lucide-react'
-import { useState } from 'react'
+import { LoaderCircle, TriangleAlert } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { toast } from 'sonner'
 import { type UpdateProviderCategoriesVariables, useUpdateProviderCategories } from '@/api/queries/auth'
 import { useProviderCategorizedCount } from '@/api/queries/categorization'
@@ -19,13 +20,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Switch } from '@/components/ui/switch'
 import { notifyError } from '@/lib/form-errors'
 
+const NO_COMEBACK = 'Categorias removidas não voltam se você ligar a opção de novo.'
+
 function transactionsLabel(count: number): string {
   return count === 1 ? '1 lançamento' : `${count} lançamentos`
 }
 
 function clearedMessage(cleared: number): string {
   if (cleared === 0) return 'Nenhum lançamento tinha categoria do banco.'
-  return cleared === 1 ? '1 lançamento voltou para Categorizar.' : `${cleared} lançamentos voltaram para Categorizar.`
+  return cleared === 1 ? '1 lançamento ficou sem categoria.' : `${cleared} lançamentos ficaram sem categoria.`
 }
 
 function resultMessage(variables: UpdateProviderCategoriesVariables, cleared: number, wasEnabled: boolean): string {
@@ -36,24 +39,52 @@ function resultMessage(variables: UpdateProviderCategoriesVariables, cleared: nu
   return variables.clear_provider_categories ? `${turnedOff} ${clearedMessage(cleared)}` : turnedOff
 }
 
-type PendingAction = 'keep' | 'clear' | null
+/** Texto do diálogo de desligar: concorda em número com a contagem; sem contagem, genérico. */
+function turnOffDescription(count: number | undefined): string {
+  if (count === undefined) {
+    return 'Alguns lançamentos podem estar com a categoria que veio do banco. Quer remover essas categorias também? Esses lançamentos ficam sem categoria.'
+  }
+  if (count === 1) {
+    return '1 lançamento está com a categoria que veio do banco. Quer remover essa categoria também? Esse lançamento fica sem categoria.'
+  }
+  return `${count} lançamentos estão com a categoria que veio do banco. Quer remover essas categorias também? Esses lançamentos ficam sem categoria.`
+}
+
+function clearDescription(count: number): string {
+  return count === 1
+    ? '1 lançamento fica sem categoria. Categorias dadas por você, por regra ou pelo histórico não mudam.'
+    : `${count} lançamentos ficam sem categoria. Categorias dadas por você, por regra ou pelo histórico não mudam.`
+}
+
+type TurnOffAction = 'keep' | 'clear'
 
 /**
  * Card "Categorias do banco" em Configurações, logo abaixo do card da Pluggy: liga/desliga o uso da
- * categoria informada pelo banco na sincronização (`use_provider_categories`). Ao desligar com
- * lançamentos já categorizados pelo banco, pergunta se remove essas categorias também; com a opção
- * já desligada e ainda sobrando lançamentos assim (ex.: de antes da opção existir), oferece a mesma
- * limpeza à parte. A contagem e a limpeza vêm prontas da API.
+ * categoria informada pelo banco na sincronização (`use_provider_categories`). Ao desligar, refaz a
+ * contagem de lançamentos categorizados pelo banco e, se houver algum (ou se a contagem falhar),
+ * pergunta se remove essas categorias também; com a opção já desligada e ainda sobrando lançamentos
+ * assim (ex.: de antes da opção existir), oferece a mesma limpeza à parte. A contagem e a limpeza
+ * vêm prontas da API.
  */
 export function ProviderCategoriesCard({ user }: { user: User }) {
   const update = useUpdateProviderCategories()
-  const { data: countData } = useProviderCategorizedCount()
+  const { data: countData, isError: countFailed, refetch: refetchCount } = useProviderCategorizedCount()
+  const [checking, setChecking] = useState(false)
+  const [turnOffCount, setTurnOffCount] = useState<number | undefined>(undefined)
   const [confirmingOff, setConfirmingOff] = useState(false)
   const [confirmingClear, setConfirmingClear] = useState(false)
-  const [pendingAction, setPendingAction] = useState<PendingAction>(null)
+  const [pendingAction, setPendingAction] = useState<TurnOffAction | null>(null)
+  const switchRef = useRef<HTMLButtonElement>(null)
+  const clearButtonRef = useRef<HTMLButtonElement>(null)
+  const keepButtonRef = useRef<HTMLButtonElement>(null)
+  const removeButtonRef = useRef<HTMLButtonElement>(null)
+  // Depois de limpar, o botão "Remover categorias" do card some (não sobra nada para limpar): o
+  // foco volta para o interruptor em vez de para um botão que não existe mais.
+  const clearSucceeded = useRef(false)
 
   const enabled = user.use_provider_categories
   const providerCount = countData?.count
+  const busy = update.isPending || checking
 
   async function save(variables: UpdateProviderCategoriesVariables) {
     const { cleared } = await update.mutateAsync(variables)
@@ -68,36 +99,48 @@ export function ProviderCategoriesCard({ user }: { user: User }) {
     }
   }
 
-  function onCheckedChange(checked: boolean) {
+  async function onCheckedChange(checked: boolean) {
+    // O interruptor nunca fica `disabled` (perderia o foco do teclado no meio da chamada): só
+    // ignora um clique enquanto a anterior não termina.
+    if (busy) return
     if (checked) {
-      void saveOrNotify({ use_provider_categories: true })
+      await saveOrNotify({ use_provider_categories: true })
       return
     }
-    // Sem nada categorizado pelo banco não há o que perguntar; contagem ainda desconhecida
-    // (carregando ou com erro) pergunta mesmo assim, com um texto genérico.
-    if (providerCount === 0) {
-      void saveOrNotify({ use_provider_categories: false })
+    // Contagem refeita na hora: a do cache pode ser de antes de uma sincronização recente.
+    setChecking(true)
+    const fresh = await refetchCount()
+    setChecking(false)
+    const count = fresh.isError ? undefined : fresh.data?.count
+    // Sem nada categorizado pelo banco não há o que perguntar; contagem desconhecida (erro)
+    // pergunta mesmo assim, com um texto genérico.
+    if (count === 0) {
+      await saveOrNotify({ use_provider_categories: false })
       return
     }
+    setTurnOffCount(count)
     setConfirmingOff(true)
   }
 
-  async function turnOff(action: Exclude<PendingAction, null>) {
+  async function turnOff(action: TurnOffAction) {
     setPendingAction(action)
     try {
       await save({ use_provider_categories: false, clear_provider_categories: action === 'clear' })
+      setPendingAction(null)
       setConfirmingOff(false)
     } catch (error) {
       notifyError(error)
-    } finally {
-      setPendingAction(null)
+      // O botão clicado ficou desabilitado durante a chamada e perdeu o foco: reabilita já e
+      // devolve o foco a ele, com o diálogo ainda aberto.
+      flushSync(() => setPendingAction(null))
+      ;(action === 'keep' ? keepButtonRef : removeButtonRef).current?.focus()
     }
   }
 
-  const offDescription =
-    providerCount !== undefined
-      ? `${transactionsLabel(providerCount)} ${providerCount === 1 ? 'está' : 'estão'} com a categoria que veio do banco. Quer remover essas categorias também? Esses lançamentos voltam para Categorizar.`
-      : 'Alguns lançamentos podem estar com a categoria que veio do banco. Quer remover essas categorias também? Esses lançamentos voltam para Categorizar.'
+  async function clearOnly() {
+    await save({ use_provider_categories: false, clear_provider_categories: true })
+    clearSucceeded.current = true
+  }
 
   return (
     <Card className="rounded-2xl shadow-card">
@@ -112,26 +155,50 @@ export function ProviderCategoriesCard({ user }: { user: User }) {
               Usar categorias do banco
             </label>
             <p id="use-provider-categories-hint" className="text-xs text-muted-foreground">
-              Quando desligado, os lançamentos novos da sincronização são categorizados só pelas suas regras e pelo
-              histórico; o resto vai para Categorizar.
+              Ligado, a categoria informada pelo banco entra depois das suas regras e do histórico. Desligado, os
+              lançamentos novos da sincronização são categorizados só pelas suas regras e pelo histórico; o resto vai
+              para Categorizar.
             </p>
           </div>
           <Switch
+            ref={switchRef}
             id="use-provider-categories"
             aria-describedby="use-provider-categories-hint"
             checked={enabled}
-            disabled={update.isPending}
-            onCheckedChange={onCheckedChange}
+            aria-busy={busy}
+            onCheckedChange={(checked) => void onCheckedChange(checked)}
             className="mt-0.5"
           />
         </div>
 
-        {!enabled && providerCount !== undefined && providerCount > 0 && (
+        {countFailed && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <span className="flex items-center gap-2">
+              <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+              Não foi possível contar os lançamentos categorizados pelo banco.
+            </span>
+            <Button variant="outline" size="sm" onClick={() => void refetchCount()}>
+              Tentar de novo
+            </Button>
+          </div>
+        )}
+
+        {!enabled && !countFailed && providerCount !== undefined && providerCount > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/50 px-4 py-3">
             <p className="min-w-0 text-sm text-muted-foreground">
               {transactionsLabel(providerCount)} ainda com a categoria do banco.
             </p>
-            <Button variant="outline" size="sm" disabled={update.isPending} onClick={() => setConfirmingClear(true)}>
+            <Button
+              ref={clearButtonRef}
+              variant="outline"
+              size="sm"
+              className="text-destructive"
+              disabled={busy}
+              onClick={() => {
+                clearSucceeded.current = false
+                setConfirmingClear(true)
+              }}
+            >
               Remover categorias
             </Button>
           </div>
@@ -139,20 +206,36 @@ export function ProviderCategoriesCard({ user }: { user: User }) {
       </CardContent>
 
       <AlertDialog open={confirmingOff} onOpenChange={(next) => pendingAction === null && setConfirmingOff(next)}>
-        <AlertDialogContent>
+        <AlertDialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            switchRef.current?.focus()
+          }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>Desligar categorias do banco?</AlertDialogTitle>
-            <AlertDialogDescription>{offDescription}</AlertDialogDescription>
+            <AlertDialogDescription>{turnOffDescription(turnOffCount)}</AlertDialogDescription>
+            <AlertDialogDescription>{NO_COMEBACK}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pendingAction !== null}>Cancelar</AlertDialogCancel>
-            <Button variant="outline" disabled={pendingAction !== null} onClick={() => void turnOff('keep')}>
+            <Button
+              ref={keepButtonRef}
+              variant="outline"
+              disabled={pendingAction !== null}
+              onClick={() => void turnOff('keep')}
+            >
               {pendingAction === 'keep' && <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />}
-              Manter categorias
+              Só desligar
             </Button>
-            <Button variant="destructive" disabled={pendingAction !== null} onClick={() => void turnOff('clear')}>
+            <Button
+              ref={removeButtonRef}
+              variant="destructive"
+              disabled={pendingAction !== null}
+              onClick={() => void turnOff('clear')}
+            >
               {pendingAction === 'clear' && <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />}
-              Remover categorias
+              Desligar e remover
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -162,10 +245,14 @@ export function ProviderCategoriesCard({ user }: { user: User }) {
         open={confirmingClear}
         onOpenChange={setConfirmingClear}
         title="Remover categorias do banco?"
-        description={`${transactionsLabel(providerCount ?? 0)} ${providerCount === 1 ? 'fica' : 'ficam'} sem categoria e ${providerCount === 1 ? 'volta' : 'voltam'} para Categorizar. Categorias dadas por você, por regra ou pelo histórico não mudam.`}
+        description={`${clearDescription(providerCount ?? 0)} ${NO_COMEBACK}`}
         confirmLabel="Remover categorias"
         destructive
-        onConfirm={() => save({ use_provider_categories: false, clear_provider_categories: true })}
+        onConfirm={clearOnly}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          ;(clearSucceeded.current ? switchRef : clearButtonRef).current?.focus()
+        }}
       />
     </Card>
   )
