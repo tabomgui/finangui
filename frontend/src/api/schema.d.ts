@@ -895,6 +895,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/rules/{rule}/reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Prévia do que a regra salva mudaria na categoria dos lançamentos
+         *     (avaliada mesmo desativada), para oferecer depois de editá-la
+         */
+        get: operations["rule.reconcile"];
+        put?: never;
+        /** Aplica os grupos escolhidos da prévia, recalculados na hora */
+        post: operations["rule.applyReconcile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -1197,6 +1218,11 @@ export interface components {
                 apply_to_pending?: boolean;
             };
         };
+        /** ApplyRuleReconcileRequest */
+        ApplyRuleReconcileRequest: {
+            /** @description Grupos da prévia (GET /rules/{rule}/reconcile) a aplicar. */
+            groups: components["schemas"]["ReconcileGroup"][];
+        };
         /** ApplyRuleRequest */
         ApplyRuleRequest: {
             overwrite?: boolean;
@@ -1353,6 +1379,19 @@ export interface components {
                 id: number;
                 name: string;
             };
+        };
+        /** CategoryChangeItemResource */
+        CategoryChangeItemResource: {
+            transaction_id: number;
+            date: string;
+            description: string;
+            account_name: string;
+            amount: number;
+            direction: components["schemas"]["Direction"];
+            current_category_id?: number;
+            new_category_id?: number;
+            rule_id?: number;
+            rule_name?: string;
         };
         /** CategoryComparisonResource */
         CategoryComparisonResource: {
@@ -1814,6 +1853,18 @@ export interface components {
             count: number;
         };
         /**
+         * ReconcileClearReason
+         * @description Por que o grupo "clear" da reconciliação tira a categoria: a regra não casa mais com esses lançamentos, ou deixou de ter a ação set_category.
+         * @enum {string}
+         */
+        ReconcileClearReason: "no_longer_matches" | "no_category_action";
+        /**
+         * ReconcileGroup
+         * @description Grupos da reconciliação de uma regra recém-editada (ver App\Domain\Rules\Queries\ReconcileRule): o que mudaria nos lançamentos por causa da edição.
+         * @enum {string}
+         */
+        ReconcileGroup: "recategorize" | "fill" | "clear";
+        /**
          * ReconnectedRequest
          * @description `item_id` é o item devolvido pelo widget ao fim do fluxo de reconexão (modo atualização);
          *     o controller confere contra `connection->external_id` antes de marcar como reconectada —
@@ -1894,6 +1945,23 @@ export interface components {
                     tag_ids: number[];
                     is_ignored: boolean;
                 };
+            }[];
+        };
+        /** RuleReconcileApplyResource */
+        RuleReconcileApplyResource: {
+            recategorize: number;
+            fill: number;
+            clear: number;
+            skipped: number;
+        };
+        /** RuleReconcileResource */
+        RuleReconcileResource: {
+            max_changes: number;
+            groups: {
+                key: components["schemas"]["ReconcileGroup"];
+                count: number;
+                reason?: components["schemas"]["ReconcileClearReason"];
+                sample: components["schemas"]["CategoryChangeItemResource"][];
             }[];
         };
         /** RuleResource */
@@ -4898,6 +4966,77 @@ export interface operations {
             };
             401: components["responses"]["AuthenticationException"];
             404: components["responses"]["ModelNotFoundException"];
+            422: components["responses"]["ValidationException"];
+        };
+    };
+    "rule.reconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The rule ID */
+                rule: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `RuleReconcileResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleReconcileResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+        };
+    };
+    "rule.applyReconcile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The rule ID */
+                rule: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyRuleReconcileRequest"];
+            };
+        };
+        responses: {
+            /** @description `RuleReconcileApplyResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RuleReconcileApplyResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+            404: components["responses"]["ModelNotFoundException"];
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        code: "too_many_category_changes";
+                        message: string;
+                    };
+                };
+            };
             422: components["responses"]["ValidationException"];
         };
     };

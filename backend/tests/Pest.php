@@ -1,11 +1,13 @@
 <?php
 
+use App\Domain\Accounts\Models\Account;
 use App\Domain\Banking\Contracts\BankProvider;
 use App\Domain\Banking\Contracts\BankProviderFactory;
 use App\Domain\Banking\Models\BankCredential;
 use App\Domain\Banking\Providers\FakeBankProvider;
 use App\Domain\Banking\Providers\FakeBankProviderFactory;
 use App\Domain\Imports\Support\Content;
+use App\Domain\Rules\Support\TextNormalizer;
 use App\Models\User;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Encryption\Encrypter;
@@ -128,4 +130,38 @@ function corruptBankCredentialColumn(BankCredential $credential, string $column)
     DB::table('bank_credentials')
         ->where('id', $credential->id)
         ->update([$column => $otherKeyEncrypter->encryptString('nao-importa')]);
+}
+
+/**
+ * Insere $count lançamentos lançados (posted, sem categoria, saída) de uma
+ * vez, num único INSERT — para testar limites (milhares de linhas) sem
+ * criar um model por linha. $attributes sobrescreve as colunas padrão;
+ * description_key sai da descrição, como faria o hook do model.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function insertBulkTransactions(User $user, Account $account, int $count, array $attributes = []): void
+{
+    $now = now();
+    $row = array_merge([
+        'user_id' => $user->id,
+        'account_id' => $account->id,
+        'date' => $now->toDateString(),
+        'amount' => 1000,
+        'direction' => 'out',
+        'currency' => 'BRL',
+        'description' => 'Lançamento exemplo',
+        'status' => 'posted',
+        'source' => 'manual',
+        'is_ignored' => false,
+        'description_locked' => false,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ], $attributes);
+    $row['original_description'] ??= $row['description'];
+    $row['description_key'] ??= TextNormalizer::key($row['description']);
+
+    foreach (array_chunk(array_fill(0, $count, $row), 1000) as $chunk) {
+        DB::table('transactions')->insert($chunk);
+    }
 }

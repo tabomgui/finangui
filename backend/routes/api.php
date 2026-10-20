@@ -127,6 +127,8 @@ Route::prefix('v1')->group(function () {
         Route::patch('rules/{rule}', [RuleController::class, 'update'])->whereNumber('rule');
         Route::delete('rules/{rule}', [RuleController::class, 'destroy'])->whereNumber('rule');
         Route::post('rules/{rule}/apply', [RuleController::class, 'apply'])->whereNumber('rule');
+        Route::get('rules/{rule}/reconcile', [RuleController::class, 'reconcile'])->whereNumber('rule')->middleware('throttle:30,1,rules-reconcile');
+        Route::post('rules/{rule}/reconcile', [RuleController::class, 'applyReconcile'])->whereNumber('rule')->middleware('throttle:10,1,rules-reconcile-apply');
 
         // overdue e occurrences/* antes de {recurrence}, pela mesma razão de
         // rules/order e rules/preview acima: são literais que colidiriam com

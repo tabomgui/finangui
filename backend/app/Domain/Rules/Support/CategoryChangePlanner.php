@@ -1,0 +1,218 @@
+<?php
+
+namespace App\Domain\Rules\Support;
+
+use App\Domain\Accounts\Models\Account;
+use App\Domain\Categories\Models\Category;
+use App\Domain\Rules\Actions\ApplyRuleOutcome;
+use App\Domain\Rules\Data\CategoryChange;
+use App\Domain\Rules\Data\CategoryChangeItem;
+use App\Domain\Rules\Data\RuleContext;
+use App\Domain\Rules\Data\RuleDefinition;
+use App\Domain\Rules\Data\RuleOutcome;
+use App\Domain\Rules\Data\RuleSubject;
+use App\Domain\Rules\Enums\ReconcileGroup;
+use App\Domain\Transactions\Models\Transaction;
+use Illuminate\Database\Eloquent\Builder;
+
+/**
+ * Decide, só para a categoria, o que mudaria num lançamento já existente
+ * quando uma regra é editada (forRule(), App\Domain\Rules\Queries\ReconcileRule)
+ * — a prévia e a aplicação chamam o mesmo método, que é recalculado na
+ * aplicação sob trava.
+ *
+ * O casamento é sempre o de RuleEngine/RuleMatcher, com RuleContext::categoryOnly()
+ * (a categoria que as regras dariam, ignorando a atual), e quem diz se a
+ * categoria pode de fato ser gravada (existe, não arquivada, diferente da
+ * atual) é ApplyRuleOutcome::changes() — o mesmo que grava (apply()).
+ *
+ * Nunca muda: lançamento categorizado à mão, lançamento fora de
+ * Transaction::scopeEligibleForRules() (quem chama já filtra a consulta) e
+ * categoria de transferência (ela mesma ou pelo pai) ao tirá-la: sem ela o
+ * lançamento voltaria a reportable() e contaria em dobro (ex.: o pagamento
+ * de fatura que quita compras já contadas no cartão), como em
+ * Transaction::scopeCategorizedByProvider(). Trocar a categoria dos
+ * lançamentos da própria regra editada (recategorize) segue a nova
+ * categoria dela, seja qual for: foi o usuário quem a mudou.
+ */
+final class CategoryChangePlanner
+{
+    /** Máximo de lançamentos alterados por aplicação. */
+    public const MAX_CHANGES = 5000;
+
+    /**
+     * O que o scan precisa (RuleSubject, estado da categoria, perna de
+     * transferência para ApplyRuleOutcome::changes()): nunca `raw`.
+     *
+     * @var list<string>
+     */
+    private const COLUMNS = [
+        'id', 'account_id', 'date', 'amount', 'direction', 'description', 'original_description',
+        'payee', 'notes', 'category_id', 'categorized_by', 'transfer_id',
+    ];
+
+    /** @var array<int, true>|null */
+    private ?array $transferCategoryIds = null;
+
+    public function __construct(
+        private readonly ApplyRuleOutcome $apply,
+    ) {}
+
+    /**
+     * Candidatos da reconciliação de uma regra: sem categoria, ou
+     * categorizados por ela.
+     *
+     * @return Builder<Transaction>
+     */
+    public function reconcileCandidates(int $ruleId): Builder
+    {
+        return Transaction::query()
+            ->eligibleForRules()
+            ->where(fn (Builder $q) => $q->whereNull('transactions.category_id')
+                ->orWhere('transactions.categorized_by', "rule:{$ruleId}"))
+            ->select(self::COLUMNS);
+    }
+
+    /**
+     * Só esta regra (ativa ou não — o usuário acabou de editá-la):
+     * - sem categoria e a regra dá uma: fill;
+     * - categorizado por ela, ainda casa e a categoria dela mudou: recategorize;
+     * - categorizado por ela e ela não dá mais categoria (não casa ou perdeu
+     *   o set_category): clear.
+     */
+    public function forRule(Transaction $transaction, RuleDefinition $rule): ?CategoryChange
+    {
+        if ($transaction->categorized_by === 'manual' || $rule->id === null) {
+            return null;
+        }
+
+        $outcome = $this->evaluate($transaction, [$rule]);
+        $target = $this->target($transaction, $outcome);
+
+        if ($transaction->category_id === null) {
+            return $target !== null
+                ? new CategoryChange($transaction, ReconcileGroup::Fill, $target, $rule->id, $outcome)
+                : null;
+        }
+
+        if ($transaction->categorized_by !== "rule:{$rule->id}") {
+            return null;
+        }
+
+        if ($target !== null) {
+            return new CategoryChange($transaction, ReconcileGroup::Recategorize, $target, $rule->id, $outcome);
+        }
+
+        // Categoria da regra igual à atual, ou arquivada/excluída: nada a
+        // fazer — só tira quando a regra de fato não dá mais categoria.
+        if ($outcome->categoryId === null && $this->canClear($transaction)) {
+            return new CategoryChange($transaction, ReconcileGroup::Clear, null, $rule->id, null);
+        }
+
+        return null;
+    }
+
+    /**
+     * Grava a mudança: categoria nova por ApplyRuleOutcome (categorized_by
+     * vira rule:{id da regra que decidiu}); tirar a categoria zera
+     * category_id e categorized_by, sem mexer na descrição (nem na
+     * description_key).
+     */
+    public function apply(CategoryChange $change): bool
+    {
+        $transaction = $change->transaction;
+
+        if ($change->categoryId !== null) {
+            return $change->outcome !== null && $this->apply->handle($transaction, $change->outcome);
+        }
+
+        $transaction->category_id = null;
+        $transaction->categorized_by = null;
+        $transaction->save();
+
+        return true;
+    }
+
+    /**
+     * Linhas para exibir, mais recentes primeiro (data, depois id). Uma
+     * consulta só para os nomes das contas. $ruleNames (id → nome): regra
+     * ausente do mapa (excluída) sai sem rule_id/rule_name.
+     *
+     * @param  list<CategoryChange>  $changes
+     * @param  array<int, string>  $ruleNames
+     * @return list<CategoryChangeItem>
+     */
+    public function items(array $changes, array $ruleNames = []): array
+    {
+        if ($changes === []) {
+            return [];
+        }
+
+        usort($changes, fn (CategoryChange $a, CategoryChange $b): int => [$b->transaction->date, $b->transaction->id] <=> [$a->transaction->date, $a->transaction->id]);
+
+        $accountIds = array_values(array_unique(array_map(fn (CategoryChange $c) => $c->transaction->account_id, $changes)));
+        /** @var array<int, string> $accountNames */
+        $accountNames = Account::query()->whereKey($accountIds)->pluck('name', 'id')->all();
+
+        return array_map(function (CategoryChange $change) use ($accountNames, $ruleNames): CategoryChangeItem {
+            $transaction = $change->transaction;
+            $ruleName = $change->ruleId !== null ? ($ruleNames[$change->ruleId] ?? null) : null;
+
+            return new CategoryChangeItem(
+                transactionId: $transaction->id,
+                date: $transaction->date->toDateString(),
+                description: $transaction->description,
+                accountName: $accountNames[$transaction->account_id] ?? '',
+                amount: $transaction->amount->cents,
+                direction: $transaction->direction,
+                currentCategoryId: $transaction->category_id,
+                newCategoryId: $change->categoryId,
+                ruleId: $ruleName !== null ? $change->ruleId : null,
+                ruleName: $ruleName,
+            );
+        }, $changes);
+    }
+
+    /**
+     * @param  list<RuleDefinition>  $rules
+     */
+    private function evaluate(Transaction $transaction, array $rules): RuleOutcome
+    {
+        return RuleEngine::evaluate(RuleSubject::fromTransaction($transaction), $rules, RuleContext::categoryOnly());
+    }
+
+    /**
+     * Categoria que as regras dão e que de fato mudaria o lançamento (nula
+     * quando as regras não dão nenhuma, quando é a atual, ou quando a
+     * categoria foi arquivada/excluída depois de a regra ser salva).
+     */
+    private function target(Transaction $transaction, RuleOutcome $outcome): ?int
+    {
+        if ($outcome->categoryId === null) {
+            return null;
+        }
+
+        return $this->apply->changes($transaction, $outcome)['category_id'] ?? null;
+    }
+
+    private function canClear(Transaction $transaction): bool
+    {
+        return $transaction->category_id === null || ! $this->isTransferCategory($transaction->category_id);
+    }
+
+    /**
+     * Categoria de transferência, ela mesma ou pelo pai (fora de
+     * reportable()). Carregadas uma vez por instância.
+     */
+    private function isTransferCategory(int $categoryId): bool
+    {
+        $this->transferCategoryIds ??= Category::query()
+            ->with('parent:id,is_transfer')
+            ->get(['id', 'parent_id', 'is_transfer'])
+            ->filter(fn (Category $category) => $category->isTransferEffective())
+            ->mapWithKeys(fn (Category $category) => [$category->id => true])
+            ->all();
+
+        return isset($this->transferCategoryIds[$categoryId]);
+    }
+}
