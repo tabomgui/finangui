@@ -873,7 +873,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Aplica a revisão aos lançamentos escolhidos, recalculados na hora */
+        /**
+         * Aplica a revisão às linhas escolhidas, recalculadas na hora: uma
+         *     linha cujo destino mudou desde a prévia é pulada
+         */
         post: operations["rule.applyReview"];
         delete?: never;
         options?: never;
@@ -1263,8 +1266,12 @@ export interface components {
         };
         /** ApplyRuleReviewRequest */
         ApplyRuleReviewRequest: {
-            /** @description Lançamentos escolhidos na revisão (GET /rules/review); cada um é recalculado antes de mudar. */
-            transaction_ids: number[];
+            /** @description Linhas escolhidas na revisão (GET /rules/review), cada uma com a categoria nova que a tela mostrou. */
+            items: {
+                transaction_id: number;
+                /** @description Categoria nova mostrada para a linha; omita quando a revisão tira a categoria (grupo stale). Se o recálculo der outra coisa, a linha é pulada. */
+                category_id?: number;
+            }[];
         };
         /** BankConnectionResource */
         BankConnectionResource: {

@@ -90,8 +90,8 @@ it('rules/review e rules/{rule}/reconcile têm limites próprios, isolados de ru
     $this->getJson("/api/v1/rules/{$rule->id}/reconcile")->assertOk();
 
     for ($i = 0; $i < 10; $i++) {
-        expect($this->postJson('/api/v1/rules/review/apply', ['transaction_ids' => [1]])->status())->not->toBe(429);
+        expect($this->postJson('/api/v1/rules/review/apply', ['items' => [['transaction_id' => 1]]])->status())->not->toBe(429);
     }
-    $this->postJson('/api/v1/rules/review/apply', ['transaction_ids' => [1]])->assertStatus(429);
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [['transaction_id' => 1]]])->assertStatus(429);
     $this->postJson("/api/v1/rules/{$rule->id}/reconcile", ['groups' => ['fill']])->assertOk();
 });

@@ -113,13 +113,14 @@ final class RuleController extends Controller
     }
 
     /**
-     * Aplica a revisão aos lançamentos escolhidos, recalculados na hora.
+     * Aplica a revisão às linhas escolhidas, recalculadas na hora: uma
+     * linha cujo destino mudou desde a prévia é pulada.
      */
     public function applyReview(ApplyRuleReviewRequest $request, ApplyRuleReview $applyRuleReview): RuleReviewApplyResource
     {
         /** @var User $user */
         $user = $request->user();
 
-        return RuleReviewApplyResource::make($applyRuleReview->handle($user->id, $request->transactionIds()));
+        return RuleReviewApplyResource::make($applyRuleReview->handle($user->id, $request->expectedTargets()));
     }
 }

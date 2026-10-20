@@ -152,7 +152,9 @@ it('primeira regra que define categoria vence, pela ordem das regras', function 
         'new_category_id' => $second->id, 'rule_id' => $low->id,
     ]);
 
-    $this->postJson('/api/v1/rules/review/apply', ['transaction_ids' => [$transaction->id]])->assertOk();
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [['transaction_id' => $transaction->id, 'category_id' => $second->id]]])
+        ->assertOk()
+        ->assertJsonPath('data.applied', 1);
 
     $transaction->refresh();
     expect($transaction->category_id)->toBe($second->id);
@@ -207,7 +209,7 @@ it('conflict nunca troca categoria de transferência por uma comum, só por outr
     expect($conflict['count'])->toBe(1);
     expect($conflict['items'][0]['transaction_id'])->toBe($toTransfer->id);
 
-    $this->postJson('/api/v1/rules/review/apply', ['transaction_ids' => [$payment->id]])
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [['transaction_id' => $payment->id, 'category_id' => $other->id]]])
         ->assertOk()
         ->assertJsonPath('data.applied', 0);
 
@@ -228,7 +230,7 @@ it('regra de outro usuário nunca categoriza lançamentos do usuário autenticad
 
     expect(collect(reviewGroups())->sum('count'))->toBe(0);
 
-    $this->postJson('/api/v1/rules/review/apply', ['transaction_ids' => [$mine->id]])
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [['transaction_id' => $mine->id, 'category_id' => $otherCategory->id]]])
         ->assertOk()
         ->assertJsonPath('data.applied', 0);
 
@@ -245,7 +247,7 @@ it('à mão sem categoria (categoria excluída) entra em fill e recebe a categor
     expect(collect($groups['fill']['items'])->pluck('transaction_id')->all())->toBe([$orphan->id]);
     expect($groups['manual']['count'])->toBe(0);
 
-    $this->postJson('/api/v1/rules/review/apply', ['transaction_ids' => [$orphan->id]])
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [['transaction_id' => $orphan->id, 'category_id' => $transport->id]]])
         ->assertOk()
         ->assertJsonPath('data.applied', 1);
 
@@ -292,7 +294,14 @@ it('aplica fill, conflict e stale escolhidos; à mão e fora do escopo ficam com
     $staleKey = $stale->description_key;
 
     $response = $this->postJson('/api/v1/rules/review/apply', [
-        'transaction_ids' => [$fill->id, $conflict->id, $stale->id, $manual->id, $transfer->id, $nothing->id],
+        'items' => [
+            ['transaction_id' => $fill->id, 'category_id' => $transport->id],
+            ['transaction_id' => $conflict->id, 'category_id' => $transport->id],
+            ['transaction_id' => $stale->id],
+            ['transaction_id' => $manual->id, 'category_id' => $transport->id],
+            ['transaction_id' => $transfer->id, 'category_id' => $transport->id],
+            ['transaction_id' => $nothing->id, 'category_id' => $transport->id],
+        ],
     ])->assertOk();
 
     expect($response->json('data'))->toBe(['applied' => 3, 'skipped' => 3]);
@@ -336,7 +345,10 @@ it('recalcula na hora de aplicar: quem mudou depois da prévia é pulado', funct
     $becameManual->update(['category_id' => $food->id, 'categorized_by' => 'manual']);
     $alreadyFixed->update(['category_id' => $transport->id, 'categorized_by' => "rule:{$rule->id}"]);
 
-    $this->postJson('/api/v1/rules/review/apply', ['transaction_ids' => [$becameManual->id, $alreadyFixed->id]])
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [
+        ['transaction_id' => $becameManual->id, 'category_id' => $transport->id],
+        ['transaction_id' => $alreadyFixed->id, 'category_id' => $transport->id],
+    ]])
         ->assertOk()
         ->assertJsonPath('data.applied', 0)
         ->assertJsonPath('data.skipped', 2);
@@ -348,27 +360,81 @@ it('recalcula na hora de aplicar: quem mudou depois da prévia é pulado', funct
 
 it('aplicar usa as regras de agora: regra desativada depois da prévia não preenche', function () {
     actingAsUser();
-    $rule = reviewRule('uber', Category::factory()->create());
+    $category = Category::factory()->create();
+    $rule = reviewRule('uber', $category);
     $transaction = Transaction::factory()->create(['description' => 'Uber eats', 'category_id' => null]);
 
     expect(reviewGroups()['fill']['count'])->toBe(1);
 
     $rule->update(['is_active' => false]);
 
-    $this->postJson('/api/v1/rules/review/apply', ['transaction_ids' => [$transaction->id]])
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [['transaction_id' => $transaction->id, 'category_id' => $category->id]]])
         ->assertOk()
         ->assertJsonPath('data.skipped', 1);
 
     expect($transaction->refresh()->category_id)->toBeNull();
 });
 
-it('422 sem ids ou com mais de 5000', function () {
+it('422 sem itens, com mais de 5000, id repetido, sem id ou item que não é objeto', function () {
     actingAsUser();
 
-    $this->postJson('/api/v1/rules/review/apply', ['transaction_ids' => []])
-        ->assertStatus(422)->assertJsonValidationErrors('transaction_ids');
-    $this->postJson('/api/v1/rules/review/apply', ['transaction_ids' => range(1, 5001)])
-        ->assertStatus(422)->assertJsonValidationErrors('transaction_ids');
+    $this->postJson('/api/v1/rules/review/apply', ['items' => []])
+        ->assertStatus(422)->assertJsonValidationErrors('items');
+    $this->postJson('/api/v1/rules/review/apply', ['items' => array_map(fn (int $id) => ['transaction_id' => $id], range(1, 5001))])
+        ->assertStatus(422)->assertJsonValidationErrors('items');
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [['transaction_id' => 1], ['transaction_id' => 1, 'category_id' => 2]]])
+        ->assertStatus(422)->assertJsonValidationErrors('items.1.transaction_id');
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [['category_id' => 2]]])
+        ->assertStatus(422)->assertJsonValidationErrors('items.0.transaction_id');
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [['transaction_id' => 1, 'category_id' => 'x']]])
+        ->assertStatus(422)->assertJsonValidationErrors('items.0.category_id');
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [7]])
+        ->assertStatus(422)->assertJsonValidationErrors('items.0');
+});
+
+it('pula a linha quando a regra vencedora mudou de categoria depois da prévia', function () {
+    actingAsUser();
+    $seen = Category::factory()->create();
+    $changed = Category::factory()->create();
+    $rule = reviewRule('uber', $seen);
+    $transaction = Transaction::factory()->create(['description' => 'Uber eats', 'category_id' => null]);
+
+    expect(reviewGroups()['fill']['items'][0]['new_category_id'])->toBe($seen->id);
+
+    $rule->update(['actions' => [['type' => 'set_category', 'category_id' => $changed->id]]]);
+
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [['transaction_id' => $transaction->id, 'category_id' => $seen->id]]])
+        ->assertOk()
+        ->assertJsonPath('data.applied', 0)
+        ->assertJsonPath('data.skipped', 1);
+
+    expect($transaction->refresh()->category_id)->toBeNull();
+});
+
+it('pula a linha quando o destino mudou entre tirar a categoria e definir uma', function () {
+    actingAsUser();
+    $old = Category::factory()->create();
+    $new = Category::factory()->create();
+    $stale = Transaction::factory()->create(['description' => 'Uber *trip', 'category_id' => $old->id, 'categorized_by' => 'rule:999999']);
+    $fill = Transaction::factory()->create(['description' => 'Padaria', 'category_id' => null]);
+
+    expect(reviewGroups()['stale']['count'])->toBe(1);
+
+    // Uma regra nova passa a dar categoria à linha que seria limpa.
+    $rule = reviewRule('uber', $new);
+
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [['transaction_id' => $stale->id]]])
+        ->assertOk()
+        ->assertJsonPath('data.skipped', 1);
+    expect($stale->refresh()->category_id)->toBe($old->id);
+
+    // E o contrário: pedir para tirar a categoria de uma linha que as regras preenchem.
+    $rule->update(['conditions' => [['field' => 'description', 'op' => 'contains', 'value' => 'padaria']]]);
+
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [['transaction_id' => $fill->id]]])
+        ->assertOk()
+        ->assertJsonPath('data.skipped', 1);
+    expect($fill->refresh()->category_id)->toBeNull();
 });
 
 it('só vê e só muda lançamentos do usuário autenticado', function () {
@@ -389,7 +455,7 @@ it('só vê e só muda lançamentos do usuário autenticado', function () {
 
     expect(collect(reviewGroups())->sum('count'))->toBe(0);
 
-    $this->postJson('/api/v1/rules/review/apply', ['transaction_ids' => [$otherTransaction->id]])
+    $this->postJson('/api/v1/rules/review/apply', ['items' => [['transaction_id' => $otherTransaction->id, 'category_id' => $otherCategory->id]]])
         ->assertOk()
         ->assertJsonPath('data.applied', 0)
         ->assertJsonPath('data.skipped', 1);

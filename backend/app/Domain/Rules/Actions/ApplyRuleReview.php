@@ -9,13 +9,14 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Aplica a revisão de regras (App\Domain\Rules\Queries\ReviewRules) aos
- * lançamentos escolhidos, síncrono e numa única transação. Nunca confia no
- * que a tela mostrou: cada id é travado (FOR UPDATE, por id) e recalculado
- * com as regras ativas de agora; só muda quem ainda está em fill, conflict
- * ou stale (à mão nunca). Os demais — fora do escopo, de outro usuário, ou
- * que mudaram desde a prévia a ponto de não terem mais o que mudar — contam
- * em "skipped".
+ * Aplica a revisão de regras (App\Domain\Rules\Queries\ReviewRules) às
+ * linhas escolhidas, síncrono e numa única transação. Nunca confia no que a
+ * tela mostrou: cada lançamento é travado (FOR UPDATE, por id) e recalculado
+ * com as regras ativas de agora, e só muda se ainda estiver em fill,
+ * conflict ou stale (à mão nunca) com o mesmo destino que o usuário viu — a
+ * mesma categoria nova, ou tirar a categoria. Os demais (fora do escopo, de
+ * outro usuário, ou que mudaram desde a prévia — inclusive porque uma regra
+ * mudou e agora daria outra categoria) contam em "skipped".
  *
  * Trava a linha do usuário antes, como
  * App\Domain\Categorization\Actions\ApplyCategorization.
@@ -27,15 +28,15 @@ final class ApplyRuleReview
     ) {}
 
     /**
-     * @param  list<int>  $transactionIds  no máximo CategoryChangePlanner::MAX_CHANGES (validado no request)
+     * @param  array<int, int|null>  $expected  id do lançamento → categoria nova que a tela mostrou (nula: tirar a categoria); no máximo CategoryChangePlanner::MAX_CHANGES (validado no request)
      */
-    public function handle(int $userId, array $transactionIds): RuleReviewApplyResult
+    public function handle(int $userId, array $expected): RuleReviewApplyResult
     {
-        return DB::transaction(function () use ($userId, $transactionIds): RuleReviewApplyResult {
+        return DB::transaction(function () use ($userId, $expected): RuleReviewApplyResult {
             User::query()->whereKey($userId)->lockForUpdate()->first();
 
             $rules = $this->planner->activeRules();
-            $ids = array_values(array_unique($transactionIds));
+            $ids = array_keys($expected);
             sort($ids);
             $applied = 0;
 
@@ -50,7 +51,10 @@ final class ApplyRuleReview
                 foreach ($transactions as $transaction) {
                     $change = $this->planner->forRules($transaction, $rules);
 
-                    if ($change !== null && $change->group->applicable() && $this->planner->apply($change)) {
+                    if ($change !== null
+                        && $change->group->applicable()
+                        && $change->categoryId === $expected[$transaction->id]
+                        && $this->planner->apply($change)) {
                         $applied++;
                     }
                 }
