@@ -50,6 +50,7 @@ describe('LoginPage', () => {
       google_linked: false,
       primary_currency: 'BRL',
       banking_enabled: false,
+      use_provider_categories: false,
     }
 
     await act(async () => {

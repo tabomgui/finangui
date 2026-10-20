@@ -356,6 +356,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/categorization/provider-categorized-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["categorization.providerCategorizedCount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/categorization/apply": {
         parameters: {
             query?: never;
@@ -1793,6 +1809,10 @@ export interface components {
             balance: number;
             suggested_account_id: number | null;
         };
+        /** ProviderCategorizedCountResource */
+        ProviderCategorizedCountResource: {
+            count: number;
+        };
         /**
          * ReconnectedRequest
          * @description `item_id` é o item devolvido pelo widget ao fim do fluxo de reconexão (modo atualização);
@@ -2280,6 +2300,10 @@ export interface components {
             name?: string;
             password?: string;
             current_password?: string | null;
+            /** @description Usar a categoria do banco na sincronização quando nem regra nem histórico categorizam. */
+            use_provider_categories?: boolean;
+            /** @description Só junto de use_provider_categories = false: tira também a categoria de todo lançamento categorizado pelo banco. */
+            clear_provider_categories?: boolean;
             password_confirmation?: string;
         };
         /**
@@ -2391,6 +2415,12 @@ export interface components {
              *     de Configurações em vez de abrir o widget da Pluggy.
              */
             banking_enabled: boolean;
+            /**
+             * @description Ligado, a sincronização bancária usa a categoria do banco (casada
+             *     por nome) quando nem regra nem histórico categorizam um lançamento
+             *     novo; desligado (padrão), ele fica para a tela Categorizar.
+             */
+            use_provider_categories: boolean;
         };
     };
     responses: {
@@ -3396,6 +3426,29 @@ export interface operations {
             422: components["responses"]["ValidationException"];
         };
     };
+    "categorization.providerCategorizedCount": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description `ProviderCategorizedCountResource` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProviderCategorizedCountResource"];
+                    };
+                };
+            };
+            401: components["responses"]["AuthenticationException"];
+        };
+    };
     "categorization.apply": {
         parameters: {
             query?: never;
@@ -4148,6 +4201,10 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["UserResource"];
+                        meta: {
+                            /** @description Quantos lançamentos perderam a categoria do banco nesta chamada (clear_provider_categories); 0 quando não houve limpeza. */
+                            cleared_provider_categories: number;
+                        };
                     };
                 };
             };

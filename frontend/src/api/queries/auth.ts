@@ -1,6 +1,7 @@
 import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ensureCsrf, expectOk, unwrap } from '@/api/client'
 import { toApiError } from '@/api/errors'
+import { invalidateLedger } from '@/api/query-keys'
 import type { LoginRequest, RegisterRequest, UpdateProfileRequest, User } from '@/api/types'
 
 export const meKey = ['me'] as const
@@ -77,5 +78,30 @@ export function useUpdateProfile() {
   return useMutation({
     mutationFn: async (body: UpdateProfileRequest) => (await unwrap(api.PATCH('/me', { body }))).data,
     onSuccess: (user) => queryClient.setQueryData(meKey, user),
+  })
+}
+
+export type UpdateProviderCategoriesVariables = {
+  use_provider_categories: boolean
+  /** Só ao desligar: tira também a categoria dos lançamentos categorizados pelo banco. */
+  clear_provider_categories?: boolean
+}
+
+/**
+ * Liga/desliga "Usar categorias do banco" (`PATCH /me`). Devolve o usuário atualizado e quantos
+ * lançamentos perderam a categoria do banco (`meta.cleared_provider_categories`); quando a limpeza
+ * foi pedida, invalida o razão — os lançamentos limpos voltam para Categorizar.
+ */
+export function useUpdateProviderCategories() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: UpdateProviderCategoriesVariables) => {
+      const result = await unwrap(api.PATCH('/me', { body }))
+      return { user: result.data, cleared: result.meta.cleared_provider_categories }
+    },
+    onSuccess: ({ user }, variables) => {
+      queryClient.setQueryData(meKey, user)
+      if (variables.clear_provider_categories) void invalidateLedger(queryClient)
+    },
   })
 }

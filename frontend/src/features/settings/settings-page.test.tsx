@@ -14,6 +14,7 @@ const baseUser: User = {
   google_linked: false,
   primary_currency: 'BRL',
   banking_enabled: false,
+  use_provider_categories: false,
 }
 
 vi.mock('@/api/queries/auth', () => ({ useMe: () => ({ data: baseUser }) }))
@@ -21,6 +22,7 @@ vi.mock('./profile-card', () => ({ ProfileCard: () => null }))
 vi.mock('./password-card', () => ({ PasswordCard: () => null }))
 vi.mock('./google-card', () => ({ GoogleCard: () => null }))
 vi.mock('./appearance-card', () => ({ AppearanceCard: () => null }))
+vi.mock('./provider-categories-card', () => ({ ProviderCategoriesCard: () => null }))
 
 let credentialsState: { data: BankCredentials | undefined; isPending: boolean; isError: boolean }
 

@@ -22,6 +22,19 @@ export function usePendingCategorizationCount(options: { refetchOnMount?: boolea
 }
 
 /**
+ * Quantos lançamentos estão com a categoria que veio do banco — o mesmo conjunto que
+ * `clear_provider_categories` limpa ao desligar "Usar categorias do banco" (ver
+ * `useUpdateProviderCategories`). Fica sob a raiz `categorization`, então `invalidateLedger` já a
+ * atualiza quando lançamentos mudam.
+ */
+export function useProviderCategorizedCount() {
+  return useQuery({
+    queryKey: queryKeys.providerCategorizedCount(),
+    queryFn: async () => (await unwrap(api.GET('/categorization/provider-categorized-count'))).data,
+  })
+}
+
+/**
  * Pendentes agrupados por contraparte, para a tela `/categorizar`. `keepPreviousData` evita o
  * flash de skeleton a cada busca/filtro: a lista anterior continua visível, com
  * `isPlaceholderData` ligado, até a nova chegar. A tela usa esse sinal para não podar a seleção

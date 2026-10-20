@@ -8,6 +8,7 @@ import { AppearanceCard } from './appearance-card'
 import { BankCredentialsCard } from './bank-credentials-card'
 import { GoogleCard } from './google-card'
 import { PasswordCard } from './password-card'
+import { ProviderCategoriesCard } from './provider-categories-card'
 import { ProfileCard } from './profile-card'
 
 const PLUGGY_HIGHLIGHT_MS = 2_500
@@ -53,6 +54,7 @@ export function SettingsPage() {
         <PasswordCard user={user} />
         <GoogleCard user={user} />
         <BankCredentialsCard highlighted={highlightPluggy} />
+        <ProviderCategoriesCard user={user} />
         <AppearanceCard />
       </PageBody>
     </>

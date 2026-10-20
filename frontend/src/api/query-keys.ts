@@ -79,6 +79,7 @@ export const queryKeys = {
   pendingCategorizationCount: () => ['categorization', 'pending-count'] as const,
   pendingCategorization: (filters: PendingCategorizationFilters) =>
     ['categorization', 'pending', compactPendingCategorizationFilters(filters)] as const,
+  providerCategorizedCount: () => ['categorization', 'provider-categorized-count'] as const,
 }
 
 function invalidate(queryClient: QueryClient, roots: string[]) {
