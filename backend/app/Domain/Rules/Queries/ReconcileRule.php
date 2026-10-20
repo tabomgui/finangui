@@ -15,8 +15,9 @@ use App\Domain\Transactions\Models\Transaction;
 /**
  * Prévia, depois de editar uma regra, do que mudaria só na categoria dos
  * lançamentos (ver CategoryChangePlanner::forRule()): contagem e amostra de
- * até 20 por grupo. Avalia a regra salva mesmo desativada. Nunca grava nada;
- * a aplicação (App\Domain\Rules\Actions\ApplyRuleReconcile) recalcula tudo.
+ * até 20 por grupo. Regra desativada só tira a categoria do que ela
+ * categorizou (motivo "inactive"). Nunca grava nada; a aplicação
+ * (App\Domain\Rules\Actions\ApplyRuleReconcile) recalcula tudo.
  */
 final class ReconcileRule
 {
@@ -42,8 +43,8 @@ final class ReconcileRule
 
         $this->planner->reconcileCandidates($rule->id)
             ->lazyByIdDesc(500)
-            ->each(function (Transaction $transaction) use ($definition, &$counts, &$samples): void {
-                $change = $this->planner->forRule($transaction, $definition);
+            ->each(function (Transaction $transaction) use ($definition, $rule, &$counts, &$samples): void {
+                $change = $this->planner->forRule($transaction, $definition, $rule->is_active);
 
                 if ($change === null) {
                     return;
@@ -57,7 +58,11 @@ final class ReconcileRule
                 }
             });
 
-        $reason = $definition->setsCategory() ? ReconcileClearReason::NoLongerMatches : ReconcileClearReason::NoCategoryAction;
+        $reason = match (true) {
+            ! $rule->is_active => ReconcileClearReason::Inactive,
+            $definition->setsCategory() => ReconcileClearReason::NoLongerMatches,
+            default => ReconcileClearReason::NoCategoryAction,
+        };
 
         $groups = array_map(fn (ReconcileGroup $group) => new RuleReconcileGroupResult(
             key: $group,

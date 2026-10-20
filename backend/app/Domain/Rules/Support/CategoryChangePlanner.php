@@ -30,7 +30,7 @@ use LogicException;
  * categoria pode de fato ser gravada (existe, não arquivada, diferente da
  * atual) é ApplyRuleOutcome::changes() — o mesmo que grava (apply()).
  *
- * Nunca muda: lançamento categorizado à mão, lançamento fora de
+ * Nunca muda: lançamento categorizado à mão (com categoria), lançamento fora de
  * Transaction::scopeEligibleForRules() (quem chama já filtra a consulta) e
  * categoria de transferência (ela mesma ou pelo pai) ao tirá-la, ou na
  * revisão ao trocá-la por uma comum: sem ela o lançamento voltaria a
@@ -102,16 +102,32 @@ final class CategoryChangePlanner
     }
 
     /**
-     * Só esta regra (ativa ou não — o usuário acabou de editá-la):
+     * Só esta regra, recém-editada:
      * - sem categoria e a regra dá uma: fill;
      * - categorizado por ela, ainda casa e a categoria dela mudou: recategorize;
      * - categorizado por ela e ela não dá mais categoria (não casa ou perdeu
      *   o set_category): clear.
+     * Desativada ($active falso), a regra não dá categoria a ninguém: fill e
+     * recategorize ficam vazios e todo lançamento categorizado por ela cai
+     * em clear — o mesmo que a revisão de regras diria (stale), nunca o
+     * contrário.
+     *
+     * "Sem categoria" inclui o que tem categorized_by = manual mas
+     * category_id nulo (a categoria escolhida à mão foi excluída depois):
+     * não há mais categoria à mão nenhuma a preservar.
      */
-    public function forRule(Transaction $transaction, RuleDefinition $rule): ?CategoryChange
+    public function forRule(Transaction $transaction, RuleDefinition $rule, bool $active = true): ?CategoryChange
     {
-        if ($transaction->categorized_by === 'manual' || $rule->id === null) {
+        if (self::isManual($transaction) || $rule->id === null) {
             return null;
+        }
+
+        if (! $active) {
+            return $transaction->category_id !== null
+                && $transaction->categorized_by === "rule:{$rule->id}"
+                && $this->canClear($transaction)
+                ? new CategoryChange($transaction, ReconcileGroup::Clear, null, $rule->id, null)
+                : null;
         }
 
         $outcome = $this->evaluate($transaction, [$rule]);
@@ -147,6 +163,8 @@ final class CategoryChangePlanner
      * - categoria automática (histórico, banco, regra) diferente: conflict;
      * - categorizado por uma regra e nenhuma regra ativa dá categoria: stale;
      * - à mão com categoria diferente: manual (só informativo).
+     * À mão sem categoria (categoria excluída) conta como sem categoria,
+     * como em forRule().
      *
      * @param  list<RuleDefinition>  $rules
      */
@@ -156,8 +174,8 @@ final class CategoryChangePlanner
         $target = $this->target($transaction, $outcome);
         $categorizedBy = (string) $transaction->categorized_by;
 
-        if ($categorizedBy === 'manual') {
-            return $target !== null && $transaction->category_id !== null
+        if (self::isManual($transaction)) {
+            return $target !== null
                 ? new CategoryChange($transaction, ReviewGroup::Manual, $target, $outcome->categoryRuleId, null)
                 : null;
         }
@@ -264,6 +282,14 @@ final class CategoryChangePlanner
         $id = substr($categorizedBy, 5);
 
         return ctype_digit($id) ? (int) $id : null;
+    }
+
+    /**
+     * Categoria definida à mão que ainda existe: nunca muda por regra.
+     */
+    private static function isManual(Transaction $transaction): bool
+    {
+        return $transaction->categorized_by === 'manual' && $transaction->category_id !== null;
     }
 
     /**

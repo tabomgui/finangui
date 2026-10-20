@@ -1893,10 +1893,10 @@ export interface components {
         };
         /**
          * ReconcileClearReason
-         * @description Por que o grupo "clear" da reconciliação tira a categoria: a regra não casa mais com esses lançamentos, ou deixou de ter a ação set_category.
+         * @description Por que o grupo "clear" da reconciliação tira a categoria: a regra não casa mais com esses lançamentos, deixou de ter a ação set_category, ou está desativada.
          * @enum {string}
          */
-        ReconcileClearReason: "no_longer_matches" | "no_category_action";
+        ReconcileClearReason: "no_longer_matches" | "no_category_action" | "inactive";
         /**
          * ReconcileGroup
          * @description Grupos da reconciliação de uma regra recém-editada (ver App\Domain\Rules\Queries\ReconcileRule): o que mudaria nos lançamentos por causa da edição.

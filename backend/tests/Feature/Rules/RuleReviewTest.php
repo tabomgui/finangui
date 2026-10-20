@@ -235,6 +235,25 @@ it('regra de outro usuário nunca categoriza lançamentos do usuário autenticad
     expect($mine->refresh()->category_id)->toBeNull();
 });
 
+it('à mão sem categoria (categoria excluída) entra em fill e recebe a categoria da regra', function () {
+    actingAsUser();
+    $transport = Category::factory()->create();
+    $rule = reviewRule('uber', $transport);
+    $orphan = Transaction::factory()->create(['description' => 'Uber eats', 'category_id' => null, 'categorized_by' => 'manual']);
+
+    $groups = reviewGroups();
+    expect(collect($groups['fill']['items'])->pluck('transaction_id')->all())->toBe([$orphan->id]);
+    expect($groups['manual']['count'])->toBe(0);
+
+    $this->postJson('/api/v1/rules/review/apply', ['transaction_ids' => [$orphan->id]])
+        ->assertOk()
+        ->assertJsonPath('data.applied', 1);
+
+    $orphan->refresh();
+    expect($orphan->category_id)->toBe($transport->id);
+    expect($orphan->categorized_by)->toBe("rule:{$rule->id}");
+});
+
 it('itens limitados a 500 por grupo, com a contagem completa e truncated', function () {
     $user = actingAsUser();
     reviewRule('uber', Category::factory()->create());

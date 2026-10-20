@@ -47,8 +47,8 @@ final class ApplyRuleReconcile
             $ids = [];
             $this->planner->reconcileCandidates($locked->id)
                 ->lazyById(500)
-                ->each(function (Transaction $transaction) use ($definition, $groups, &$ids): void {
-                    $change = $this->planner->forRule($transaction, $definition);
+                ->each(function (Transaction $transaction) use ($definition, $locked, $groups, &$ids): void {
+                    $change = $this->planner->forRule($transaction, $definition, $locked->is_active);
 
                     if ($change !== null && in_array($change->group, $groups, true)) {
                         $ids[] = $transaction->id;
@@ -74,7 +74,7 @@ final class ApplyRuleReconcile
                 $skipped += count($chunk) - $transactions->count();
 
                 foreach ($transactions as $transaction) {
-                    $change = $this->planner->forRule($transaction, $definition);
+                    $change = $this->planner->forRule($transaction, $definition, $locked->is_active);
 
                     if ($change !== null && in_array($change->group, $groups, true) && $this->planner->apply($change)) {
                         $applied[$change->group->value]++;

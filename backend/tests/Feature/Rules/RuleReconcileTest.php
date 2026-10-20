@@ -122,15 +122,85 @@ it('regra sem set_category: os categorizados por ela perdem a categoria, motivo 
     expect(reconcileSampleIds($groups['clear']))->toEqualCanonicalizing([$matches->id, $notMatching->id]);
 });
 
-it('avalia a regra mesmo desativada', function () {
+it('regra desativada: fill e recategorize vazios, clear com todo lançamento dela e motivo inactive', function () {
     actingAsUser();
+    $old = Category::factory()->create();
     $new = Category::factory()->create();
     $rule = reconcileRule($new, ['is_active' => false]);
+    $tag = "rule:{$rule->id}";
+
     Transaction::factory()->create(['description' => 'Uber eats', 'category_id' => null]);
+    $stillMatches = Transaction::factory()->create(['description' => 'Uber *trip', 'category_id' => $old->id, 'categorized_by' => $tag]);
+    $sameCategory = Transaction::factory()->create(['description' => 'Uber *x', 'category_id' => $new->id, 'categorized_by' => $tag]);
+    $noLongerMatches = Transaction::factory()->create(['description' => 'Padaria', 'category_id' => $old->id, 'categorized_by' => $tag]);
 
     $groups = reconcileGroups($this->getJson("/api/v1/rules/{$rule->id}/reconcile")->assertOk()->json());
 
-    expect($groups['fill']['count'])->toBe(1);
+    expect($groups['fill']['count'])->toBe(0);
+    expect($groups['recategorize']['count'])->toBe(0);
+    expect($groups['clear']['count'])->toBe(3);
+    expect($groups['clear']['reason'])->toBe('inactive');
+    expect(reconcileSampleIds($groups['clear']))->toEqualCanonicalizing([$stillMatches->id, $sameCategory->id, $noLongerMatches->id]);
+
+    $this->postJson("/api/v1/rules/{$rule->id}/reconcile", ['groups' => ['recategorize', 'fill', 'clear']])
+        ->assertOk()
+        ->assertJsonPath('data', ['recategorize' => 0, 'fill' => 0, 'clear' => 3, 'skipped' => 0]);
+
+    expect(Transaction::query()->where('categorized_by', $tag)->count())->toBe(0);
+});
+
+it('regra desativada: a revisão de regras concorda com a reconciliação, antes e depois de aplicar', function () {
+    actingAsUser();
+    $old = Category::factory()->create();
+    $rule = reconcileRule(Category::factory()->create(), ['is_active' => false]);
+    $categorized = Transaction::factory()->create(['description' => 'Uber *trip', 'category_id' => $old->id, 'categorized_by' => "rule:{$rule->id}"]);
+    $uncategorized = Transaction::factory()->create(['description' => 'Uber eats', 'category_id' => null]);
+
+    $review = collect($this->getJson('/api/v1/rules/review')->assertOk()->json('data.groups'))->keyBy('key');
+    expect(collect($review['stale']['items'])->pluck('transaction_id')->all())->toBe([$categorized->id]);
+    expect($review['fill']['count'])->toBe(0);
+
+    $this->postJson("/api/v1/rules/{$rule->id}/reconcile", ['groups' => ['recategorize', 'fill', 'clear']])->assertOk();
+
+    expect($uncategorized->refresh()->category_id)->toBeNull();
+
+    $review = collect($this->getJson('/api/v1/rules/review')->assertOk()->json('data.groups'))->keyBy('key');
+    expect($review->sum('count'))->toBe(0);
+});
+
+it('à mão sem categoria (categoria excluída) conta como sem categoria e recebe a da regra', function () {
+    actingAsUser();
+    $new = Category::factory()->create();
+    $rule = reconcileRule($new);
+    $orphan = Transaction::factory()->create(['description' => 'Uber eats', 'category_id' => null, 'categorized_by' => 'manual']);
+
+    $groups = reconcileGroups($this->getJson("/api/v1/rules/{$rule->id}/reconcile")->assertOk()->json());
+    expect(reconcileSampleIds($groups['fill']))->toBe([$orphan->id]);
+
+    $this->postJson("/api/v1/rules/{$rule->id}/reconcile", ['groups' => ['fill']])
+        ->assertOk()
+        ->assertJsonPath('data.fill', 1);
+
+    $orphan->refresh();
+    expect($orphan->category_id)->toBe($new->id);
+    expect($orphan->categorized_by)->toBe("rule:{$rule->id}");
+});
+
+it('recategorize pode trocar uma categoria de transferência pela nova categoria da regra', function () {
+    actingAsUser();
+    $transfer = Category::factory()->transfer()->create();
+    $rent = Category::factory()->create();
+    $rule = reconcileRule($rent, ['conditions' => [['field' => 'description', 'op' => 'contains', 'value' => 'pix']]]);
+    $transaction = Transaction::factory()->create(['description' => 'Pix aluguel', 'category_id' => $transfer->id, 'categorized_by' => "rule:{$rule->id}"]);
+
+    $groups = reconcileGroups($this->getJson("/api/v1/rules/{$rule->id}/reconcile")->assertOk()->json());
+    expect(reconcileSampleIds($groups['recategorize']))->toBe([$transaction->id]);
+
+    $this->postJson("/api/v1/rules/{$rule->id}/reconcile", ['groups' => ['recategorize']])
+        ->assertOk()
+        ->assertJsonPath('data.recategorize', 1);
+
+    expect($transaction->refresh()->category_id)->toBe($rent->id);
 });
 
 it('deixa de fora perna de transferência, prevista de recorrência e pagamento de fatura', function () {
