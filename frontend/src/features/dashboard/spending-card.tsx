@@ -187,6 +187,8 @@ export function SpendingCard({ month }: SpendingCardProps) {
                   entry={entry}
                   currency={data.currency}
                   filters={entryTransactionFilters(entry, { from, to, currency: data.currency, isChildLevel: Boolean(drillCategory) })}
+                  from={from}
+                  to={to}
                 />
               ))}
             </ul>
