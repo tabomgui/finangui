@@ -22,6 +22,8 @@ export type SpendingViewEntry = {
   count: number
   direct: boolean
   hasChildren: boolean
+  /** Subcategorias (mais "direto no pai") desta entrada, para o detalhamento inline da linha; vazio em quem não tem (`hasChildren`/`direct`). */
+  children: SpendingChild[]
   /** Percentual pronto para exibir: "<1%" para fatia pequena mas não nula, nunca "0%" com gasto real. */
   percentLabel: string
 }
@@ -56,6 +58,7 @@ export function rootViewEntries(categories: SpendingCategory[], total: number): 
       count: category.count,
       direct: false,
       hasChildren: category.children.length > 0,
+      children: category.children,
     })),
     total,
   )
@@ -77,6 +80,7 @@ export function childViewEntries(children: SpendingChild[], total: number): Spen
         count: child.count,
         direct,
         hasChildren: false,
+        children: [],
       }
     }),
     total,

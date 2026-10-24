@@ -49,7 +49,37 @@ function renderRow() {
   return render(
     <MemoryRouter>
       <TooltipProvider>
-        <SpendingCategoryRow entry={entry} currency="BRL" filters={filters} />
+        <SpendingCategoryRow entry={entry} currency="BRL" filters={filters} from="2026-10-01" to="2026-10-31" />
+      </TooltipProvider>
+    </MemoryRouter>,
+  )
+}
+
+const parentEntry = rootViewEntries(
+  [
+    {
+      category_id: 2,
+      name: 'Casa',
+      color: null,
+      icon: null,
+      amount: 50000,
+      count: 5,
+      children: [
+        { category_id: 21, name: 'Aluguel', color: null, icon: null, amount: 40000, count: 1 },
+        { category_id: 22, name: 'Luz', color: null, icon: null, amount: 10000, count: 4 },
+      ],
+    },
+  ],
+  50000,
+)[0]
+
+const parentFilters = { reportable: true as const, currency: 'BRL', direction: 'out' as const, from: '2026-10-01', to: '2026-10-31', category_id: 2 }
+
+function renderParentRow() {
+  return render(
+    <MemoryRouter>
+      <TooltipProvider>
+        <SpendingCategoryRow entry={parentEntry} currency="BRL" filters={parentFilters} from="2026-10-01" to="2026-10-31" />
       </TooltipProvider>
     </MemoryRouter>,
   )
@@ -153,5 +183,47 @@ describe('SpendingCategoryRow', () => {
     fireEvent.click(button)
     expect(button).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByText('Nenhum lançamento encontrado.')).not.toBeInTheDocument()
+  })
+
+  it('raiz com subcategoria expande para a lista de subcategorias, sem buscar a prévia da própria categoria', () => {
+    useTransactionsPreview.mockReturnValue({ isPending: true, isError: false, data: undefined, refetch: vi.fn() })
+
+    renderParentRow()
+    fireEvent.click(screen.getByRole('button', { name: /Casa/ }))
+
+    expect(screen.getByRole('button', { name: /Aluguel/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Luz/ })).toBeInTheDocument()
+    expect(useTransactionsPreview).toHaveBeenCalledWith(parentFilters, false)
+    expect(useTransactionsPreview).not.toHaveBeenCalledWith(parentFilters, true)
+  })
+
+  it('clicar numa subcategoria dentro expande pra prévia de lançamentos dela', () => {
+    useTransactionsPreview.mockImplementation((queryFilters: { category_id?: number }, enabled: boolean) => {
+      if (enabled && queryFilters.category_id === 21) {
+        return { isPending: false, isError: false, data: { data: [transaction({ description: 'Aluguel out' })] }, refetch: vi.fn() }
+      }
+      return { isPending: true, isError: false, data: undefined, refetch: vi.fn() }
+    })
+
+    renderParentRow()
+    fireEvent.click(screen.getByRole('button', { name: /Casa/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Aluguel/ }))
+
+    expect(screen.getByText('Aluguel out')).toBeInTheDocument()
+  })
+
+  it('raiz sem filhos continua expandindo direto pra prévia de lançamentos', () => {
+    useTransactionsPreview.mockReturnValue({
+      isPending: false,
+      isError: false,
+      data: { data: [transaction({ description: 'Mercado X' })] },
+      refetch: vi.fn(),
+    })
+
+    renderRow()
+    fireEvent.click(screen.getByRole('button', { name: /Alimentação/ }))
+
+    expect(useTransactionsPreview).toHaveBeenCalledWith(filters, true)
+    expect(screen.getByText('Mercado X')).toBeInTheDocument()
   })
 })

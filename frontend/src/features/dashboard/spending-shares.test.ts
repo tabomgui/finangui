@@ -26,6 +26,7 @@ describe('rootViewEntries', () => {
         count: 3,
         direct: false,
         hasChildren: true,
+        children: [child()],
         percentLabel: '75%',
       },
       {
@@ -39,6 +40,7 @@ describe('rootViewEntries', () => {
         count: 3,
         direct: false,
         hasChildren: false,
+        children: [],
         percentLabel: '25%',
       },
     ])

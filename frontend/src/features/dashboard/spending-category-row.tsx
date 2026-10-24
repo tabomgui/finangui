@@ -10,25 +10,32 @@ import { paramsForFilters } from '@/features/transactions/filters'
 import { TransactionRow } from '@/features/transactions/transaction-row'
 import { formatMoney } from '@/lib/money'
 import { cn } from '@/lib/utils'
-import { entryLabel, transactionCountLabel, type SpendingViewEntry } from './spending-shares'
+import { childViewEntries, entryLabel, entryTransactionFilters, transactionCountLabel, type SpendingViewEntry } from './spending-shares'
 
 type SpendingCategoryRowProps = {
   entry: SpendingViewEntry
   currency: string
   filters: TransactionFilters
+  from: string
+  to: string
 }
 
 /**
- * Linha de "Gastos por categoria": expande sob demanda (até 20 lançamentos, via
- * `useTransactionsPreview`, só habilitada enquanto aberta) e sempre oferece "Ver todos" com os
- * mesmos filtros — nunca uma lista maior embutida aqui (ver `entryTransactionFilters`).
+ * Linha de "Gastos por categoria". Com subcategoria (`entry.hasChildren`), expande para o
+ * detalhamento inline (uma `SpendingCategoryRow` recursiva por subcategoria, mesmo
+ * `childViewEntries`/`entryTransactionFilters` do drill-down do donut/legenda em
+ * `spending-card.tsx`) em vez da prévia da categoria-raiz inteira; "Ver todos" continua com os
+ * filtros da própria entrada (categoria + subcategorias). Sem subcategoria (ou já no
+ * detalhamento), expande sob demanda para até 20 lançamentos (via `useTransactionsPreview`, só
+ * habilitada enquanto aberta) — nunca uma lista maior embutida aqui (ver `entryTransactionFilters`).
  */
-export function SpendingCategoryRow({ entry, currency, filters }: SpendingCategoryRowProps) {
+export function SpendingCategoryRow({ entry, currency, filters, from, to }: SpendingCategoryRowProps) {
   const [open, setOpen] = useState(false)
   const contentId = useId()
-  const preview = useTransactionsPreview(filters, open)
+  const preview = useTransactionsPreview(filters, open && !entry.hasChildren)
   const label = entryLabel(entry)
   const linkTo = `/transacoes?${paramsForFilters(filters).toString()}`
+  const childEntries = entry.hasChildren ? childViewEntries(entry.children, entry.amount) : []
 
   return (
     <li>
@@ -54,7 +61,20 @@ export function SpendingCategoryRow({ entry, currency, filters }: SpendingCatego
       </button>
       {open && (
         <div id={contentId} className="space-y-2 pb-3 pl-1">
-          {preview.isError ? (
+          {entry.hasChildren ? (
+            <ul className="divide-y divide-border rounded-xl border">
+              {childEntries.map((childEntry) => (
+                <SpendingCategoryRow
+                  key={childEntry.key}
+                  entry={childEntry}
+                  currency={currency}
+                  filters={entryTransactionFilters(childEntry, { from, to, currency, isChildLevel: true })}
+                  from={from}
+                  to={to}
+                />
+              ))}
+            </ul>
+          ) : preview.isError ? (
             <div className="flex items-center justify-between gap-2 rounded-xl bg-muted px-3 py-2 text-sm">
               <span className="flex items-center gap-2 text-muted-foreground">
                 <TriangleAlert className="h-4 w-4" />
