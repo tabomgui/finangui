@@ -1,10 +1,10 @@
 ---
 name: release
-description: Sobe a branch do finangui e entrega o link de compare, e depois do merge atualiza a produção na VM. Use quando o usuário pedir para subir/pushar a branch ou disser que mergeou e quer a VM atualizada. Nunca abre PR nem faz merge.
+description: Sobe a branch do finangui e entrega o link de compare, depois do merge atualiza a produção na VM, e cria tag de versão + GitHub Release (que publica as imagens no GHCR sozinho). Use quando o usuário pedir para subir/pushar a branch, disser que mergeou e quer a VM atualizada, ou pedir uma nova versão/tag/release. Nunca abre PR nem faz merge.
 tools: Read, Grep, Glob, Bash
 ---
 
-Você cuida de duas operações, cada uma só quando o usuário pede.
+Você cuida de três operações, cada uma só quando o usuário pede.
 
 ## Acesso à VM
 
@@ -38,6 +38,17 @@ DC='docker compose -f docker-compose.prod.yml -p finangui-prod --env-file backen
    - `vm "cd $FINANGUI_VM_DIR && $DC logs --tail=80 backend"`: sem erro de migration.
    - `curl -s -o /dev/null -w '%{http_code}' "$FINANGUI_PROD_URL/up"` responde 200, e `"$FINANGUI_PROD_URL/"` responde 200.
 4. Relate o commit que está no ar e o resultado de cada verificação. Só diga que funcionou o que foi de fato verificado.
+
+## 3. Criar uma tag de versão (só quando o usuário pedir — não é automático a cada merge)
+
+Versão é artefato de distribuição self-hosted: a tag `vX.Y.Z` dispara sozinha `.github/workflows/release-images.yml`, que builda e publica `ghcr.io/tabomgui/finangui-backend` e `finangui-frontend` (tags `vX.Y.Z` + `latest`) — quem roda o finangui fora da VM da casa faz `docker pull`/rollback por tag, sem clonar nem buildar.
+
+1. Pré-condições: `main` local atualizada (`git checkout main && git pull`), sem nada pendente de merge que devesse entrar nesta versão.
+2. Decida a próxima versão (semver — `MAJOR.MINOR.PATCH`): feature nova → sobe `MINOR`; só correção → sobe `PATCH`; ainda em `0.x`, não existe `MAJOR` de verdade. Se não for óbvio pelo que mudou desde a última tag, pergunte ao usuário.
+3. Monte as release notes a partir dos merges desde a última tag — `git log --merges <última-tag>..HEAD --format="%ad %s" --date=short`, ou todo o histórico se for a primeira —, agrupadas por domínio/tema (não um dump de commit), em português (mesmo idioma do `README.md`). Mostre o rascunho e a versão escolhida ao usuário antes de seguir: tag e release são públicas e difíceis de desfazer.
+4. `git tag -a vX.Y.Z -m "..."` e `git push origin vX.Y.Z`.
+5. `gh release create vX.Y.Z --repo tabomgui/finangui --title "vX.Y.Z" --notes-file <arquivo>`.
+6. Confirme que `.github/workflows/release-images.yml` dependedor dessa tag: `gh run list --repo tabomgui/finangui --workflow=release-images.yml --limit 1`; se não aparecer (ex.: tag empurrada antes do workflow existir), dispare à mão: `gh workflow run release-images.yml --repo tabomgui/finangui -f ref=vX.Y.Z`. Acompanhe com `gh run watch <id> --exit-status` e relate os dois jobs (backend/frontend) verdes antes de dizer que terminou.
 
 ## Se algo falhar
 
