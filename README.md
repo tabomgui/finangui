@@ -1,6 +1,24 @@
-# finangui
+<p align="center">
+  <img src="frontend/public/favicon.svg" width="88" height="88" alt="finangui">
+</p>
 
-Gerenciador financeiro pessoal, self-hosted. Backend Laravel 13 + Postgres; frontend React em `frontend/`.
+<h1 align="center">finangui</h1>
+<p align="center">Gerenciador financeiro pessoal, self-hosted — Laravel + React, tudo em Docker.</p>
+
+<p align="center">
+  <a href="https://github.com/tabomgui/finangui/actions/workflows/ci.yml"><img src="https://github.com/tabomgui/finangui/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/tabomgui/finangui/releases/latest"><img src="https://img.shields.io/github/v/release/tabomgui/finangui" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://github.com/tabomgui/finangui/pkgs/container/finangui-backend"><img src="https://img.shields.io/badge/ghcr.io-images-2496ED?logo=docker&logoColor=white" alt="Packages"></a>
+</p>
+
+<p align="center">
+  <a href="https://docs-finangui.hengen.com.br">Docs</a> ·
+  <a href="https://github.com/tabomgui/finangui/releases">Releases</a> ·
+  <a href="https://github.com/tabomgui/finangui/issues">Issues</a>
+</p>
+
+Backend Laravel 13 + Postgres; frontend React em `frontend/`.
 
 Telas disponíveis: Início (dashboard do mês, com saldo real num dia escolhido — soma só contas corrente/poupança/dinheiro, sem cartão de crédito —, distribuição de gastos por categoria e pendências de recorrência atrasada e de lançamentos sem categoria), Transações (com filtros e edição em massa), Categorizar (lançamentos sem categoria agrupados por contraparte, para categorizar em lote), Recorrências (lançamentos que se repetem — aluguel, salário, assinaturas — com ocorrências previstas geradas automaticamente e reconhecidas quando o lançamento real chega), Regras (condições e grupos para categorizar automaticamente, com prévia ao vivo, aplicação retroativa às transações já existentes, atualização dos lançamentos depois de editar uma regra, revisão de todas as regras contra os lançamentos e sugestão por histórico quando nenhuma regra casa), Cartões (faturas com datas de fechamento/vencimento que se ajustam sozinhas pelo banco, total e limite usado/disponível informados pelo banco quando a conta está sincronizada, pagamento como transferência sem abater o total da fatura, parcelamentos), Importar extrato (CSV do Inter, Nubank conta e cartão e C6, ou OFX genérico; prévia mostra novas, duplicadas, adoção de lançamento manual e parcelas antes de confirmar; lote importado pode ser revertido), Orçamento (limite mensal por categoria de despesa, com exceção pontual por mês e gasto/restante/progresso calculados), Metas (por conta vinculada ou por aportes manuais, com progresso, data alvo e ritmo mensal necessário), Relatórios (evolução mensal de receita × despesa e comparação de gastos por categoria entre dois períodos, pela data da compra ou pelo vencimento da fatura), Contas, Categorias, Tags e Configurações.
 
